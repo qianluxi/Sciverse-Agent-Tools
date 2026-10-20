@@ -19,6 +19,8 @@
 
 ## 接入方式选择
 
+> **图形界面用户：** 本仓库附带无需编程的 [科研文献助手](./research_app/README.zh-CN.md)，可在浏览器中检索论文、阅读原文并导出结果。
+
 | 路径 | 适合谁 | 安装 |
 |---|---|---|
 | **Skills CLI** | 使用通用 Skills CLI 的项目 | `npx skills add https://sciverse.space` |

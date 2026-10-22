@@ -65,6 +65,7 @@ def _cmd_login(args: argparse.Namespace) -> int:
     print(f"1. 浏览器将打开控制台 token 页：{CONSOLE_TOKEN_URL}")
     print("2. 登录后创建 / 复制一个 API Token（形如 sv-xxx）")
     print("3. 把 token 粘贴回这里")
+    print("   CMD 中请用鼠标右键粘贴，或按 Shift+Insert；不要按 Ctrl+V。")
     print()
 
     if not args.no_browser:
@@ -95,7 +96,11 @@ def _cmd_login(args: argparse.Namespace) -> int:
         )
 
     endpoint = args.endpoint or DEFAULT_ENDPOINT
-    path = save_credentials(token, endpoint)
+    try:
+        path = save_credentials(token, endpoint)
+    except ValueError as error:
+        print(f"错误：{error}", file=sys.stderr)
+        return 1
     print(f"✓ 凭据已保存到 {path}（权限 0600）")
     print(f"  endpoint: {endpoint}")
     print()

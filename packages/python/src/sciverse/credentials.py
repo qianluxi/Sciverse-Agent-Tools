@@ -34,6 +34,19 @@ class Credentials(TypedDict, total=False):
 DEFAULT_ENDPOINT = "https://api.sciverse.space"
 
 
+def validate_token(token: str) -> str:
+    """Reject values that cannot safely be sent in an Authorization header."""
+    if not isinstance(token, str) or not token:
+        raise ValueError("Sciverse API Token 不能为空。")
+    if any(char.isspace() for char in token):
+        raise ValueError(
+            "Sciverse API Token 不能包含空格或换行；请在终端中右键粘贴，不要按 Ctrl+V。"
+        )
+    if not token.isascii() or not token.isprintable():
+        raise ValueError("Sciverse API Token 包含控制字符；请重新从 Sciverse 控制台复制。")
+    return token
+
+
 def credentials_path() -> Path:
     return Path.home() / ".sciverse" / "credentials.json"
 
@@ -54,6 +67,7 @@ def load_credentials() -> Credentials | None:
 
 def save_credentials(token: str, endpoint: str = DEFAULT_ENDPOINT) -> Path:
     """保存凭据到 ~/.sciverse/credentials.json，文件权限设为 0600。返回 path。"""
+    token = validate_token(token)
     path = credentials_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     payload: Credentials = {

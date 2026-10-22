@@ -122,13 +122,14 @@ class AgentToolsClient:
         token: str | None = None,
         timeout: float = 30.0,
     ) -> None:
-        from sciverse.credentials import resolve_endpoint, resolve_token
+        from sciverse.credentials import resolve_endpoint, resolve_token, validate_token
         resolved_token = resolve_token(token)
         if not resolved_token:
             raise ValueError(
                 "未找到 Sciverse API Token。请显式传 token、或设 SCIVERSE_API_TOKEN 环境变量、"
                 "或运行 `sciverse auth login` 保存凭据到 ~/.sciverse/credentials.json。"
             )
+        resolved_token = validate_token(resolved_token)
         self._base_url = resolve_endpoint(base_url).rstrip("/")
         self._token = resolved_token
         self._client = httpx.AsyncClient(

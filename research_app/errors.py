@@ -36,4 +36,6 @@ def describe_error(error: Exception) -> tuple[str, str | None]:
         return "请求超时，请检查网络连接后重试。", None
     if isinstance(error, httpx.TransportError):
         return "无法连接 Sciverse 服务，请检查网络连接。", None
+    if isinstance(error, ValueError):
+        return str(error), None
     return f"请求失败（{type(error).__name__}），请稍后重试。", None

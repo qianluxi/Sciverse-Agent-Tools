@@ -82,6 +82,11 @@ async def test_semantic_search_invalid_mode_rejected():
             await c.semantic_search(query="x", mode="turbo")
 
 
+def test_control_character_token_rejected_before_http_request():
+    with pytest.raises(ValueError, match="控制字符"):
+        AgentToolsClient(base_url="https://api.example", token="\x16\x16\x1a")
+
+
 @pytest.mark.asyncio
 @respx.mock
 async def test_read_content_uses_query_params():

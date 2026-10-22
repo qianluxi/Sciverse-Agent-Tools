@@ -55,6 +55,13 @@ def test_unexpected_error_does_not_expose_exception_text():
     assert details is None
 
 
+def test_validation_error_message_is_shown_to_user():
+    message, details = describe_error(ValueError("Token 包含控制字符，请重新复制。"))
+
+    assert "Token 包含控制字符" in message
+    assert details is None
+
+
 def test_http_error_details_redact_bearer_token():
     request = httpx.Request(
         "POST",

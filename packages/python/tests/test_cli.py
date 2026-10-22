@@ -63,6 +63,13 @@ def test_login_empty_token_fails(tmp_home, capsys):
     assert code == 1
 
 
+def test_login_control_character_token_fails_without_saving(tmp_home, capsys):
+    code = main(["auth", "login", "--token", "\x16\x16\x1a", "--no-browser"])
+    assert code == 1
+    assert "控制字符" in capsys.readouterr().err
+    assert not (tmp_home / ".sciverse" / "credentials.json").exists()
+
+
 def test_logout_when_logged_in(tmp_home, capsys):
     main(["auth", "login", "--token", "sv-x", "--no-browser"])
     capsys.readouterr()

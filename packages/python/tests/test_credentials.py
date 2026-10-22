@@ -54,6 +54,12 @@ def test_save_sets_0600_permissions(tmp_home):
     assert mode == 0o600, f"expected 0600 got {oct(mode)}"
 
 
+def test_save_rejects_control_characters(tmp_home):
+    with pytest.raises(ValueError, match="控制字符"):
+        save_credentials("\x16\x16\x1a")
+    assert not (tmp_home / ".sciverse" / "credentials.json").exists()
+
+
 def test_load_returns_none_when_missing(tmp_home):
     assert load_credentials() is None
 

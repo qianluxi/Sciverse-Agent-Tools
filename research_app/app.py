@@ -82,6 +82,11 @@ def _show_error(error: Exception) -> None:
             st.code(details)
 
 
+def _paper_identity(paper: dict[str, Any], index: int) -> str:
+    identity = paper.get("unique_id") or paper.get("doc_id") or paper.get("title") or index
+    return f"{identity}_{paper.get('chunk_id') or paper.get('offset', index)}"
+
+
 def _execute_search(
     token: str,
     search_kind: str,
@@ -459,41 +464,15 @@ if papers:
                     except Exception as error:
                         _show_error(error)
 
+    export_selection = st.session_state.setdefault("export_selection", {})
     for index, paper in enumerate(papers):
-        title = paper.get("title") or "（暂无标题）"
-        authors = format_authors(paper)
-        year = paper.get("publication_published_year")
-        venue = paper.get("publication_venue_name_unified")
-        identity = paper.get("unique_id") or paper.get("doc_id") or title
-        identity = f"{identity}_{paper.get('chunk_id') or paper.get('offset', index)}"
-        export_key = f"export_item_{identity}"
-        with st.container(border=True):
-            title_col, score_col = st.columns([5, 1])
-            with title_col:
-                st.markdown(f"### {title}")
-            with score_col:
-                if (
-                    st.session_state.get("search_kind") == "semantic"
-                    and paper.get("score") is not None
-                ):
-                    st.metric("相关度", f"{paper['score']:.2f}")
-            metadata = " · ".join(str(value) for value in (authors, year, venue) if value)
-            safe_metadata = html.escape(metadata or "出版信息未提供")
-            st.markdown(f'<div class="result-meta">{safe_metadata}</div>', unsafe_allow_html=True)
-            abstract = paper.get("abstract") or paper.get("chunk")
-            if abstract:
-                st.write(abstract[:700] + ("…" if len(abstract) > 700 else ""))
-            if st.checkbox("加入导出清单", key=export_key):
-                st.session_state.setdefault("export_selection", {})[identity] = paper
-            else:
-                st.session_state.setdefault("export_selection", {}).pop(identity, None)
-            if st.button("查看文献", key=f"select_{index}"):
-                st.session_state["selected_paper"] = paper
-                st.session_state["paper_text"] = ""
-                st.session_state["content_next_offset"] = None
-                st.session_state["paper_relations"] = None
+        identity = _paper_identity(paper, index)
+        if st.session_state.get(f"export_item_{identity}"):
+            export_selection[identity] = paper
+        else:
+            export_selection.pop(identity, None)
 
-    selected_for_export = list(st.session_state.get("export_selection", {}).values())
+    selected_for_export = list(export_selection.values())
     export_papers = selected_for_export or papers
     if selected_for_export:
         st.caption(f"已选择 {len(selected_for_export)} 篇文献导出")
@@ -536,6 +515,36 @@ if papers:
             key="download_markdown",
             use_container_width=True,
         )
+
+    for index, paper in enumerate(papers):
+        title = paper.get("title") or "（暂无标题）"
+        authors = format_authors(paper)
+        year = paper.get("publication_published_year")
+        venue = paper.get("publication_venue_name_unified")
+        identity = _paper_identity(paper, index)
+        export_key = f"export_item_{identity}"
+        with st.container(border=True):
+            title_col, score_col = st.columns([5, 1])
+            with title_col:
+                st.markdown(f"### {title}")
+            with score_col:
+                if (
+                    st.session_state.get("search_kind") == "semantic"
+                    and paper.get("score") is not None
+                ):
+                    st.metric("相关度", f"{paper['score']:.2f}")
+            metadata = " · ".join(str(value) for value in (authors, year, venue) if value)
+            safe_metadata = html.escape(metadata or "出版信息未提供")
+            st.markdown(f'<div class="result-meta">{safe_metadata}</div>', unsafe_allow_html=True)
+            abstract = paper.get("abstract") or paper.get("chunk")
+            if abstract:
+                st.write(abstract[:700] + ("…" if len(abstract) > 700 else ""))
+            st.checkbox("加入导出清单", key=export_key)
+            if st.button("查看文献", key=f"select_{index}"):
+                st.session_state["selected_paper"] = paper
+                st.session_state["paper_text"] = ""
+                st.session_state["content_next_offset"] = None
+                st.session_state["paper_relations"] = None
 
 
 selected = st.session_state.get("selected_paper")

@@ -91,6 +91,8 @@ def test_structured_search_reads_text_and_figure_offline(monkeypatch, tmp_path):
     assert actions[0][1]["query"] == "climate"
     assert actions[0][1]["page_size"] == 20
     assert any("Fixture paper" in block.value for block in app.markdown)
+    download_keys = {button.key for button in app.get("download_button")}
+    assert {"download_csv", "download_ris", "download_bibtex", "download_markdown"} <= download_keys
 
     next(button for button in app.button if button.label == "查看文献").click().run(timeout=30)
     next(button for button in app.button if button.label == "读取论文原文").click().run(timeout=30)

@@ -1,3 +1,9 @@
+## [1.2.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.1.4...v1.2.0) (2026-10-22)
+
+### Features
+
+* add systematic review screening workspace ([1714330](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/17143304bf873493353a0e32da21d5e385458dc7))
+
 ## [1.1.4](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.1.3...v1.1.4) (2026-10-22)
 
 ### Bug Fixes

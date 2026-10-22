@@ -13,12 +13,13 @@ describe("AgentToolsClient", () => {
   it("search_papers happy path", async () => {
     server.use(
       http.post("https://api.example/meta-search", () =>
-        HttpResponse.json({ hits: [{ doc_id: "p_1", title: "T" }], total: 1, page: 1, page_size: 10 })
+        HttpResponse.json({ results: [{ doc_id: "p_1", title: "T" }], total_count: 1, page: 1, page_size: 10 })
       )
     );
     const c = new AgentToolsClient({ baseUrl: "https://api.example", token: "t" });
     const r: any = await c.searchPapers({ query: "x" });
-    expect(r.hits[0].doc_id).toBe("p_1");
+    expect(r.results[0].doc_id).toBe("p_1");
+    expect(r).toMatchObject({ total_count: 1, page: 1, page_size: 10 });
   });
 
   it("sends Bearer token", async () => {
@@ -26,7 +27,7 @@ describe("AgentToolsClient", () => {
     server.use(
       http.post("https://api.example/meta-search", ({ request }) => {
         captured = request.headers.get("authorization") ?? "";
-        return HttpResponse.json({ hits: [], total: 0, page: 1, page_size: 10 });
+        return HttpResponse.json({ results: [], total_count: 0, page: 1, page_size: 10 });
       })
     );
     await new AgentToolsClient({ baseUrl: "https://api.example", token: "abc" }).searchPapers({});
@@ -74,7 +75,7 @@ describe("AgentToolsClient", () => {
     server.use(
       http.post("https://api.example/meta-search", async ({ request }) => {
         captured = await request.json();
-        return HttpResponse.json({ hits: [], total: 0, page: 1, page_size: 10 });
+        return HttpResponse.json({ results: [], total_count: 0, page: 1, page_size: 10 });
       })
     );
     await new AgentToolsClient({ baseUrl: "https://api.example", token: "t" })
@@ -92,7 +93,7 @@ describe("AgentToolsClient", () => {
     server.use(
       http.post("https://api.example/meta-search", async ({ request }) => {
         captured = await request.json();
-        return HttpResponse.json({ hits: [], total: 0, page: 1, page_size: 10 });
+        return HttpResponse.json({ results: [], total_count: 0, page: 1, page_size: 10 });
       })
     );
     await new AgentToolsClient({ baseUrl: "https://api.example", token: "t" })
@@ -109,7 +110,7 @@ describe("AgentToolsClient", () => {
     server.use(
       http.post("https://api.example/meta-search", async ({ request }) => {
         captured = await request.json();
-        return HttpResponse.json({ hits: [], total: 0, page: 1, page_size: 10 });
+        return HttpResponse.json({ results: [], total_count: 0, page: 1, page_size: 10 });
       })
     );
     await new AgentToolsClient({ baseUrl: "https://api.example", token: "t" })
@@ -171,7 +172,7 @@ describe("AgentToolsClient", () => {
     server.use(
       http.post("https://api.example/meta-search", async ({ request }) => {
         captured = await request.json();
-        return HttpResponse.json({ hits: [], total: 0, page: 1, page_size: 10 });
+        return HttpResponse.json({ results: [], total_count: 0, page: 1, page_size: 10 });
       })
     );
     await new AgentToolsClient({ baseUrl: "https://api.example", token: "t" })

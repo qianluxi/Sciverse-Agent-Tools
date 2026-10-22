@@ -40,6 +40,16 @@ python3 -m streamlit run research_app/app.py
 3. 点击“查看文献”，再点击“读取论文原文”查看账号有权访问的内容；按需继续阅读下一段。
 4. 点击“下载文献清单（CSV）”，可用 Excel 或其他表格软件整理结果。
 
+## 运行离线测试
+
+从仓库根目录运行，测试使用本地 SDK 和 mock，不需要 Sciverse Token：
+
+```bash
+python -m pip install -r research_app/requirements.txt
+python -m pip install -e packages/python pytest
+python -m pytest research_app/tests/ -v
+```
+
 ## Token 与隐私
 
 Token 在网页侧边栏中输入，仅用于当前应用会话，不会由本应用写入文件。默认只在本机运行；不要将该应用公开到互联网或与他人共享 Token。

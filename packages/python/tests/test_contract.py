@@ -30,10 +30,13 @@ async def test_search_papers_returns_valid_shape():
             _skip_if_blocked(e)
             raise
     assert isinstance(r, dict)
-    assert "hits" in r
-    assert isinstance(r["hits"], list)
-    if r["hits"]:
-        hit = r["hits"][0]
+    assert "results" in r
+    assert isinstance(r["results"], list)
+    assert isinstance(r["total_count"], int)
+    assert isinstance(r["page"], int)
+    assert isinstance(r["page_size"], int)
+    if r["results"]:
+        hit = r["results"][0]
         assert "doc_id" in hit
         assert "title" in hit
 

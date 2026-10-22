@@ -34,7 +34,7 @@ describe("executeTool", () => {
   });
 
   it("search_papers: 转换 agent-友好参数为 backend canonical filters", async () => {
-    const captured = mockFetch(200, { hits: [], total: 0 });
+    const captured = mockFetch(200, { results: [], total_count: 0, page: 1, page_size: 5 });
     const result = await executeTool(CONFIG, "search_papers", {
       query: "transformer",
       authors: ["Hinton"],
@@ -65,14 +65,14 @@ describe("executeTool", () => {
   });
 
   it("search_papers: sort_by_year 默认 auto——有 query 不加年份排序（保相关性）", async () => {
-    const captured = mockFetch(200, { hits: [], total: 0 });
+    const captured = mockFetch(200, { results: [], total_count: 0, page: 1, page_size: 10 });
     await executeTool(CONFIG, "search_papers", { query: "transformer" });
     const body = JSON.parse(captured[0]!.init.body as string);
     expect(body.sort).toBeUndefined();
   });
 
   it("search_papers: sort_by_year 默认 auto——纯结构化筛选按年份降序", async () => {
-    const captured = mockFetch(200, { hits: [], total: 0 });
+    const captured = mockFetch(200, { results: [], total_count: 0, page: 1, page_size: 10 });
     await executeTool(CONFIG, "search_papers", { authors: ["Hinton"] });
     const body = JSON.parse(captured[0]!.init.body as string);
     expect(body.sort).toEqual([
@@ -81,7 +81,7 @@ describe("executeTool", () => {
   });
 
   it("search_papers: auto + sort_advanced——显式排序优先，不叠加年份", async () => {
-    const captured = mockFetch(200, { hits: [], total: 0 });
+    const captured = mockFetch(200, { results: [], total_count: 0, page: 1, page_size: 10 });
     await executeTool(CONFIG, "search_papers", {
       sort_advanced: [{ field: "citation_count", order: "SORT_ORDER_DESC" }],
     });

@@ -8,11 +8,20 @@ from sciverse import AgentToolsClient
 @respx.mock
 async def test_search_papers_happy_path():
     respx.post("https://api.example/meta-search").mock(
-        return_value=Response(200, json={"hits": [{"doc_id": "p_1", "title": "Test"}], "total": 1, "page": 1, "page_size": 10})
+        return_value=Response(
+            200,
+            json={
+                "results": [{"doc_id": "p_1", "title": "Test"}],
+                "total_count": 1,
+                "page": 1,
+                "page_size": 10,
+            },
+        )
     )
     async with AgentToolsClient(base_url="https://api.example", token="t") as c:
         result = await c.search_papers(query="x")
-    assert result["hits"][0]["doc_id"] == "p_1"
+    assert result["results"][0]["doc_id"] == "p_1"
+    assert (result["total_count"], result["page"], result["page_size"]) == (1, 1, 10)
 
 
 @pytest.mark.asyncio
@@ -88,7 +97,7 @@ async def test_read_content_uses_query_params():
 @pytest.mark.asyncio
 @respx.mock
 async def test_sends_bearer_token():
-    route = respx.post("https://api.example/meta-search").mock(return_value=Response(200, json={"hits": [], "total": 0, "page": 1, "page_size": 10}))
+    route = respx.post("https://api.example/meta-search").mock(return_value=Response(200, json={"results": [], "total_count": 0, "page": 1, "page_size": 10}))
     async with AgentToolsClient(base_url="https://api.example", token="abc") as c:
         await c.search_papers()
     assert route.calls.last.request.headers["authorization"] == "Bearer abc"
@@ -113,7 +122,7 @@ async def test_raises_on_4xx_with_httpx_error():
 @respx.mock
 async def test_search_papers_maps_authors_to_filter():
     route = respx.post("https://api.example/meta-search").mock(
-        return_value=Response(200, json={"hits": [], "total": 0, "page": 1, "page_size": 10})
+        return_value=Response(200, json={"results": [], "total_count": 0, "page": 1, "page_size": 10})
     )
     async with AgentToolsClient(base_url="https://api.example", token="t") as c:
         await c.search_papers(authors=["Hinton", "LeCun"])
@@ -132,7 +141,7 @@ async def test_search_papers_maps_authors_to_filter():
 @respx.mock
 async def test_search_papers_maps_year_range():
     route = respx.post("https://api.example/meta-search").mock(
-        return_value=Response(200, json={"hits": [], "total": 0, "page": 1, "page_size": 10})
+        return_value=Response(200, json={"results": [], "total_count": 0, "page": 1, "page_size": 10})
     )
     async with AgentToolsClient(base_url="https://api.example", token="t") as c:
         await c.search_papers(year_from=2020, year_to=2023)
@@ -148,7 +157,7 @@ async def test_search_papers_maps_year_range():
 @respx.mock
 async def test_search_papers_maps_sort_by_year():
     route = respx.post("https://api.example/meta-search").mock(
-        return_value=Response(200, json={"hits": [], "total": 0, "page": 1, "page_size": 10})
+        return_value=Response(200, json={"results": [], "total_count": 0, "page": 1, "page_size": 10})
     )
     async with AgentToolsClient(base_url="https://api.example", token="t") as c:
         await c.search_papers(sort_by_year="desc")
@@ -166,7 +175,7 @@ async def test_sort_by_year_auto_with_query_keeps_relevance():
     """auto（默认）+ query：不加年份排序——保 BM25 相关性，软加权可用。
     显式排序会让 query 退化为命中过滤（后端 sort+query 语义），auto 必须避开。"""
     route = respx.post("https://api.example/meta-search").mock(
-        return_value=Response(200, json={"hits": [], "total": 0, "page": 1, "page_size": 10})
+        return_value=Response(200, json={"results": [], "total_count": 0, "page": 1, "page_size": 10})
     )
     async with AgentToolsClient(base_url="https://api.example", token="t") as c:
         await c.search_papers(query="transformer")
@@ -180,7 +189,7 @@ async def test_sort_by_year_auto_with_query_keeps_relevance():
 async def test_sort_by_year_auto_without_query_defaults_to_desc():
     """auto（默认）+ 纯结构化筛选：按年份降序——后端无排序时是 unique_id 序（实质乱序）。"""
     route = respx.post("https://api.example/meta-search").mock(
-        return_value=Response(200, json={"hits": [], "total": 0, "page": 1, "page_size": 10})
+        return_value=Response(200, json={"results": [], "total_count": 0, "page": 1, "page_size": 10})
     )
     async with AgentToolsClient(base_url="https://api.example", token="t") as c:
         await c.search_papers(authors=["Hinton"])
@@ -197,7 +206,7 @@ async def test_sort_by_year_auto_without_query_defaults_to_desc():
 async def test_sort_by_year_auto_yields_to_sort_advanced():
     """auto + sort_advanced：显式排序优先，不叠加年份排序。"""
     route = respx.post("https://api.example/meta-search").mock(
-        return_value=Response(200, json={"hits": [], "total": 0, "page": 1, "page_size": 10})
+        return_value=Response(200, json={"results": [], "total_count": 0, "page": 1, "page_size": 10})
     )
     async with AgentToolsClient(base_url="https://api.example", token="t") as c:
         await c.search_papers(sort_advanced=[{"field": "citation_count", "order": "SORT_ORDER_DESC"}])
@@ -218,7 +227,7 @@ async def test_sort_by_year_invalid_value_raises():
 @respx.mock
 async def test_search_papers_maps_journals_and_subjects():
     route = respx.post("https://api.example/meta-search").mock(
-        return_value=Response(200, json={"hits": [], "total": 0, "page": 1, "page_size": 10})
+        return_value=Response(200, json={"results": [], "total_count": 0, "page": 1, "page_size": 10})
     )
     async with AgentToolsClient(base_url="https://api.example", token="t") as c:
         await c.search_papers(journals=["Nature"], subjects=["biology"])
@@ -232,7 +241,7 @@ async def test_search_papers_maps_journals_and_subjects():
 @respx.mock
 async def test_search_papers_maps_filters_advanced():
     route = respx.post("https://api.example/meta-search").mock(
-        return_value=Response(200, json={"hits": [], "total": 0, "page": 1, "page_size": 10})
+        return_value=Response(200, json={"results": [], "total_count": 0, "page": 1, "page_size": 10})
     )
     async with AgentToolsClient(base_url="https://api.example", token="t") as c:
         await c.search_papers(filters_advanced=[
@@ -251,7 +260,7 @@ async def test_search_papers_maps_filters_advanced():
 @respx.mock
 async def test_search_papers_passthrough_keeps_only_canonical_fields():
     route = respx.post("https://api.example/meta-search").mock(
-        return_value=Response(200, json={"hits": [], "total": 0, "page": 1, "page_size": 10})
+        return_value=Response(200, json={"results": [], "total_count": 0, "page": 1, "page_size": 10})
     )
     async with AgentToolsClient(base_url="https://api.example", token="t") as c:
         await c.search_papers(query="x", page=2, page_size=20, fields=["title"])
@@ -265,7 +274,7 @@ async def test_search_papers_passthrough_keeps_only_canonical_fields():
 async def test_search_papers_freshness_boost_passthrough():
     """freshness_boost 直接透传到 /meta-search payload。"""
     route = respx.post("https://api.example/meta-search").mock(
-        return_value=Response(200, json={"hits": [], "total": 0, "page": 1, "page_size": 10})
+        return_value=Response(200, json={"results": [], "total_count": 0, "page": 1, "page_size": 10})
     )
     async with AgentToolsClient(base_url="https://api.example", token="t") as c:
         await c.search_papers(query="transformer", freshness_boost="STRONG")

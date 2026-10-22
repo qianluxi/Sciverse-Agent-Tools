@@ -1,5 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { randomUUID } from "node:crypto";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { ConfigError, loadConfig } from "../src/config.js";
+
+beforeEach(() => {
+  const isolatedHome = join(tmpdir(), `sciverse-mcp-config-${randomUUID()}`);
+  vi.stubEnv("HOME", isolatedHome);
+  vi.stubEnv("USERPROFILE", isolatedHome);
+  vi.stubEnv("SCIVERSE_API_TOKEN", "");
+  vi.stubEnv("SCIVERSE_BASE_URL", "");
+});
+
+afterEach(() => vi.unstubAllEnvs());
 
 describe("loadConfig", () => {
   it("returns token + default baseUrl when only token is set", () => {

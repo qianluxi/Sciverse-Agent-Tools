@@ -23,8 +23,11 @@ from sciverse.credentials import (
 
 @pytest.fixture
 def tmp_home(tmp_path, monkeypatch):
-    """把 HOME 指向 tmp，让凭据文件落在 tmp_path/.sciverse/credentials.json。"""
+    """把 SDK 凭据路径隔离到临时目录，避免读写开发者的真实凭据。"""
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    isolated_path = tmp_path / ".sciverse" / "credentials.json"
+    monkeypatch.setattr(creds_mod, "credentials_path", lambda: isolated_path)
     # 同时清掉环境变量影响
     monkeypatch.delenv("SCIVERSE_API_TOKEN", raising=False)
     monkeypatch.delenv("SCIVERSE_BASE_URL", raising=False)

@@ -1,46 +1,37 @@
-# 项目开发约定
+# Repository Development Instructions
 
-## 长期任务
+These instructions apply to the whole repository. The research-workbench roadmap only governs work under `research_app/`; it does not constrain independent SDK, MCP, generator, packaging, or release tasks.
 
-科研工作台的开发以根目录 [ROADMAP.zh-CN.md](./ROADMAP.zh-CN.md) 为唯一长期计划。
+## Scope and Ownership
 
-开始任何科研工作台相关开发前，必须：
+- For any task under `research_app/`, also read and follow [`research_app/AGENTS.md`](./research_app/AGENTS.md) and the root [`ROADMAP.zh-CN.md`](./ROADMAP.zh-CN.md).
+- Keep module-specific changes within their owning package unless an interface change requires coordinated updates.
+- Treat `openapi.yaml` as the canonical API contract. Update generated SDK schemas, tools, Skills, and examples through the documented generation workflow; do not hand-edit derived artifacts.
+- Never include API tokens, credentials, local caches, or user research data in commits or logs.
 
-1. 阅读 `ROADMAP.zh-CN.md` 的“计划状态”“不做什么”和当前阶段验收标准。
-2. 确认本次任务属于哪个阶段；不属于当前阶段时，先向用户确认是否提前开发。
-3. 检查功能是否与“不做什么”清单冲突。冲突时不实现，改为集成成熟方案。
-4. 按阶段顺序推进，不跳过当前阶段验收直接开发后续阶段。
-5. 完成后更新 `ROADMAP.zh-CN.md` 的阶段状态、任务勾选框和相关说明。
+## Validation
 
-如果计划不可行，先修改计划和验收标准并说明原因，再修改代码，不静默偏离计划。
+Use the repository CI workflow as the authoritative cross-package validation. Relevant local checks include:
 
-## 项目边界
+| Area | Validation |
+|---|---|
+| Root generators | `uv run pytest tests/ -v` |
+| Python SDK | From `packages/python`: `uv run pytest tests/ -v --ignore tests/test_contract.py` |
+| TypeScript SDK | From `packages/typescript`: `npm run typecheck` and `npx vitest run --exclude 'tests/contract.test.ts'` |
+| MCP server | From `packages/mcp`: `npm run build` and `npm test` |
+| OpenAPI | `npx --yes @stoplight/spectral-cli@6 lint openapi.yaml` |
+| Derived artifacts | `bash scripts/build.sh`, then verify the generated diff |
+| Research app | Install `research_app/requirements.txt` and the local SDK, then run `pytest research_app/tests/ -v` |
 
-- 本项目的定位是 Sciverse 学术发现与证据组织层。
-- 不重复实现 Zotero 的文献库管理、PDF 标注、引用样式和同步能力。
-- 不重复实现 llm-for-zotero 的通用论文问答、库内笔记和综述草稿能力。
-- 优先做“发现 → 筛选 → 导入 Zotero”链路，而不是重建文献管理器。
-- AI 功能默认关闭，必须保留人工确认和原文出处。
+Layer-2 contract tests require explicit test credentials and a test endpoint. Routine CI and offline tests must use mocks and must not depend on production credentials.
 
-## 常用命令
+## Independent Security Work
 
-```powershell
-# 启动科研工作台
-python -m streamlit run research_app/app.py
+Security hardening in `packages/mcp` (including HTTP request-body limits and timeouts) is a separate workstream. Do not mix it into research-workbench roadmap phases; scope and validate it independently when requested.
 
-# 源码语法检查
-python -m py_compile research_app/app.py
+## Completion Standards
 
-# 项目测试（使用当前可用的 Python 环境）
-pytest tests
-```
-
-## 完成标准
-
-每个功能交付至少满足：
-
-- 功能行为符合当前阶段的验收标准。
-- 新增逻辑有对应测试，或在无法自动化测试时说明手工验证步骤。
-- 界面错误使用可理解的中文提示，不泄露 Token。
-- 更新 `ROADMAP.zh-CN.md` 的状态，必要时更新 `research_app/README.zh-CN.md`。
-- 不提交与当前任务无关的改动，不提交密钥、Token 或本地缓存。
+- Add or update tests for behavioral changes; report unavailable checks and their blockers.
+- Update the owning package's documentation when usage changes.
+- Keep changes focused and preserve unrelated worktree changes.
+- Do not commit or push unless explicitly requested.

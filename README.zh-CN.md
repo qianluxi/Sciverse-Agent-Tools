@@ -351,7 +351,7 @@ list_catalog(include_sample_values=true)         # 首次接入调一次 —— 
 
 ```
 search_papers(authors=[...], year_from=2020)     # 先按结构化条件缩窄
-    └─▶ hits[].doc_id 列表
+    └─▶ results[].doc_id 列表
             └─▶ semantic_search(query="...")     # 在缩窄结果里语义检索
                                                  # （需自行二次过滤 ——
                                                  #  semantic_search 不支持 doc_id 白名单）

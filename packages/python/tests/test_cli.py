@@ -3,14 +3,19 @@ from __future__ import annotations
 
 import pytest
 
+import sciverse.credentials
 from sciverse.cli import main
 
 
 @pytest.fixture
 def tmp_home(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.delenv("SCIVERSE_API_TOKEN", raising=False)
     monkeypatch.delenv("SCIVERSE_BASE_URL", raising=False)
+    isolated_credentials = tmp_path / ".sciverse" / "credentials.json"
+    monkeypatch.setattr(sciverse.credentials, "credentials_path", lambda: isolated_credentials)
+    monkeypatch.setattr("sciverse.cli.credentials_path", lambda: isolated_credentials)
     return tmp_path
 
 
@@ -96,7 +101,10 @@ def _patch_client(method_name: str, return_value):
 
 
 def test_search_basic(logged_in, capsys):
-    p, inst = _patch_client("search_papers", {"hits": [{"doc_id": "p_1", "title": "T"}], "total": 1})
+    p, inst = _patch_client(
+        "search_papers",
+        {"results": [{"doc_id": "p_1", "title": "T"}], "total_count": 1, "page": 1, "page_size": 10},
+    )
     with p:
         code = main(["search", "transformer", "--year-from", "2020", "--author", "Hinton"])
     assert code == 0
@@ -107,19 +115,19 @@ def test_search_basic(logged_in, capsys):
     assert call_kwargs["authors"] == ["Hinton"]
     out = capsys.readouterr().out
     data = json.loads(out)
-    assert data["hits"][0]["doc_id"] == "p_1"
+    assert data["results"][0]["doc_id"] == "p_1"
 
 
 def test_search_sort_by_year_passed_through_verbatim(logged_in, capsys):
     """CLI 把 sort_by_year 原样透传给 SDK（auto/none 语义由 client 统一解析，
     避免 CLI 与 SDK 各解析一套出现渠道分叉——曾经 CLI 默认 desc、SDK 默认无排序）。"""
-    p, inst = _patch_client("search_papers", {"hits": [], "total": 0})
+    p, inst = _patch_client("search_papers", {"results": [], "total_count": 0, "page": 1, "page_size": 10})
     with p:
         code = main(["search", "x", "--sort-by-year", "none"])
     assert code == 0
     assert inst.search_papers.call_args.kwargs["sort_by_year"] == "none"
 
-    p, inst = _patch_client("search_papers", {"hits": [], "total": 0})
+    p, inst = _patch_client("search_papers", {"results": [], "total_count": 0, "page": 1, "page_size": 10})
     with p:
         code = main(["search", "x"])
     assert code == 0

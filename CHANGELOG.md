@@ -1,3 +1,10 @@
+## [1.1.4](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.1.3...v1.1.4) (2026-10-22)
+
+### Bug Fixes
+
+* move export actions above research results ([a8b8c70](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/a8b8c7025c8fc9cc337ba9c9df41517360fc48de))
+* update token prefix hints for sci_ tokens [skip ci] ([b346373](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/b346373ab11a6b1d444f5fed9b5cc37f78b0a101))
+
 ## [1.1.3](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.1.2...v1.1.3) (2026-10-22)
 
 ### Bug Fixes

@@ -1,3 +1,9 @@
+## [1.3.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.2.0...v1.3.0) (2026-10-22)
+
+### Features
+
+* add citation network explorer ([0adbd82](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/0adbd82a11fae1ca1cfc7456f31f194b504ca66a))
+
 ## [1.2.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.1.4...v1.2.0) (2026-10-22)
 
 ### Features

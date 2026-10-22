@@ -1,3 +1,9 @@
+## [1.3.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.3.0...v1.3.1) (2026-10-22)
+
+### Bug Fixes
+
+* show unique_id in results and graph selector ([43406ab](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/43406ab395b591092f06b46a3ee374edd2c00a05))
+
 ## [1.3.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.2.0...v1.3.0) (2026-10-22)
 
 ### Features

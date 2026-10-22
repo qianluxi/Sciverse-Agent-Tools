@@ -10,8 +10,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
+from research_app.screening import (
+    EXCLUSION_REASONS,
+    candidate_key,
+    duplicate_basis,
+    paper_id,
+)
 
-_SCHEMA_VERSION = 1
+
+_SCHEMA_VERSION = 2
 _MAX_HISTORY_ENTRIES = 50
 _MAX_SAVED_SEARCHES = 100
 _MAX_PARAMS_BYTES = 16 * 1024
@@ -56,7 +63,7 @@ def _migrate(connection: sqlite3.Connection) -> None:
     version = connection.execute("PRAGMA user_version").fetchone()[0]
     if version > _SCHEMA_VERSION:
         raise RuntimeError(f"Research database version {version} is newer than supported.")
-    if version == 0:
+    if version < 1:
         connection.executescript(
             """
             CREATE TABLE search_history (
@@ -77,7 +84,68 @@ def _migrate(connection: sqlite3.Connection) -> None:
             CREATE INDEX search_history_searched_at ON search_history(searched_at DESC);
             """
         )
-        connection.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
+        version = 1
+        connection.execute("PRAGMA user_version = 1")
+    if version < 2:
+        connection.executescript(
+            """
+            CREATE TABLE screening_projects (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                question TEXT NOT NULL,
+                inclusion_criteria TEXT NOT NULL,
+                exclusion_criteria TEXT NOT NULL,
+                identified_count INTEGER NOT NULL DEFAULT 0,
+                duplicate_count INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE screening_candidates (
+                project_id TEXT NOT NULL REFERENCES screening_projects(id) ON DELETE CASCADE,
+                candidate_key TEXT NOT NULL,
+                paper_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                year INTEGER,
+                doi TEXT,
+                status TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending', 'included', 'excluded')),
+                exclusion_reason TEXT,
+                notes TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (project_id, candidate_key)
+            );
+            CREATE INDEX screening_candidates_status
+                ON screening_candidates(project_id, status, updated_at);
+            CREATE TABLE screening_duplicates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id TEXT NOT NULL REFERENCES screening_projects(id) ON DELETE CASCADE,
+                candidate_key TEXT NOT NULL,
+                duplicate_of TEXT NOT NULL,
+                basis TEXT NOT NULL,
+                title TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX screening_duplicates_project
+                ON screening_duplicates(project_id, id DESC);
+            CREATE TABLE screening_audit (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id TEXT NOT NULL REFERENCES screening_projects(id) ON DELETE CASCADE,
+                candidate_key TEXT NOT NULL,
+                old_status TEXT,
+                new_status TEXT NOT NULL,
+                old_reason TEXT,
+                new_reason TEXT,
+                old_notes TEXT,
+                new_notes TEXT,
+                changed_at TEXT NOT NULL
+            );
+            CREATE INDEX screening_audit_project
+                ON screening_audit(project_id, id DESC);
+            """
+        )
+        version = 2
+        connection.execute("PRAGMA user_version = 2")
 
 
 @contextmanager
@@ -205,7 +273,7 @@ def restore_saved_searches_backup(data: bytes) -> int:
         raise ValueError("备份文件不是有效的 UTF-8 JSON。") from error
     if not isinstance(payload, dict) or payload.get("format") != _BACKUP_FORMAT:
         raise ValueError("备份文件格式不匹配。")
-    if payload.get("schema_version") != _SCHEMA_VERSION:
+    if payload.get("schema_version") not in {1, _SCHEMA_VERSION}:
         raise ValueError("备份文件版本不受支持。")
     _reject_secrets(payload)
 
@@ -249,3 +317,252 @@ def restore_saved_searches_backup(data: bytes) -> int:
             )
             saved_inserted += cursor.rowcount
     return saved_inserted
+
+
+def _screening_project(connection: sqlite3.Connection, project_id: str) -> sqlite3.Row:
+    row = connection.execute(
+        "SELECT * FROM screening_projects WHERE id = ?", (project_id,)
+    ).fetchone()
+    if row is None:
+        raise ValueError("综述项目不存在。")
+    return row
+
+
+def create_screening_project(
+    name: str,
+    question: str,
+    inclusion_criteria: str,
+    exclusion_criteria: str,
+) -> str:
+    name = name.strip()
+    question = question.strip()
+    inclusion_criteria = inclusion_criteria.strip()
+    exclusion_criteria = exclusion_criteria.strip()
+    if not name or len(name) > 100:
+        raise ValueError("项目名称需为 1 至 100 个字符。")
+    if not question or len(question) > 500:
+        raise ValueError("研究问题需为 1 至 500 个字符。")
+    if len(inclusion_criteria) > 2000 or len(exclusion_criteria) > 2000:
+        raise ValueError("纳入/排除标准不能超过 2000 个字符。")
+    project_id = uuid.uuid4().hex
+    now = _timestamp()
+    with _connection() as connection:
+        connection.execute(
+            """INSERT INTO screening_projects(
+                   id, name, question, inclusion_criteria, exclusion_criteria,
+                   identified_count, duplicate_count, created_at, updated_at
+               ) VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?)""",
+            (project_id, name, question, inclusion_criteria, exclusion_criteria, now, now),
+        )
+    return project_id
+
+
+def list_screening_projects() -> list[dict[str, Any]]:
+    with _connection() as connection:
+        rows = connection.execute(
+            "SELECT * FROM screening_projects ORDER BY updated_at DESC, name COLLATE NOCASE"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_screening_project(project_id: str) -> dict[str, Any]:
+    with _connection() as connection:
+        return dict(_screening_project(connection, project_id))
+
+
+def add_screening_candidates(project_id: str, papers: list[dict[str, Any]]) -> dict[str, int]:
+    if len(papers) > 500:
+        raise ValueError("单次最多加入 500 条候选文献。")
+    now = _timestamp()
+    added = 0
+    duplicates = 0
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        for index, paper in enumerate(papers):
+            key = candidate_key(paper, index)
+            title = str(paper.get("title") or "（暂无标题）")[:1000]
+            year = paper.get("publication_published_year")
+            try:
+                year = int(year) if year is not None else None
+            except (TypeError, ValueError):
+                year = None
+            doi = str(paper.get("doi") or "") or None
+            cursor = connection.execute(
+                """INSERT OR IGNORE INTO screening_candidates(
+                       project_id, candidate_key, paper_id, title, year, doi,
+                       status, notes, created_at, updated_at
+                   ) VALUES (?, ?, ?, ?, ?, ?, 'pending', '', ?, ?)""",
+                (project_id, key, paper_id(paper, key), title, year, doi, now, now),
+            )
+            if cursor.rowcount:
+                added += 1
+            else:
+                duplicates += 1
+                connection.execute(
+                    """INSERT INTO screening_duplicates(
+                           project_id, candidate_key, duplicate_of, basis, title, created_at
+                       ) VALUES (?, ?, ?, ?, ?, ?)""",
+                    (project_id, key, key, duplicate_basis(key), title, now),
+                )
+        identified = len(papers)
+        connection.execute(
+            """UPDATE screening_projects
+               SET identified_count = identified_count + ?,
+                   duplicate_count = duplicate_count + ?,
+                   updated_at = ?
+               WHERE id = ?""",
+            (identified, duplicates, now, project_id),
+        )
+    return {"identified": len(papers), "added": added, "duplicates": duplicates}
+
+
+def list_screening_candidates(
+    project_id: str,
+    *,
+    status: str | None = None,
+    page: int = 1,
+    page_size: int = 10,
+) -> tuple[list[dict[str, Any]], int]:
+    if status is not None and status not in {"pending", "included", "excluded"}:
+        raise ValueError("筛选状态无效。")
+    page = max(1, int(page))
+    page_size = max(1, min(int(page_size), 100))
+    where = "project_id = ?"
+    params: list[Any] = [project_id]
+    if status:
+        where += " AND status = ?"
+        params.append(status)
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        total = connection.execute(
+            f"SELECT COUNT(*) FROM screening_candidates WHERE {where}", params
+        ).fetchone()[0]
+        rows = connection.execute(
+            f"""SELECT * FROM screening_candidates WHERE {where}
+                ORDER BY updated_at, title LIMIT ? OFFSET ?""",
+            [*params, page_size, (page - 1) * page_size],
+        ).fetchall()
+    return [dict(row) for row in rows], total
+
+
+def list_all_screening_candidates(project_id: str) -> list[dict[str, Any]]:
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        rows = connection.execute(
+            "SELECT * FROM screening_candidates WHERE project_id = ? ORDER BY title",
+            (project_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def set_screening_decision(
+    project_id: str,
+    candidate_key_value: str,
+    status: str,
+    *,
+    reason: str | None = None,
+    notes: str = "",
+) -> bool:
+    if status not in {"pending", "included", "excluded"}:
+        raise ValueError("筛选状态无效。")
+    if status == "excluded":
+        if reason not in EXCLUSION_REASONS:
+            raise ValueError("排除时必须选择标准排除原因。")
+    else:
+        reason = None
+    notes = str(notes or "").strip()
+    if len(notes) > 2000:
+        raise ValueError("备注不能超过 2000 个字符。")
+    now = _timestamp()
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        row = connection.execute(
+            """SELECT status, exclusion_reason, notes FROM screening_candidates
+               WHERE project_id = ? AND candidate_key = ?""",
+            (project_id, candidate_key_value),
+        ).fetchone()
+        if row is None:
+            raise ValueError("候选文献不存在。")
+        if (
+            row["status"] == status
+            and (row["exclusion_reason"] or None) == reason
+            and row["notes"] == notes
+        ):
+            return False
+        connection.execute(
+            """UPDATE screening_candidates
+               SET status = ?, exclusion_reason = ?, notes = ?, updated_at = ?
+               WHERE project_id = ? AND candidate_key = ?""",
+            (status, reason, notes, now, project_id, candidate_key_value),
+        )
+        connection.execute(
+            """INSERT INTO screening_audit(
+                   project_id, candidate_key, old_status, new_status,
+                   old_reason, new_reason, old_notes, new_notes, changed_at
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                project_id,
+                candidate_key_value,
+                row["status"],
+                status,
+                row["exclusion_reason"],
+                reason,
+                row["notes"],
+                notes,
+                now,
+            ),
+        )
+        connection.execute(
+            "UPDATE screening_projects SET updated_at = ? WHERE id = ?",
+            (now, project_id),
+        )
+    return True
+
+
+def screening_stats(project_id: str) -> dict[str, int]:
+    with _connection() as connection:
+        project = _screening_project(connection, project_id)
+        counts = {
+            row["status"]: row["count"]
+            for row in connection.execute(
+                """SELECT status, COUNT(*) AS count FROM screening_candidates
+                   WHERE project_id = ? GROUP BY status""",
+                (project_id,),
+            ).fetchall()
+        }
+    pending = counts.get("pending", 0)
+    included = counts.get("included", 0)
+    excluded = counts.get("excluded", 0)
+    return {
+        "identified": project["identified_count"],
+        "duplicates": project["duplicate_count"],
+        "unique": pending + included + excluded,
+        "pending": pending,
+        "included": included,
+        "excluded": excluded,
+        "screened": included + excluded,
+    }
+
+
+def list_screening_duplicates(project_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    limit = max(1, min(limit, 500))
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        rows = connection.execute(
+            """SELECT * FROM screening_duplicates WHERE project_id = ?
+               ORDER BY id DESC LIMIT ?""",
+            (project_id, limit),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_screening_audit(project_id: str, limit: int = 100) -> list[dict[str, Any]]:
+    limit = max(1, min(limit, 1000))
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        rows = connection.execute(
+            """SELECT * FROM screening_audit WHERE project_id = ?
+               ORDER BY id DESC LIMIT ?""",
+            (project_id, limit),
+        ).fetchall()
+    return [dict(row) for row in rows]

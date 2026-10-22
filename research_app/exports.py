@@ -5,6 +5,8 @@ import io
 import re
 from typing import Any
 
+from research_app.screening import STATUS_LABELS
+
 
 def author_names(paper: dict[str, Any]) -> list[str]:
     authors = paper.get("author") or paper.get("authors") or []
@@ -149,3 +151,37 @@ def export_markdown(papers: list[dict[str, Any]]) -> bytes:
             lines.extend(["", str(abstract)])
         sections.append("\n".join(lines))
     return ("\n\n---\n\n".join(sections) + ("\n" if sections else "")).encode("utf-8")
+
+
+def export_screening_csv(candidates: list[dict[str, Any]]) -> bytes:
+    output = io.StringIO(newline="")
+    columns = [
+        "candidate_key",
+        "paper_id",
+        "title",
+        "year",
+        "doi",
+        "status",
+        "status_label",
+        "exclusion_reason",
+        "notes",
+        "updated_at",
+    ]
+    writer = csv.DictWriter(output, fieldnames=columns)
+    writer.writeheader()
+    for candidate in candidates:
+        writer.writerow(
+            {
+                "candidate_key": candidate.get("candidate_key", ""),
+                "paper_id": candidate.get("paper_id", ""),
+                "title": candidate.get("title", ""),
+                "year": candidate.get("year", ""),
+                "doi": candidate.get("doi", ""),
+                "status": candidate.get("status", ""),
+                "status_label": STATUS_LABELS.get(candidate.get("status", ""), ""),
+                "exclusion_reason": candidate.get("exclusion_reason") or "",
+                "notes": candidate.get("notes", ""),
+                "updated_at": candidate.get("updated_at", ""),
+            }
+        )
+    return output.getvalue().encode("utf-8-sig")

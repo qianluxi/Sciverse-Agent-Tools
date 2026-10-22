@@ -90,7 +90,20 @@ def test_saved_search_backup_restores_and_is_idempotent(monkeypatch, tmp_path):
 
 def test_saved_search_backup_rejects_credentials(monkeypatch, tmp_path):
     _use_database(monkeypatch, tmp_path)
-    backup = b'{"format":"sciverse-research-workbench","schema_version":1,"token":"secret"}'
+    backup = b'{"format":"sciverse-research-workbench","schema_version":2,"token":"secret"}'
 
     with pytest.raises(ValueError, match="cannot contain credentials"):
         storage.restore_saved_searches_backup(backup)
+
+
+def test_v1_saved_search_backup_remains_restorable(monkeypatch, tmp_path):
+    _use_database(monkeypatch, tmp_path)
+    backup = (
+        b'{"format":"sciverse-research-workbench","schema_version":1,'
+        b'"saved_searches":[{"id":"legacy","name":"Legacy","mode":"semantic",'
+        b'"params":{"query":"old search"},"created_at":"2026-01-01T00:00:00+00:00",'
+        b'"updated_at":"2026-01-01T00:00:00+00:00"}]}'
+    )
+
+    assert storage.restore_saved_searches_backup(backup) == 1
+    assert storage.list_saved_searches()[0]["name"] == "Legacy"

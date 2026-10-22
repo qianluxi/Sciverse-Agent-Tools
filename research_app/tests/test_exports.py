@@ -6,6 +6,7 @@ from research_app.exports import (
     export_markdown,
     export_results_csv,
     export_ris,
+    export_screening_csv,
     format_authors,
 )
 
@@ -77,3 +78,25 @@ def test_markdown_export_contains_metadata_and_doi_link():
     assert "## A paper" in data
     assert "Researcher" in data
     assert "https://doi.org/10.1000/x" in data
+
+
+def test_screening_csv_contains_decision_and_audit_fields():
+    data = export_screening_csv(
+        [
+            {
+                "candidate_key": "doi:10.1/x",
+                "paper_id": "paper:1",
+                "title": "筛选文献",
+                "year": 2024,
+                "doi": "10.1/x",
+                "status": "excluded",
+                "exclusion_reason": "主题不相关",
+                "notes": "不符合研究问题",
+                "updated_at": "2026-10-22T00:00:00+00:00",
+            }
+        ]
+    ).decode("utf-8-sig")
+
+    assert "排除" in data
+    assert "主题不相关" in data
+    assert "不符合研究问题" in data

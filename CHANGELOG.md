@@ -1,3 +1,9 @@
+## [1.1.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.0.0...v1.1.0) (2026-10-22)
+
+### Features
+
+* expand research workbench discovery and export workflow ([e12dcc8](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/e12dcc82e39a13463a7fbdc4f5835881394903e3))
+
 ## 1.0.0 (2026-10-22)
 
 ### Features

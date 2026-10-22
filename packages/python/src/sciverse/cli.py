@@ -63,7 +63,7 @@ def _cmd_login(args: argparse.Namespace) -> int:
     print("Sciverse 登录")
     print("-" * 40)
     print(f"1. 浏览器将打开控制台 token 页：{CONSOLE_TOKEN_URL}")
-    print("2. 登录后创建 / 复制一个 API Token（形如 sv-xxx）")
+    print("2. 登录后创建 / 复制一个 API Token（形如 sci_xxx）")
     print("3. 把 token 粘贴回这里")
     print("   CMD 中请用鼠标右键粘贴，或按 Shift+Insert；不要按 Ctrl+V。")
     print()
@@ -88,9 +88,9 @@ def _cmd_login(args: argparse.Namespace) -> int:
     if not token:
         print("错误：token 为空", file=sys.stderr)
         return 1
-    if not token.startswith("sv-"):
+    if not token.startswith(("sci_", "sv-")):
         print(
-            "[warn] token 看起来不像 Sciverse 格式（应以 sv- 开头），"
+            "[warn] token 前缀不是常见的 sci_ 或 sv-，"
             "但仍按用户输入保存。",
             file=sys.stderr,
         )

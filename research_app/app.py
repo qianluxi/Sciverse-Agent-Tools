@@ -139,7 +139,7 @@ def _run_stored_search(token: str | None, search: dict[str, Any]) -> None:
 with st.sidebar:
     st.markdown("## 连接 Sciverse")
     st.caption("输入在 Sciverse 控制台申请的 API Token。Token 只用于当前浏览器会话。")
-    entered_token = st.text_input("API Token", type="password", placeholder="sv-...")
+    entered_token = st.text_input("API Token", type="password", placeholder="sci_...")
     token = entered_token.strip() or resolve_token()
     if token:
         st.success("已就绪，可以开始检索。")

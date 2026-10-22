@@ -1,3 +1,9 @@
+## [1.1.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.1.0...v1.1.1) (2026-10-22)
+
+### Bug Fixes
+
+* rerun app after setting token in catalog test ([92b917b](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/92b917b79772a1c5b14524c07a1d59d6c9cf5ae1))
+
 ## [1.1.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.0.0...v1.1.0) (2026-10-22)
 
 ### Features

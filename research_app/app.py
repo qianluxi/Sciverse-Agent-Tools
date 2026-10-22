@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-import asyncio
-import csv
 import html
-import io
 import re
 from typing import Any
 
 import streamlit as st
-from sciverse import AgentToolsClient
 from sciverse.credentials import resolve_token
+
+from research_app.errors import describe_error
+from research_app.exports import export_results_csv, format_authors
+from research_app.service import call_api
 
 
 st.set_page_config(
@@ -43,44 +43,6 @@ st.markdown(
 )
 
 
-async def _call_api(token: str, action: str, **kwargs: Any) -> Any:
-    async with AgentToolsClient(token=token) as client:
-        return await getattr(client, action)(**kwargs)
-
-
-def call_api(token: str, action: str, **kwargs: Any) -> Any:
-    return asyncio.run(_call_api(token, action, **kwargs))
-
-
-def _authors(paper: dict[str, Any]) -> str:
-    authors = paper.get("author") or paper.get("authors") or []
-    if isinstance(authors, str):
-        return authors
-    names = [a.get("name", "") if isinstance(a, dict) else str(a) for a in authors]
-    return ", ".join(name for name in names if name)
-
-
-def _export_csv(papers: list[dict[str, Any]]) -> bytes:
-    output = io.StringIO(newline="")
-    columns = ["title", "authors", "year", "journal", "doi", "abstract", "unique_id", "doc_id"]
-    writer = csv.DictWriter(output, fieldnames=columns)
-    writer.writeheader()
-    for paper in papers:
-        writer.writerow(
-            {
-                "title": paper.get("title", ""),
-                "authors": _authors(paper),
-                "year": paper.get("publication_published_year", ""),
-                "journal": paper.get("publication_venue_name_unified", ""),
-                "doi": paper.get("doi", ""),
-                "abstract": paper.get("abstract") or paper.get("chunk", ""),
-                "unique_id": paper.get("unique_id", ""),
-                "doc_id": paper.get("doc_id", ""),
-            }
-        )
-    return output.getvalue().encode("utf-8-sig")
-
-
 def _display_content(text: str, token: str) -> None:
     image_refs = re.findall(r"!\[([^\]]*)\]\(([^)]+)\)", text)
     readable_text = re.sub(r"!\[([^\]]*)\]\(([^)]+)\)", "", text)
@@ -96,13 +58,11 @@ def _display_content(text: str, token: str) -> None:
 
 
 def _show_error(error: Exception) -> None:
-    response = getattr(error, "response", None)
-    if response is not None:
-        st.error(f"服务暂时无法完成请求（HTTP {response.status_code}）。请检查 Token、检索条件或稍后重试。")
+    message, details = describe_error(error)
+    st.error(message)
+    if details:
         with st.expander("查看错误详情"):
-            st.code(response.text[:2000])
-    else:
-        st.error(f"请求失败：{error}")
+            st.code(details)
 
 
 with st.sidebar:
@@ -154,7 +114,9 @@ with st.form("search_form", border=True):
             quality_label = st.selectbox("检索深度", ["平衡（推荐）", "更快", "更深入"])
         with options[2]:
             st.caption("语义检索会理解问题含义，不只匹配题目中的关键词。")
-        search_clicked = st.form_submit_button("查找相关文献", type="primary", use_container_width=True)
+        search_clicked = st.form_submit_button(
+            "查找相关文献", type="primary", use_container_width=True
+        )
         search_kind = "semantic"
     else:
         query = st.text_input("关键词或题名（可选）", placeholder="例如：climate change adaptation")
@@ -181,8 +143,12 @@ if search_clicked:
         try:
             with st.spinner("正在 Sciverse 学术文献库中检索…"):
                 if mode_label == "智能语义检索":
-                    quality = {"平衡（推荐）": "balanced", "更快": "fast", "更深入": "quality"}[quality_label]
-                    response = call_api(token, "semantic_search", query=query.strip(), top_k=top_k, mode=quality)
+                    quality = {"平衡（推荐）": "balanced", "更快": "fast", "更深入": "quality"}[
+                        quality_label
+                    ]
+                    response = call_api(
+                        token, "semantic_search", query=query.strip(), top_k=top_k, mode=quality
+                    )
                     papers = response.get("hits", [])
                     search_kind = "semantic"
                 else:
@@ -217,7 +183,7 @@ if papers:
     st.caption("选择一篇文献可查看摘要、标识信息和可访问的原文片段。")
     st.download_button(
         "下载文献清单（CSV）",
-        data=_export_csv(papers),
+        data=export_results_csv(papers),
         file_name="sciverse-literature.csv",
         mime="text/csv",
         key="download_results",
@@ -225,7 +191,7 @@ if papers:
 
     for index, paper in enumerate(papers):
         title = paper.get("title") or "（暂无标题）"
-        authors = _authors(paper)
+        authors = format_authors(paper)
         year = paper.get("publication_published_year")
         venue = paper.get("publication_venue_name_unified")
         with st.container(border=True):
@@ -233,7 +199,10 @@ if papers:
             with title_col:
                 st.markdown(f"### {title}")
             with score_col:
-                if st.session_state.get("search_kind") == "semantic" and paper.get("score") is not None:
+                if (
+                    st.session_state.get("search_kind") == "semantic"
+                    and paper.get("score") is not None
+                ):
                     st.metric("相关度", f"{paper['score']:.2f}")
             metadata = " · ".join(str(value) for value in (authors, year, venue) if value)
             safe_metadata = html.escape(metadata or "出版信息未提供")
@@ -267,13 +236,19 @@ if selected:
     elif not accessible:
         st.info("当前账号无法读取这篇论文的全文；可继续使用上方的文献信息。")
     else:
-        offset = selected.get("offset", 0) if st.session_state.get("search_kind") == "semantic" else 0
+        offset = (
+            selected.get("offset", 0) if st.session_state.get("search_kind") == "semantic" else 0
+        )
         if st.button("读取论文原文", type="primary", key="read_content"):
             try:
                 with st.spinner("正在读取论文内容…"):
-                    content = call_api(token, "read_content", doc_id=doc_id, offset=offset, limit=6000)
+                    content = call_api(
+                        token, "read_content", doc_id=doc_id, offset=offset, limit=6000
+                    )
                 st.session_state["paper_text"] = content.get("text", "")
-                st.session_state["content_next_offset"] = content.get("next_offset") if content.get("more") else None
+                st.session_state["content_next_offset"] = (
+                    content.get("next_offset") if content.get("more") else None
+                )
             except Exception as error:
                 _show_error(error)
 
@@ -284,9 +259,13 @@ if selected:
             if next_offset is not None and st.button("继续阅读下一段", key="read_more"):
                 try:
                     with st.spinner("正在读取下一段…"):
-                        content = call_api(token, "read_content", doc_id=doc_id, offset=next_offset, limit=6000)
+                        content = call_api(
+                            token, "read_content", doc_id=doc_id, offset=next_offset, limit=6000
+                        )
                     st.session_state["paper_text"] += content.get("text", "")
-                    st.session_state["content_next_offset"] = content.get("next_offset") if content.get("more") else None
+                    st.session_state["content_next_offset"] = (
+                        content.get("next_offset") if content.get("more") else None
+                    )
                     st.rerun()
                 except Exception as error:
                     _show_error(error)

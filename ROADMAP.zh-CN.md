@@ -8,8 +8,8 @@
 
 | 阶段 | 内容 | 状态 | 验收证据 | 未完成事项 |
 |---|---|---|---|---|
-| A | 计划校准与测试基线 | 进行中 | 本地生成器、SDK、MCP、工作台测试通过；详情见执行记录 | 远端 GitHub Actions 尚未执行 |
-| 0 | 科研工作台工程基础 | 待开始 | — | 服务层拆分、错误策略、最小存储决策 |
+| A | 计划校准与测试基线 | 已完成 | 本地测试及 GitHub Actions #1 均通过 | 无 |
+| 0 | 科研工作台工程基础 | 进行中 | 本地离线测试通过；等待阶段 0 CI 复核 | 推送后复核阶段 0 CI |
 | 1 | 发现与交付 MVP | 待开始 | — | 分页、筛选、检索历史、Zotero 导出 |
 | 2 | 轻量系统综述筛选 | 待开始 | — | 筛选队列、排除原因、可追溯记录 |
 | 3 | 引用网络 | 待开始 | — | 按需展开的关系图和导出 |
@@ -252,7 +252,7 @@ SQLite 仅保存：
 - 单元测试：响应解析、导出格式、筛选状态流转、PRISMA 计数。
 - 集成测试：使用 mock API 验证检索、分页、引用关系和全文读取。
 - 界面测试：Streamlit AppTest 覆盖主要空状态、错误状态和结果状态。
-- 手工验收：每条阶段验收标准都需要真实 Sciverse Token 验证一次。
+- 若某阶段明确要求线上端到端契约验证，只使用专用测试 Token 和测试 endpoint；无测试环境时记录为未验证，不用生产凭据替代。此项不阻塞使用 mock 的离线测试或 CI。
 - 日志：记录请求 ID、HTTP 状态和耗时，不记录 Token 和用户隐私内容。
 
 ## 7. 成功指标与验证方式
@@ -281,7 +281,7 @@ SQLite 仅保存：
 | 结构化检索结果被误读 | 页面空结果或消费字段错误 | 以 OpenAPI `results` 契约和离线契约测试为准，语义检索独立使用 `hits` |
 | MCP HTTP 请求体无上限 | 大请求可能消耗过多内存 | 作为 `packages/mcp` 独立安全任务估算和验收，不占用工作台阶段 |
 
-## 9. 阶段 A 执行记录与下一阶段
+## 9. 阶段 A 与阶段 0 执行记录
 
 阶段 A 验证记录：
 
@@ -292,15 +292,27 @@ SQLite 仅保存：
 - MCP：`npm run build` 通过；`npm test`，50 passed。
 - OpenAPI：Spectral 0 errors、1 warning（现有 `info.contact` 缺失，与本次契约校准无关）。
 - 本地 `git diff --check` 通过。
-- 未运行：Layer-2 实际服务契约测试（需要显式测试 Token 和测试 endpoint）；GitHub Actions（改动尚未推送）。
-- 未解决事项：等待远端 CI 复核；Spectral `info.contact` warning 作为单独的契约维护项，不阻塞本阶段。
+- Layer-2 实际服务契约测试未运行：需要显式测试 Token 和测试 endpoint，不属于无凭据 CI 门槛。
+- GitHub Actions：[#1 成功](https://github.com/qianluxi/Sciverse-Agent-Tools/actions/runs/39713503295)，commit `48966b4`，包含离线科研工作台冒烟测试。
+- 非阻塞维护项：Spectral 对 `info.contact` 缺失给出 1 条 warning；本次没有改动 OpenAPI 契约。
 
-阶段 A 验收通过后，下一步只执行阶段 0：
+阶段 A 已通过。阶段 0 当前任务：
 
-- [ ] 拆分 `app.py` 中的 UI、Sciverse 服务调用、错误映射和导出逻辑。
-- [ ] 明确客户端生命周期及有界超时/重试行为。
-- [ ] 建立覆盖现有检索、全文续读、图片和 CSV 功能的离线回归测试。
-- [ ] 记录 SQLite 数据生命周期方案；不提前建立完整筛选数据库。
-- [ ] 在 CI 中运行工作台测试并保持不依赖生产凭据。
+- [x] 拆分 `app.py` 中的 UI、Sciverse 服务调用、错误映射和导出逻辑。
+- [x] 明确客户端生命周期及有界超时/重试行为。
+- [x] 建立覆盖语义检索、结构化检索、全文续读、图片和 CSV 的离线回归测试。
+- [x] 记录 SQLite 数据生命周期方案；没有提前建立完整筛选数据库。
+- [ ] 在 CI 中运行阶段 0 新增的全套工作台测试并保持不依赖 Token。
+
+阶段 0 本地记录：
+
+- 模块：`research_app/service.py`、`errors.py` 和 `exports.py` 分离 SDK 调用、错误映射与 CSV 导出；`app.py` 保留界面逻辑。
+- 客户端在单次 `asyncio.run()` 生命周期中创建并关闭；400/401 不重试，429 遵循 `Retry-After` 并限制自动等待，瞬时 5xx 有界退避，超时不自动重试。
+- `pytest research_app/tests/ -v`：25 passed，mock 覆盖结构化/语义检索、原文续读、图片、CSV、空结果、错误文案、Token 脱敏及重试策略。
+- `pytest tests/ -v`：36 passed、2 skipped。
+- Python SDK：52 passed、1 skipped（跳过 Layer-2 契约测试）。
+- `ruff format --check research_app` 和 `ruff check --select E4,E7,E9,F research_app` 通过。
+- 未运行：远端阶段 0 CI，待当前本地改动推送后复核。
+- Layer-2 端到端测试需要专用测试 Token 和测试 endpoint，作为独立线上验证项；不阻塞阶段 0 离线验收。
 
 完成阶段 0 并通过验收后，进入阶段 1“发现与交付”；阶段 1 才实现分页、排序、RIS/BibTeX 和引用/参考文献列表。阶段 2 的轻量筛选排在引用网络和趋势分析之前，因为首要产品工作流确定为“发现 → 筛选 → 导入 Zotero”。

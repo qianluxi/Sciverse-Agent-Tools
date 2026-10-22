@@ -324,12 +324,13 @@ SQLite 仅保存：
 - [x] 为存储迁移、过滤、分页、导出和关系列表增加离线测试。
 - [x] 增加已保存检索的 JSON 备份/恢复；SQLite 损坏时给出本地存储不可用提示。
 - [ ] 手工确认 RIS/BibTeX 可导入 Zotero；至少 3 名目标用户完成检索到 RIS 下载的计时任务。
-- [ ] 推送后由 CI 复核阶段 1 新增测试。
+- [ ] 推送 CI 修复后由 GitHub Actions 复核阶段 1 新增测试。
 
 阶段 1 本地记录：
 
 - `pytest research_app/tests/ -v`：49 passed、1 skipped（POSIX 文件权限仅在非 Windows 上检查）；覆盖检索分页、常用/高级过滤、保存检索、结果选择跨页保持、四种导出、引用关系分页、SQLite 保留策略和已保存检索备份恢复。
-- 本阶段改动尚未推送；上一轮 GitHub Actions #2 只验证阶段 0，不涵盖本阶段代码。
+- 使用 Python 3.13 + Streamlit 1.66.1 复现 CI 环境；发现并修复测试在填入 Token 后未重新运行页面、导致点击禁用按钮失败的问题。修复后 49 passed、1 skipped。
+- 首次阶段 1 推送的 GitHub Actions `Research app smoke tests` 因上述测试状态问题失败，其余 jobs 通过；修复尚未推送。
 - 没有运行线上 Sciverse API；阶段 1 自动化测试全部使用 mock。
 - Zotero 实际导入与目标用户计时尚未进行；没有把本地 mock 结果冒充线上验收。
 - 当前 SQLite 仅保存搜索参数和最近检索，不保存 Token、结果全文或附件；已保存检索可导出/恢复 JSON，最近检索不包含在备份中。

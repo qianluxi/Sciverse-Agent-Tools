@@ -270,7 +270,7 @@ def test_catalog_fields_build_typed_advanced_filter_offline(monkeypatch, tmp_pat
     app = AppTest.from_file(str(APP_PATH), default_timeout=30).run(timeout=30)
     next(widget for widget in app.text_input if widget.label == "API Token").set_value(
         "sv-offline-test"
-    )
+    ).run(timeout=30)
     next(button for button in app.button if button.label == "加载可用字段").click().run(timeout=30)
     app.radio[0].set_value("条件筛选").run(timeout=30)
     next(widget for widget in app.selectbox if widget.label == "目录字段").set_value(

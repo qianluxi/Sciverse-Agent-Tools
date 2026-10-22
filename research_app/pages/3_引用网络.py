@@ -132,14 +132,20 @@ center_mode = st.radio("中心来源", ["当前检索结果", "手动输入"], h
 center_paper: dict[str, Any] | None = None
 if center_mode == "当前检索结果":
     if paper_options:
+        st.caption("下拉框显示“标题 · unique_id”；只有带 unique_id 的结果会出现在这里。")
         selected_paper = st.selectbox(
             "当前检索结果",
             paper_options,
-            format_func=lambda paper: paper.get("title") or paper.get("unique_id"),
+            format_func=lambda paper: (
+                f"{paper.get('title') or '（无标题）'} · {paper.get('unique_id')}"
+            ),
         )
         center_paper = _center_from_paper(selected_paper)
     else:
-        st.info("主页还没有带 unique_id 的检索结果；可改用手动输入，或先到主页检索。")
+        st.info(
+            "主页还没有带 unique_id 的检索结果。语义检索通常不返回 unique_id；"
+            "请改用主页的“条件筛选”，结果卡片上会显示 unique_id。"
+        )
 else:
     manual_id = st.text_input("中心论文 unique_id", placeholder="paper:10.1000/example")
     manual_title = st.text_input("标题（可选）")

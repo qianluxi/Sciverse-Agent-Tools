@@ -539,6 +539,11 @@ if papers:
             abstract = paper.get("abstract") or paper.get("chunk")
             if abstract:
                 st.write(abstract[:700] + ("…" if len(abstract) > 700 else ""))
+            unique_id = paper.get("unique_id")
+            if unique_id:
+                st.caption(f"unique_id（引用网络可用）：`{unique_id}`")
+            else:
+                st.caption("此结果没有 unique_id；语义检索结果通常不带该字段，可改用条件筛选。")
             st.checkbox("加入导出清单", key=export_key)
             if st.button("查看文献", key=f"select_{index}"):
                 st.session_state["selected_paper"] = paper
@@ -555,6 +560,10 @@ if selected:
     doi = selected.get("doi")
     if doi:
         st.markdown(f"DOI: [{doi}](https://doi.org/{doi})")
+    st.caption(
+        f"unique_id（引用网络）：`{selected.get('unique_id') or '无'}` · "
+        f"doc_id（全文读取）：`{selected.get('doc_id') or '无'}`"
+    )
     abstract = selected.get("abstract") or selected.get("chunk")
     if abstract:
         with st.expander("查看摘要或检索命中的原文片段", expanded=True):

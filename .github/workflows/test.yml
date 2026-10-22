@@ -45,7 +45,7 @@ jobs:
       - name: Install research app and local SDK dependencies
         run: uv pip install --python .venv/bin/python "streamlit>=1.40" --editable ./packages/python
       - name: Run offline research app smoke tests
-        run: uv run pytest research_app/tests/ -v
+        run: .venv/bin/python -m pytest research_app/tests/ -v
 
   typescript:
     name: TypeScript SDK

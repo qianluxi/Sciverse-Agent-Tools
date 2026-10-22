@@ -1,3 +1,9 @@
+## [1.1.3](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.1.2...v1.1.3) (2026-10-22)
+
+### Bug Fixes
+
+* reject malformed API tokens before requests ([c72c888](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/c72c888aa801dda1f351011cd92074825c9720d0))
+
 ## [1.1.2](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.1.1...v1.1.2) (2026-10-22)
 
 ## [1.1.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.1.0...v1.1.1) (2026-10-22)

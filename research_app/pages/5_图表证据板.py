@@ -11,6 +11,7 @@ from research_app.evidence import (
     export_evidence_manifest_csv,
     export_evidence_zip,
     extract_figure_refs,
+    is_readable,
 )
 from research_app.service import call_api
 
@@ -32,16 +33,35 @@ def _show_error(error: Exception) -> None:
 
 
 papers = st.session_state.get("papers", [])
-eligible = [
-    paper
-    for paper in papers
-    if paper.get("doc_id") and paper.get("is_content_accessible", True) is not False
-]
 if not papers:
     st.info("主页还没有检索结果。请先检索，再回到此页提取图表。")
     st.stop()
+
+eligible = [paper for paper in papers if is_readable(paper)]
+with st.expander("查看哪些文献可读全文", expanded=False):
+    st.caption(
+        "可读全文 = 有 doc_id 且 is_content_accessible=true。"
+        "缺少 doc_id 表示没有全文记录；false 表示当前账号无权读取。"
+    )
+    st.dataframe(
+        [
+            {
+                "标题": paper.get("title") or "（无标题）",
+                "unique_id": paper.get("unique_id") or "",
+                "doc_id": paper.get("doc_id") or "",
+                "可读全文": (
+                    "是"
+                    if is_readable(paper)
+                    else ("无全文记录" if not paper.get("doc_id") else "无权限/不可读")
+                ),
+            }
+            for paper in papers
+        ],
+        hide_index=True,
+        use_container_width=True,
+    )
 if not eligible:
-    st.info("当前结果没有可读取全文的论文，无法提取图表。")
+    st.info("当前结果没有 is_content_accessible=true 的论文，无法提取图表。")
     st.stop()
 
 paper_map: dict[str, dict[str, Any]] = {}
@@ -51,8 +71,8 @@ for paper in eligible:
 
 st.markdown("### 选择论文")
 st.caption(
-    f"单次最多选择 {MAX_PAPERS_PER_RUN} 篇；每篇最多提取 {MAX_IMAGES_PER_PAPER} 张图。"
-    "只读取原文第一段，不保存全文。"
+    f"下拉框只列出可读全文的论文；单次最多选择 {MAX_PAPERS_PER_RUN} 篇，"
+    f"每篇最多提取 {MAX_IMAGES_PER_PAPER} 张图。只读取原文第一段，不保存全文。"
 )
 selected_ids = st.multiselect(
     "可读取全文的检索结果",

@@ -5,6 +5,7 @@ from research_app.evidence import (
     export_evidence_manifest_csv,
     export_evidence_zip,
     extract_figure_refs,
+    is_readable,
 )
 
 
@@ -64,3 +65,11 @@ def test_manifest_csv_has_stable_columns():
     ).decode("utf-8-sig")
 
     assert data.splitlines()[0] == ("paper_id,title,year,doi,alt,file_name,mime,note,archive_name")
+
+
+
+def test_is_readable_requires_doc_id_and_permission():
+    assert is_readable({"doc_id": "d", "is_content_accessible": True})
+    assert not is_readable({"doc_id": "d", "is_content_accessible": False})
+    assert not is_readable({"doc_id": "d"})
+    assert not is_readable({"is_content_accessible": True})

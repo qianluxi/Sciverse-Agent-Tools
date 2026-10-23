@@ -12,6 +12,10 @@ MAX_IMAGES_PER_PAPER = 4
 MAX_PAPERS_PER_RUN = 5
 
 
+def is_readable(paper: dict[str, Any]) -> bool:
+    return bool(paper.get("doc_id")) and paper.get("is_content_accessible") is True
+
+
 def extract_figure_refs(
     markdown: str, *, limit: int = MAX_IMAGES_PER_PAPER
 ) -> list[dict[str, str]]:

@@ -487,6 +487,12 @@ if papers:
                 f"已补全 {enrichment['matched']}/{enrichment['total']} 条 unique_id；"
                 "未匹配的结果不能用于引用网络。"
             )
+    selected_now = st.session_state.get("selected_paper")
+    if selected_now:
+        st.info(
+            f"当前查看：{selected_now.get('title') or '（无标题）'}。"
+            "文献详情和“读取论文原文”在页面下方“03 / 文献阅读”。"
+        )
     if st.session_state.get("search_kind") == "structured":
         search_params = st.session_state.get("search_params", {})
         current_page = search_params.get("page", 1)
@@ -607,6 +613,7 @@ if papers:
                 st.session_state["paper_text"] = ""
                 st.session_state["content_next_offset"] = None
                 st.session_state["paper_relations"] = None
+                st.toast("已选择文献，详情在下方“03 / 文献阅读”。")
 
 
 selected = st.session_state.get("selected_paper")

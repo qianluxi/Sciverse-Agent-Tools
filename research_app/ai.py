@@ -70,7 +70,9 @@ class OpenAICompatibleClient:
         return f"{self.base_url}/chat/completions"
 
     def chat(self, messages: list[dict[str, str]], *, max_tokens: int = 2048) -> str:
-        for attempt in range(2):
+        budgets = sorted({max_tokens, max(max_tokens, 8192), 16384})
+        for attempt, budget in enumerate(budgets):
+            max_tokens = budget
             try:
                 response = httpx.post(
                     self.endpoint,
@@ -109,8 +111,7 @@ class OpenAICompatibleClient:
             finish_reason = choice.get("finish_reason")
             reasoning = message.get("reasoning_content") or ""
             refusal = message.get("refusal")
-            if attempt == 0 and max_tokens < 4096 and (finish_reason == "length" or reasoning):
-                max_tokens = 4096
+            if attempt < len(budgets) - 1 and (finish_reason == "length" or reasoning):
                 continue
             detail = f"finish_reason={finish_reason!r}, reasoning_chars={len(reasoning)}"
             if refusal:

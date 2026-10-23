@@ -173,7 +173,7 @@ def test_client_retries_empty_length_response_with_larger_budget(monkeypatch):
     )
 
     assert client.chat([{"role": "user", "content": "hi"}]) == "OK"
-    assert calls == [2048, 4096]
+    assert calls == [2048, 8192]
 
 
 def test_client_reports_empty_content_reason(monkeypatch):

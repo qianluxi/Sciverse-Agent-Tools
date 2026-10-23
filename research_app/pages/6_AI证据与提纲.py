@@ -51,6 +51,7 @@ with st.sidebar:
     model = st.text_input(
         "模型名",
         key="ai_model",
+        help="OpenCode Go 推荐 glm-5.3-flash 等非推理模型；推理模型可能耗尽输出预算。",
     )
     st.caption("AI 配置在当前浏览器会话内保留；关闭浏览器后清除。")
     if st.button(

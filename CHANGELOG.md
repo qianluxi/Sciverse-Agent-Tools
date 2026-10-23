@@ -1,3 +1,9 @@
+## [1.7.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.7.0...v1.7.1) (2026-10-23)
+
+### Bug Fixes
+
+* show full-text eligibility and selection feedback ([119ff87](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/119ff87757a83711aa3b7246eb1c72eb1776fdb8))
+
 ## [1.7.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.6.0...v1.7.0) (2026-10-23)
 
 ### Features

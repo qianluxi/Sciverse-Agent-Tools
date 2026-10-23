@@ -1,3 +1,13 @@
+## [1.7.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.6.0...v1.7.0) (2026-10-23)
+
+### Features
+
+* add figure evidence board ([dd2d377](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/dd2d3779d44eb866397f1bd4de5b21a461e2cc3b))
+
+### Bug Fixes
+
+* install matplotlib with research app launcher [skip ci] ([a9fa348](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/a9fa348dda6def6688b1b8232d53445d8d137e96))
+
 ## [1.6.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.5.0...v1.6.0) (2026-10-23)
 
 ### Features

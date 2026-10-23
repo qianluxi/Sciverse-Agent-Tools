@@ -43,7 +43,7 @@ jobs:
       - name: Install root test dependencies
         run: uv sync
       - name: Install research app and local SDK dependencies
-        run: uv pip install --python .venv/bin/python "streamlit>=1.40" --editable ./packages/python
+        run: uv pip install --python .venv/bin/python "streamlit>=1.40" "matplotlib>=3.8" --editable ./packages/python
       - name: Run offline research app smoke tests
         run: .venv/bin/python -m pytest research_app/tests/ -v
 

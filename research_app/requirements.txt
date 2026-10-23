@@ -1,2 +1,3 @@
 sciverse>=0.14.3
 streamlit>=1.40
+matplotlib>=3.8

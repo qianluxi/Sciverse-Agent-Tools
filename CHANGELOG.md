@@ -1,3 +1,9 @@
+## [1.8.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.7.2...v1.8.0) (2026-10-23)
+
+### Features
+
+* add AI evidence workflow and Windows packaging ([2b0f518](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/2b0f5186bd762facaecd05bed012060f3e99b8b1))
+
 ## [1.7.2](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.7.1...v1.7.2) (2026-10-23)
 
 ### Bug Fixes

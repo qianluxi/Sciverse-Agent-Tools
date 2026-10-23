@@ -200,3 +200,13 @@ def test_client_reports_empty_content_reason(monkeypatch):
 
     with pytest.raises(AIError, match="finish_reason='length'"):
         client.chat([{"role": "user", "content": "hi"}])
+
+
+def test_generate_outline_extracts_json_markdown_field():
+    client = FakeClient(['```json\n{"markdown_outline": "# 提纲\\n\\n## 背景\\n证据"}\n```'])
+    evidence = [{"paper_id": "paper:1", "data": {"findings": "improvement"}}]
+
+    outline = generate_outline(client, "What works?", evidence)
+
+    assert outline == "# 提纲\n\n## 背景\n证据"
+    assert "markdown_outline" not in outline

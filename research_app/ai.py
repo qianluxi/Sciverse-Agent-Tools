@@ -204,6 +204,18 @@ def build_outline_messages(question: str, evidence: list[dict[str, Any]]) -> lis
     ]
 
 
+def _outline_markdown(raw: str) -> str:
+    try:
+        payload = parse_json_object(raw)
+    except AIError:
+        return raw.strip()
+    for key in ("markdown_outline", "outline", "markdown", "content"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return raw.strip()
+
+
 def generate_outline(
     client: OpenAICompatibleClient,
     question: str,
@@ -213,7 +225,8 @@ def generate_outline(
         raise ValueError("综述问题不能为空。")
     if not any(item.get("data") for item in evidence):
         raise ValueError("没有可用于生成提纲的证据。")
-    return client.chat(
+    raw = client.chat(
         build_outline_messages(question.strip(), evidence),
         max_tokens=4096,
     )
+    return _outline_markdown(raw)

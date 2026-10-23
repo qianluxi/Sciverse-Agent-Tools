@@ -15,8 +15,8 @@
 | 3 | 引用网络 | 已完成 | 本地 63 项测试、CI 及用户功能验收通过 | 100 节点性能测试用户明确取消 |
 | 4 | 趋势分析 | 已完成 | 本地 70 项测试、CI 及用户真实扩展采样验收通过 | 无 |
 | 5 | 可选增强 | 已完成（当前范围） | 本地 76 项测试、CI 及真实图表提取通过 | AI/桌面转入阶段 6、7 |
-| 6 | AI 证据检索与综述提纲 | 进行中 | 本地 85 项测试通过 | 真实模型服务验收 |
-| 7 | Windows 便携封装 | 进行中 | exe 已构建并启动验证（HTTP 200） | 干净 Windows 环境验收 |
+| 6 | AI 证据检索与综述提纲 | 进行中 | 本地 85 项测试及 CI 通过 | 真实模型服务验收 |
+| 7 | Windows 便携封装 | 进行中 | exe 已构建、启动验证及 CI 通过 | 干净 Windows 环境验收 |
 
 执行规则：
 
@@ -459,8 +459,9 @@ SQLite 仅保存：
 - OpenAI 兼容客户端、证据 JSON 解析、按论文隔离错误、提纲生成和页面均已实现。
 - `pytest research_app/tests/ -v`：85 passed、1 skipped；AI 页面无 Key 状态、JSON 解析和 mock 调用通过。
 - 未使用真实模型 API Key 验收；AI Key 不写入本地存储。
+- GitHub Actions 已通过（[run](https://github.com/qianluxi/Sciverse-Agent-Tools/actions/runs/39934485210)）。
 
 阶段 7 本地记录：
 
 - `scripts/build_desktop.ps1` 已成功生成约 104 MB 的单文件 exe。
-- 已验证 exe 启动本地服务并返回 HTTP 200；尚未在干净 Windows 环境验证。
+- 已验证 exe 启动本地服务并返回 HTTP 200；GitHub Actions 已通过；尚未在干净 Windows 环境验证。

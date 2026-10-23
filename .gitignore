@@ -11,3 +11,8 @@ packages/mcp/dist/
 packages/mcp/src/generated/
 dist/web-skill/
 dist/web-skill.tgz
+
+build/
+dist/SciverseResearchWorkbench.exe
+dist/SciverseResearchWorkbench/
+SciverseResearchWorkbench.spec

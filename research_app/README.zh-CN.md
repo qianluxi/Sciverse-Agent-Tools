@@ -45,6 +45,7 @@ python3 -m streamlit run research_app/app.py
 8. 左侧“引用网络”：选择中心论文，加载引用/被引/相关工作的一层关系，按需继续展开节点；可补全年份、期刊等元数据，按条件过滤，并导出 GraphML 或边列表 CSV。
 9. 左侧“趋势分析”：统计当前检索结果的年份、期刊、作者、学科、关键词、高被引和增长关键词；条件筛选可扩展到最多 5 页，页面显示样本量、请求次数、缺失率和截断风险，并导出统计 ZIP 或 PNG。
 10. 左侧“图表证据板”：从最多 5 篇有全文记录的论文中提取图表（每篇最多 4 张），为每张图添加备注，并导出证据清单 CSV 或图片 ZIP。是否能读以实际读取结果为准；`is_content_accessible=false` 的论文也可以尝试，单个失败不会阻塞其他结果。
+11. 左侧“AI 证据与提纲”：配置 OpenAI 兼容的 Base URL、API Key 和模型名；从最多 5 篇论文中提取研究问题、方法、样本、发现、局限和引文，再生成带来源标注的 Markdown 综述提纲。API Key 只在当前会话使用。
 
 ## 运行离线测试
 
@@ -65,6 +66,27 @@ python -m pytest research_app/tests/ -v
 引用网络的关系接口只返回标题和标识；年份、期刊、引用量需要点击“补全节点元数据”额外发起检索，页面会显示请求次数。未补全的节点标记为 `relation`，不会显示为已知元数据。关系接口只接受 Sciverse 的 `paper:...` unique_id；Semantic Scholar 数字 ID 或仅 DOI 的节点不能继续展开，页面会将其排除在“从哪个节点展开”之外。
 
 若已配置 `SCIVERSE_API_TOKEN` 环境变量，应用也可以直接使用该凭据，无需再次输入。
+
+## AI 证据与提纲
+
+“AI 证据与提纲”页面需要用户自备 OpenAI 兼容服务。填写 Base URL（例如 `https://api.openai.com/v1`）、API Key 和模型名后，可对最多 5 篇论文提取结构化证据并生成 Markdown 提纲。
+
+- API Key 只在当前会话使用，不写入本地数据库或源码。
+- 每条证据保留论文 ID；模型输出仍需人工核对原文。
+- AI 失败按论文隔离，不阻塞其他论文。
+- 不会自动写入 Zotero 或生成最终论文。
+
+## Windows 便携版 exe
+
+需要构建便携版时，在仓库根目录运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build_desktop.ps1
+```
+
+构建结果位于 `dist/SciverseResearchWorkbench.exe`。双击后会启动本地服务并自动打开浏览器；不需要命令行。首次构建需要安装 PyInstaller，耗时和体积取决于当前 Python 环境。当前构建已验证可启动并返回页面，产物约 100 MB；onefile 首次启动需要解压，可能等待数十秒。
+
+AI 页面的 API Key 只在当前会话输入，不写入 exe 或本地数据库；Sciverse Token 仍按原有方式从环境变量或凭据文件读取。
 
 ## 后续规划
 

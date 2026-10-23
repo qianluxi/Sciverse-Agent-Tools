@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import uuid
 from typing import Any
 
 import streamlit as st
@@ -22,6 +23,7 @@ st.caption(
     "用你自备的 OpenAI 兼容模型从论文中提取结构化证据，再生成可人工复核的综述提纲。"
     "AI 输出不会自动写入 Zotero 或最终论文。"
 )
+ai_session_id = st.session_state.setdefault("ai_session_id", uuid.uuid4().hex)
 
 with st.sidebar:
     st.markdown("### Sciverse")
@@ -53,6 +55,7 @@ with st.sidebar:
                 base_url=base_url,
                 api_key=ai_key,
                 model=model,
+                session_id=ai_session_id,
             )
             reply = test_client.chat(
                 [{"role": "user", "content": "只回复 OK"}],
@@ -136,6 +139,7 @@ if extract_clicked:
             base_url=base_url,
             api_key=ai_key,
             model=model,
+            session_id=ai_session_id,
         )
         with st.spinner("正在调用 AI 提取证据…"):
             evidence = extract_evidence(client, documents)
@@ -176,6 +180,7 @@ if evidence:
                 base_url=base_url,
                 api_key=ai_key,
                 model=model,
+                session_id=ai_session_id,
             )
             with st.spinner("正在生成提纲…"):
                 outline = generate_outline(client, question, evidence)

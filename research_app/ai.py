@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import uuid
 from typing import Any
 
 import httpx
@@ -35,6 +36,7 @@ class OpenAICompatibleClient:
         api_key: str,
         model: str,
         timeout: float = 60.0,
+        session_id: str | None = None,
     ) -> None:
         base_url = base_url.strip().rstrip("/")
         if not base_url or not api_key.strip() or not model.strip():
@@ -45,6 +47,7 @@ class OpenAICompatibleClient:
         self.api_key = api_key.strip()
         self.model = model.strip()
         self.timeout = timeout
+        self.session_id = session_id or uuid.uuid4().hex
 
     @property
     def endpoint(self) -> str:
@@ -59,6 +62,8 @@ class OpenAICompatibleClient:
                 headers={
                     "Authorization": f"Bearer {self.api_key}",
                     "Content-Type": "application/json",
+                    "User-Agent": "sciverse-research-workbench/1.0",
+                    "x-opencode-session": self.session_id,
                 },
                 json={
                     "model": self.model,
@@ -71,9 +76,7 @@ class OpenAICompatibleClient:
             payload = response.json()
         except httpx.HTTPStatusError as error:
             body = error.response.text[:800].replace(self.api_key, "[REDACTED]")
-            raise AIError(
-                f"AI 服务返回 HTTP {error.response.status_code}：{body}"
-            ) from error
+            raise AIError(f"AI 服务返回 HTTP {error.response.status_code}：{body}") from error
         except httpx.HTTPError as error:
             raise AIError(f"无法连接 AI 服务：{type(error).__name__}") from error
         except ValueError as error:

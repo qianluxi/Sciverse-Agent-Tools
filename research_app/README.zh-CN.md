@@ -76,6 +76,8 @@ python -m pytest research_app/tests/ -v
 - AI 失败按论文隔离，不阻塞其他论文。
 - 不会自动写入 Zotero 或生成最终论文。
 
+OpenCode Go 示例：Base URL 填 `https://opencode.ai/zen/go/v1`，模型填 `deepseek-v4.1-flash` 或其他走 `/chat/completions` 的模型 ID（不要加 `opencode-go/` 前缀）。客户端会自动发送稳定的 `x-opencode-session` 会话头和专用 User-Agent。
+
 ## Windows 便携版 exe
 
 需要构建便携版时，在仓库根目录运行：

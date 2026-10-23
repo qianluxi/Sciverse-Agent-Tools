@@ -89,6 +89,7 @@ def test_client_validates_configuration_and_endpoint():
     )
     assert direct.endpoint == "https://api.example/v1/chat/completions"
 
+
 def test_client_surfaces_provider_error_body(monkeypatch):
     request = httpx.Request("POST", "https://api.example/v1/chat/completions")
     response = httpx.Response(
@@ -111,3 +112,29 @@ def test_client_surfaces_provider_error_body(monkeypatch):
         assert "secret" not in str(error)
     else:
         raise AssertionError("expected AIError")
+
+
+def test_client_sends_stable_session_and_user_agent(monkeypatch):
+    captured_headers = []
+
+    def fake_post(*args, **kwargs):
+        captured_headers.append(kwargs["headers"])
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "OK"}}]},
+            request=httpx.Request("POST", "https://api.example/v1/chat/completions"),
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    client = OpenAICompatibleClient(
+        base_url="https://api.example/v1",
+        api_key="secret",
+        model="model",
+        session_id="session-1",
+    )
+    client.chat([{"role": "user", "content": "hi"}])
+    client.chat([{"role": "user", "content": "again"}])
+
+    assert captured_headers[0]["x-opencode-session"] == "session-1"
+    assert captured_headers[1]["x-opencode-session"] == "session-1"
+    assert "sciverse-research-workbench" in captured_headers[0]["User-Agent"]

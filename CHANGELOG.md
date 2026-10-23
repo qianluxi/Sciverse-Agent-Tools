@@ -1,3 +1,9 @@
+## [1.6.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.5.0...v1.6.0) (2026-10-23)
+
+### Features
+
+* add research trend analysis workspace ([b0b8f89](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/b0b8f89c1f6d12774b6b9ba8ff3a54ef6ca7cb57))
+
 ## [1.5.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.4.0...v1.5.0) (2026-10-23)
 
 ### Features

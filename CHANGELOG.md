@@ -1,3 +1,9 @@
+## [1.3.2](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.3.1...v1.3.2) (2026-10-23)
+
+### Bug Fixes
+
+* restrict graph expansion to sciverse ids ([514b3cd](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/514b3cd5e8565a1ec60a880c333c17bf015ce60a))
+
 ## [1.3.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.3.0...v1.3.1) (2026-10-22)
 
 ### Bug Fixes

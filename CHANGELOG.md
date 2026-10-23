@@ -1,3 +1,9 @@
+## [1.3.3](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.3.2...v1.3.3) (2026-10-23)
+
+### Bug Fixes
+
+* explain empty citation relation results ([0d76042](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/0d760420202e9f75cb091a555d922ba45ae3c0f7))
+
 ## [1.3.2](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.3.1...v1.3.2) (2026-10-23)
 
 ### Bug Fixes

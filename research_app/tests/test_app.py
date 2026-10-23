@@ -229,6 +229,7 @@ def test_structured_pagination_and_common_filters_offline(monkeypatch, tmp_path)
     next(widget for widget in app.text_input if widget.label.startswith("学科主题")).set_value(
         "biology; medicine"
     )
+    next(widget for widget in app.checkbox if widget.label == "仅开放获取（OA）").set_value(True)
     next(widget for widget in app.number_input if widget.label == "起始年份").set_value(2020)
     next(button for button in app.button if button.label == "筛选论文").click().run(timeout=30)
 
@@ -240,6 +241,11 @@ def test_structured_pagination_and_common_filters_offline(monkeypatch, tmp_path)
     assert params["journals"] == ["Nature", "Science"]
     assert params["subjects"] == ["biology", "medicine"]
     assert params["year_from"] == 2020
+    assert {
+        "field": "access_is_oa",
+        "operator": "FILTER_OP_EQ",
+        "value": "true",
+    } in params["filters_advanced"]
     assert any("Fixture paper 1" in block.value for block in app.markdown)
 
     next(button for button in app.button if button.label == "下一页").click().run(timeout=30)

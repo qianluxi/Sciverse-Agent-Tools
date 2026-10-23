@@ -12,8 +12,12 @@ MAX_IMAGES_PER_PAPER = 4
 MAX_PAPERS_PER_RUN = 5
 
 
+def has_fulltext(paper: dict[str, Any]) -> bool:
+    return bool(paper.get("doc_id"))
+
+
 def is_readable(paper: dict[str, Any]) -> bool:
-    return bool(paper.get("doc_id")) and paper.get("is_content_accessible") is True
+    return has_fulltext(paper) and paper.get("is_content_accessible") is True
 
 
 def extract_figure_refs(

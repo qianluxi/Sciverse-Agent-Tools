@@ -315,6 +315,10 @@ with st.form("search_form", border=True):
             journals = st.text_input("期刊/会议（可选，多个用逗号分隔）")
         with cols[1]:
             subjects = st.text_input("学科主题（可选，多个用逗号分隔）")
+        oa_only = st.checkbox(
+            "仅开放获取（OA）",
+            help="按 access_is_oa=true 过滤，更可能找到可读取全文的论文；是否可读仍以实际读取结果为准。",
+        )
         options = st.columns(3)
         with options[0]:
             sort_label = st.selectbox(
@@ -446,6 +450,14 @@ if search_clicked:
                                 "field": "type",
                                 "operator": "FILTER_OP_IN",
                                 "value": doc_types,
+                            }
+                        )
+                    if oa_only:
+                        filters_advanced.append(
+                            {
+                                "field": "access_is_oa",
+                                "operator": "FILTER_OP_EQ",
+                                "value": "true",
                             }
                         )
                     if advanced_filter_spec and advanced_filter_spec[3].strip():

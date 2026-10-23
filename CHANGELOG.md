@@ -1,3 +1,9 @@
+## [1.8.3](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.8.2...v1.8.3) (2026-10-23)
+
+### Bug Fixes
+
+* retry empty AI responses with larger budget ([9a02b5c](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/9a02b5cc30f0b82e9d89eb9241b40fc83d932912))
+
 ## [1.8.2](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.8.1...v1.8.2) (2026-10-23)
 
 ### Bug Fixes

@@ -1,3 +1,9 @@
+## [1.8.4](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.8.3...v1.8.4) (2026-10-23)
+
+### Bug Fixes
+
+* unwrap JSON markdown outline ([94c338c](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/94c338ca6002635882a77d28cc3beb8d653d69fc))
+
 ## [1.8.3](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.8.2...v1.8.3) (2026-10-23)
 
 ### Bug Fixes

@@ -1,3 +1,9 @@
+## [1.4.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.3.3...v1.4.0) (2026-10-23)
+
+### Features
+
+* filter structured results by publication type ([9e25cd7](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/9e25cd7ed6f90e720f61e44837db690962c46d1e))
+
 ## [1.3.3](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.3.2...v1.3.3) (2026-10-23)
 
 ### Bug Fixes

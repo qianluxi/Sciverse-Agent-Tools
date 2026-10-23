@@ -1,3 +1,9 @@
+## [1.5.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.4.0...v1.5.0) (2026-10-23)
+
+### Features
+
+* enrich semantic results with unique_id ([05236e4](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/05236e40573756ab0ae1135da72cb34f713141c7))
+
 ## [1.4.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.3.3...v1.4.0) (2026-10-23)
 
 ### Features

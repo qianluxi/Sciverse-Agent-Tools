@@ -1,3 +1,9 @@
+## [1.8.5](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.8.4...v1.8.5) (2026-10-23)
+
+### Bug Fixes
+
+* persist AI settings in browser session ([f468baf](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/f468baf03c2fdc632a9616d95866917247974b99))
+
 ## [1.8.4](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.8.3...v1.8.4) (2026-10-23)
 
 ### Bug Fixes

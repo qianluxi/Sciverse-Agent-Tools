@@ -28,6 +28,20 @@ class AIError(RuntimeError):
     pass
 
 
+def _message_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict) and isinstance(item.get("text"), str):
+                parts.append(item["text"])
+        return "".join(parts).strip()
+    return ""
+
+
 class OpenAICompatibleClient:
     def __init__(
         self,
@@ -55,40 +69,54 @@ class OpenAICompatibleClient:
             return self.base_url
         return f"{self.base_url}/chat/completions"
 
-    def chat(self, messages: list[dict[str, str]], *, max_tokens: int = 1200) -> str:
-        try:
-            response = httpx.post(
-                self.endpoint,
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                    "User-Agent": "sciverse-research-workbench/1.0",
-                    "x-opencode-session": self.session_id,
-                },
-                json={
-                    "model": self.model,
-                    "messages": messages,
-                    "max_tokens": max_tokens,
-                },
-                timeout=self.timeout,
-            )
-            response.raise_for_status()
-            payload = response.json()
-        except httpx.HTTPStatusError as error:
-            body = error.response.text[:800].replace(self.api_key, "[REDACTED]")
-            raise AIError(f"AI 服务返回 HTTP {error.response.status_code}：{body}") from error
-        except httpx.HTTPError as error:
-            raise AIError(f"无法连接 AI 服务：{type(error).__name__}") from error
-        except ValueError as error:
-            raise AIError("AI 服务返回的不是有效 JSON。") from error
+    def chat(self, messages: list[dict[str, str]], *, max_tokens: int = 2048) -> str:
+        for attempt in range(2):
+            try:
+                response = httpx.post(
+                    self.endpoint,
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                        "User-Agent": "sciverse-research-workbench/1.0",
+                        "x-opencode-session": self.session_id,
+                    },
+                    json={
+                        "model": self.model,
+                        "messages": messages,
+                        "max_tokens": max_tokens,
+                    },
+                    timeout=self.timeout,
+                )
+                response.raise_for_status()
+                payload = response.json()
+            except httpx.HTTPStatusError as error:
+                body = error.response.text[:800].replace(self.api_key, "[REDACTED]")
+                raise AIError(f"AI 服务返回 HTTP {error.response.status_code}：{body}") from error
+            except httpx.HTTPError as error:
+                raise AIError(f"无法连接 AI 服务：{type(error).__name__}") from error
+            except ValueError as error:
+                raise AIError("AI 服务返回的不是有效 JSON。") from error
 
-        try:
-            content = payload["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError) as error:
-            raise AIError("AI 响应缺少 choices/message/content。") from error
-        if not isinstance(content, str) or not content.strip():
-            raise AIError("AI 返回了空内容。")
-        return content.strip()
+            try:
+                choice = payload["choices"][0]
+                message = choice["message"]
+                content = _message_text(message.get("content"))
+            except (KeyError, IndexError, TypeError) as error:
+                raise AIError("AI 响应缺少 choices/message/content。") from error
+            if content:
+                return content
+
+            finish_reason = choice.get("finish_reason")
+            reasoning = message.get("reasoning_content") or ""
+            refusal = message.get("refusal")
+            if attempt == 0 and max_tokens < 4096 and (finish_reason == "length" or reasoning):
+                max_tokens = 4096
+                continue
+            detail = f"finish_reason={finish_reason!r}, reasoning_chars={len(reasoning)}"
+            if refusal:
+                detail += f", refusal={refusal!r}"
+            raise AIError(f"AI 返回空内容（{detail}）。请换用非推理模型，或提高输出上限。")
+        raise AIError("AI 返回空内容。")
 
 
 def parse_json_object(text: str) -> dict[str, Any]:
@@ -187,5 +215,5 @@ def generate_outline(
         raise ValueError("没有可用于生成提纲的证据。")
     return client.chat(
         build_outline_messages(question.strip(), evidence),
-        max_tokens=2000,
+        max_tokens=4096,
     )

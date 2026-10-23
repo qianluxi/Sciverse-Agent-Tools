@@ -17,7 +17,7 @@ from research_app.exports import (
     format_authors,
 )
 from research_app.search import parse_catalog_value, split_filter_values
-from research_app.service import call_api
+from research_app.service import call_api, enrich_semantic_hits
 from research_app.storage import (
     delete_saved_search,
     export_saved_searches_backup,
@@ -94,9 +94,26 @@ def _execute_search(
     *,
     preserve_selection: bool = False,
 ) -> None:
+    enrichment = None
     if search_kind == "semantic":
         response = call_api(token, "semantic_search", **params)
-        papers = response.get("hits", [])
+        hits = response.get("hits", [])
+        try:
+            papers, requests, matched = enrich_semantic_hits(token, hits)
+            enrichment = {
+                "requests": requests,
+                "matched": matched,
+                "total": len(hits),
+                "error": None,
+            }
+        except Exception as error:
+            papers = hits
+            enrichment = {
+                "requests": 0,
+                "matched": 0,
+                "total": len(hits),
+                "error": str(error),
+            }
         total_count = len(papers)
         total_pages = 1
     else:
@@ -105,6 +122,7 @@ def _execute_search(
         total_count = response.get("total_count", len(papers))
         total_pages = response.get("total_pages") or max(1, ceil(total_count / params["page_size"]))
 
+    st.session_state["semantic_enrichment"] = enrichment
     st.session_state["papers"] = papers
     st.session_state["has_searched"] = True
     st.session_state["search_kind"] = search_kind
@@ -457,6 +475,18 @@ if papers:
     total_count = st.session_state.get("total_count", len(papers))
     st.subheader(f"找到 {total_count} 条相关文献")
     st.caption("选择一篇文献可查看摘要、标识信息和可访问的原文片段。")
+    enrichment = st.session_state.get("semantic_enrichment")
+    if st.session_state.get("search_kind") == "semantic" and enrichment:
+        if enrichment.get("error"):
+            st.warning(
+                "语义检索已完成，但补全 unique_id 失败；"
+                "这些结果暂时不能用于引用网络。可改用条件筛选。"
+            )
+        elif enrichment["matched"] < enrichment["total"]:
+            st.warning(
+                f"已补全 {enrichment['matched']}/{enrichment['total']} 条 unique_id；"
+                "未匹配的结果不能用于引用网络。"
+            )
     if st.session_state.get("search_kind") == "structured":
         search_params = st.session_state.get("search_params", {})
         current_page = search_params.get("page", 1)

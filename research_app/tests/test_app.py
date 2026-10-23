@@ -119,18 +119,32 @@ def test_semantic_search_uses_hits_response_offline(monkeypatch, tmp_path):
     def fake_call_api(token, action, **kwargs):
         calls.append((action, kwargs))
         assert token == "sv-offline-test"
-        assert action == "semantic_search"
-        return {
-            "hits": [
-                {
-                    "title": "Semantic fixture",
-                    "doc_id": "doc-semantic",
-                    "offset": 10,
-                    "score": 0.9,
-                    "chunk": "Relevant evidence chunk",
-                }
-            ]
-        }
+        if action == "semantic_search":
+            return {
+                "hits": [
+                    {
+                        "title": "Semantic fixture",
+                        "doc_id": "doc-semantic",
+                        "offset": 10,
+                        "score": 0.9,
+                        "chunk": "Relevant evidence chunk",
+                    }
+                ]
+            }
+        if action == "search_papers":
+            assert kwargs["filters_advanced"][0]["field"] == "doc_id"
+            return {
+                "results": [
+                    {
+                        "unique_id": "paper:semantic",
+                        "doc_id": "doc-semantic",
+                        "doi": "10.1000/semantic",
+                        "publication_published_year": 2024,
+                        "title": "Semantic fixture",
+                    }
+                ]
+            }
+        raise AssertionError(action)
 
     monkeypatch.setattr(service, "call_api", fake_call_api)
     app = AppTest.from_file(str(APP_PATH), default_timeout=30).run(timeout=30)
@@ -144,8 +158,10 @@ def test_semantic_search_uses_hits_response_offline(monkeypatch, tmp_path):
     assert calls[0][0] == "semantic_search"
     assert calls[0][1]["query"] == "How does this topic work?"
     assert calls[0][1]["mode"] == "balanced"
+    assert calls[1][0] == "search_papers"
     assert any("Semantic fixture" in block.value for block in app.markdown)
     assert any("Relevant evidence chunk" in block.value for block in app.markdown)
+    assert any("paper:semantic" in block.value for block in app.caption)
 
 
 def test_empty_structured_results_show_guidance_offline(monkeypatch, tmp_path):

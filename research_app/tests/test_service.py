@@ -110,3 +110,37 @@ def test_timeout_is_not_retried(monkeypatch):
 
     assert client.calls == 1
     assert delays == []
+
+
+def test_enrich_semantic_hits_adds_metadata_and_preserves_chunks(monkeypatch):
+    calls = []
+
+    def fake_call_api(token, action, **kwargs):
+        calls.append((action, kwargs))
+        return {
+            "results": [
+                {
+                    "doc_id": "doc-1",
+                    "unique_id": "paper:1",
+                    "doi": "10.1/one",
+                    "publication_published_year": 2024,
+                }
+            ]
+        }
+
+    monkeypatch.setattr(service, "call_api", fake_call_api)
+    hits = [
+        {"doc_id": "doc-1", "chunk_id": "chunk-1", "score": 0.9, "offset": 10},
+        {"doc_id": "doc-2", "chunk_id": "chunk-2", "score": 0.8, "offset": 20},
+    ]
+
+    enriched, requests, matched = service.enrich_semantic_hits("token", hits)
+
+    assert requests == 1
+    assert matched == 1
+    assert enriched[0]["unique_id"] == "paper:1"
+    assert enriched[0]["chunk_id"] == "chunk-1"
+    assert enriched[0]["offset"] == 10
+    assert "unique_id" not in enriched[1]
+    assert calls[0][0] == "search_papers"
+    assert calls[0][1]["filters_advanced"][0]["value"] == ["doc-1", "doc-2"]

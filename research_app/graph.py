@@ -36,6 +36,13 @@ def _node(
     }
 
 
+def can_expand(node: dict[str, Any]) -> bool:
+    """Only Sciverse unique_ids can be passed back to list_paper_relations."""
+    id_type = str(node.get("id_type") or "").casefold()
+    node_id = str(node.get("id") or "")
+    return id_type in {"sciverse", "unique_id"} or node_id.startswith("paper:")
+
+
 def build_network(
     center: dict[str, Any],
     relation: str,

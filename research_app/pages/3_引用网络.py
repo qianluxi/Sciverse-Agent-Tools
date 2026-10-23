@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx
 import streamlit as st
 from sciverse.credentials import resolve_token
 
 from research_app.graph import (
     RELATION_LABELS,
     build_network,
+    can_expand,
     export_edges_csv,
     export_graphml,
     filter_network,
@@ -59,6 +61,12 @@ def _load_relations(
 
 
 def _show_error(error: Exception) -> None:
+    if isinstance(error, httpx.HTTPStatusError) and error.response.status_code == 404:
+        st.warning(
+            "未找到该节点的关系记录。关系接口只接受 Sciverse 的 unique_id"
+            "（通常以 paper: 开头）；Semantic Scholar 数字 ID 不能直接展开。"
+        )
+        return
     st.error(str(error))
 
 
@@ -186,12 +194,18 @@ edges = st.session_state["network_edges"]
 center = st.session_state["network_center"]
 
 st.markdown("### 2. 按需展开")
+expandable_ids = [node_id for node_id, node in nodes.items() if can_expand(node)]
+st.caption(
+    "只有 Sciverse 的 `paper:...` unique_id 能继续展开；"
+    "Semantic Scholar 数字 ID 和仅 DOI 的节点需要先补全元数据。"
+)
 expand_cols = st.columns([3, 2, 1, 1])
 with expand_cols[0]:
     expand_id = st.selectbox(
         "从哪个节点展开",
-        list(nodes),
-        format_func=lambda value: nodes[value].get("title") or value,
+        expandable_ids,
+        format_func=lambda value: f"{nodes[value].get('title') or value} · {value}",
+        disabled=not expandable_ids,
     )
 with expand_cols[1]:
     expand_relation_label = st.selectbox(
@@ -200,9 +214,15 @@ with expand_cols[1]:
 with expand_cols[2]:
     expand_page = st.number_input("关系页码", min_value=1, max_value=400, value=1, step=1)
 with expand_cols[3]:
-    expand_clicked = st.button("展开", disabled=not token)
+    expand_clicked = st.button("展开", disabled=not token or not expand_id)
 
-if expand_clicked and token:
+if not expandable_ids:
+    st.info(
+        "当前节点都没有可展开的 Sciverse unique_id。"
+        "可回到第 1 节用中心论文展开“被引论文”，或先尝试补全元数据。"
+    )
+
+if expand_clicked and token and expand_id:
     try:
         expand_relation = next(
             key for key, label in RELATION_LABELS.items() if label == expand_relation_label

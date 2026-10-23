@@ -3,6 +3,7 @@ import io
 
 from research_app.graph import (
     build_network,
+    can_expand,
     export_edges_csv,
     export_graphml,
     filter_network,
@@ -93,3 +94,10 @@ def test_graph_exports_escape_values_and_include_edges():
     assert '<graph id="citation-network"' in graphml
     assert next(csv.DictReader(io.StringIO(edge_csv)))["source"] == "paper:center"
     assert "digraph citation_network" in dot
+
+
+def test_only_sciverse_ids_are_expandable():
+    assert can_expand({"id": "paper:10.1/x", "id_type": "sciverse"})
+    assert can_expand({"id": "paper:10.1/x", "id_type": ""})
+    assert not can_expand({"id": "11319685", "id_type": "semantic_scholar"})
+    assert not can_expand({"id": "10.5555/123", "id_type": "doi"})

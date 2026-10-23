@@ -26,3 +26,20 @@ def test_ai_page_renders_without_key(monkeypatch):
     assert not app.exception
     assert any(widget.label == "论文" for widget in app.multiselect)
     assert next(button for button in app.button if button.label == "提取结构化证据").disabled
+
+    next(field for field in app.text_input if field.label == "Base URL").set_value(
+        "https://opencode.ai/zen/go/v1"
+    )
+    next(field for field in app.text_input if field.label == "API Key").set_value("test-key")
+    next(field for field in app.text_input if field.label == "模型名").set_value(
+        "deepseek-v4.1-flash"
+    )
+    app.run(timeout=30)
+
+    assert next(field for field in app.text_input if field.label == "Base URL").value == (
+        "https://opencode.ai/zen/go/v1"
+    )
+    assert next(field for field in app.text_input if field.label == "API Key").value == "test-key"
+    assert next(field for field in app.text_input if field.label == "模型名").value == (
+        "deepseek-v4.1-flash"
+    )

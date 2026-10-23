@@ -25,6 +25,12 @@ st.caption(
 )
 ai_session_id = st.session_state.setdefault("ai_session_id", uuid.uuid4().hex)
 
+st.session_state.setdefault(
+    "ai_base_url", os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
+)
+st.session_state.setdefault("ai_key", os.environ.get("OPENAI_API_KEY", ""))
+st.session_state.setdefault("ai_model", os.environ.get("OPENAI_MODEL", "gpt-4o-mini"))
+
 with st.sidebar:
     st.markdown("### Sciverse")
     sciverse_token = st.text_input("Sciverse API Token", type="password", placeholder="sci_...")
@@ -33,19 +39,20 @@ with st.sidebar:
     st.markdown("### AI 服务（OpenAI 兼容）")
     base_url = st.text_input(
         "Base URL",
-        value=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+        key="ai_base_url",
         placeholder="https://api.openai.com/v1",
     )
     ai_key = st.text_input(
         "API Key",
         type="password",
-        value=os.environ.get("OPENAI_API_KEY", ""),
-        help="只在当前会话使用，不写入本地数据库。",
+        key="ai_key",
+        help="只在当前浏览器会话使用，不写入本地数据库；切换页面不会丢失。",
     )
     model = st.text_input(
         "模型名",
-        value=os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
+        key="ai_model",
     )
+    st.caption("AI 配置在当前浏览器会话内保留；关闭浏览器后清除。")
     if st.button(
         "测试 AI 连接",
         disabled=not base_url or not ai_key or not model,

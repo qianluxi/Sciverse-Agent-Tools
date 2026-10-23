@@ -1,3 +1,4 @@
+import httpx
 import pytest
 
 from research_app.ai import (
@@ -87,3 +88,26 @@ def test_client_validates_configuration_and_endpoint():
         model="m",
     )
     assert direct.endpoint == "https://api.example/v1/chat/completions"
+
+def test_client_surfaces_provider_error_body(monkeypatch):
+    request = httpx.Request("POST", "https://api.example/v1/chat/completions")
+    response = httpx.Response(
+        400,
+        text='{"error":"unsupported model"}',
+        request=request,
+    )
+    monkeypatch.setattr(httpx, "post", lambda *args, **kwargs: response)
+    client = OpenAICompatibleClient(
+        base_url="https://api.example/v1",
+        api_key="secret",
+        model="model",
+    )
+
+    try:
+        client.chat([{"role": "user", "content": "hi"}])
+    except AIError as error:
+        assert "HTTP 400" in str(error)
+        assert "unsupported model" in str(error)
+        assert "secret" not in str(error)
+    else:
+        raise AssertionError("expected AIError")

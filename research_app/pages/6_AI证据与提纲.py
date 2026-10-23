@@ -44,6 +44,23 @@ with st.sidebar:
         "模型名",
         value=os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
     )
+    if st.button(
+        "测试 AI 连接",
+        disabled=not base_url or not ai_key or not model,
+    ):
+        try:
+            test_client = OpenAICompatibleClient(
+                base_url=base_url,
+                api_key=ai_key,
+                model=model,
+            )
+            reply = test_client.chat(
+                [{"role": "user", "content": "只回复 OK"}],
+                max_tokens=16,
+            )
+            st.success(f"连接成功：{reply[:80]}")
+        except Exception as error:
+            st.error(str(error))
 
 
 def _show_error(error: Exception) -> None:

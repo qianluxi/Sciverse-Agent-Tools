@@ -70,8 +70,9 @@ class OpenAICompatibleClient:
             response.raise_for_status()
             payload = response.json()
         except httpx.HTTPStatusError as error:
+            body = error.response.text[:800].replace(self.api_key, "[REDACTED]")
             raise AIError(
-                f"AI 服务返回 HTTP {error.response.status_code}，请检查服务配置。"
+                f"AI 服务返回 HTTP {error.response.status_code}：{body}"
             ) from error
         except httpx.HTTPError as error:
             raise AIError(f"无法连接 AI 服务：{type(error).__name__}") from error

@@ -1,7 +1,7 @@
 @echo off
 cd /d "%~dp0\.."
 
-python -c "import streamlit, sciverse" >nul 2>&1
+python -c "import streamlit, sciverse, matplotlib" >nul 2>&1
 if errorlevel 1 (
     echo Installing the research app dependencies. This may take a few minutes...
     python -m pip install -r research_app\requirements.txt

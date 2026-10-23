@@ -1,3 +1,9 @@
+## [1.8.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.8.0...v1.8.1) (2026-10-23)
+
+### Bug Fixes
+
+* surface AI provider error details ([b3201fb](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/b3201fb6b300ddabfc7f4912c29e0ba593b765a6))
+
 ## [1.8.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.7.2...v1.8.0) (2026-10-23)
 
 ### Features

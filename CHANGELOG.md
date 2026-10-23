@@ -1,3 +1,9 @@
+## [1.8.6](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.8.5...v1.8.6) (2026-10-23)
+
+### Bug Fixes
+
+* increase AI output budget for reasoning models ([49b1927](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/49b1927efc660b40f004f5568d4e267efb667f75))
+
 ## [1.8.5](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.8.4...v1.8.5) (2026-10-23)
 
 ### Bug Fixes

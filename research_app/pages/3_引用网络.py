@@ -166,6 +166,10 @@ else:
 
 relation_label = st.selectbox("首次加载的关系", list(RELATION_LABELS.values()))
 relation = next(key for key, label in RELATION_LABELS.items() if label == relation_label)
+st.caption(
+    "某类关系返回 0 条通常表示该论文在当前 Sciverse 库中没有这类记录，"
+    "不是操作失败；可依次尝试被引论文、相关工作。"
+)
 page_size = st.selectbox("每页关系数量", [25, 50, 100], index=1)
 load_clicked = st.button("加载一层引用网络", type="primary", disabled=not token or not center_paper)
 
@@ -174,6 +178,8 @@ if load_clicked and token and center_paper:
         with st.spinner("正在加载关系列表…"):
             items = _load_relations(token, center_paper["id"], relation, 1, page_size)
             network = build_network(center_paper, relation, items)
+            if not items:
+                network["warnings"].append(f"{relation_label} 返回 0 条记录；请尝试其他关系类型。")
         _reset_network()
         st.session_state["network_nodes"] = {node["id"]: node for node in network["nodes"]}
         st.session_state["network_edges"] = network["edges"]
@@ -236,6 +242,10 @@ if expand_clicked and token and expand_id:
                 nodes=nodes,
                 edges=edges,
             )
+            if not items:
+                network["warnings"].append(
+                    f"{expand_relation_label} 在页码 {int(expand_page)} 返回 0 条记录。"
+                )
         node_map = {node["id"]: node for node in network["nodes"]}
         for node_id, node in node_map.items():
             node["is_center"] = node_id == center["id"]

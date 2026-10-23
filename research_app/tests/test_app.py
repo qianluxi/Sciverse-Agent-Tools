@@ -286,7 +286,12 @@ def test_catalog_fields_build_typed_advanced_filter_offline(monkeypatch, tmp_pat
 
     search = next(kwargs for action, kwargs in calls if action == "search_papers")
     assert search["filters_advanced"] == [
-        {"field": "citation_count", "operator": "FILTER_OP_GTE", "value": 100}
+        {
+            "field": "type",
+            "operator": "FILTER_OP_IN",
+            "value": ["article", "review", "conference", "preprint"],
+        },
+        {"field": "citation_count", "operator": "FILTER_OP_GTE", "value": 100},
     ]
     assert not app.exception
 

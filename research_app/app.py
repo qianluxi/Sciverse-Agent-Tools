@@ -274,7 +274,10 @@ with st.form("search_form", border=True):
         with options[1]:
             quality_label = st.selectbox("检索深度", ["平衡（推荐）", "更快", "更深入"])
         with options[2]:
-            st.caption("语义检索会理解问题含义，不只匹配题目中的关键词。")
+            st.caption(
+                "语义检索会理解问题含义，但不能可靠排除书籍章节等类型；"
+                "只要完整论文请使用“条件筛选”。"
+            )
         search_clicked = st.form_submit_button(
             "查找相关文献", type="primary", use_container_width=True
         )
@@ -294,7 +297,7 @@ with st.form("search_form", border=True):
             journals = st.text_input("期刊/会议（可选，多个用逗号分隔）")
         with cols[1]:
             subjects = st.text_input("学科主题（可选，多个用逗号分隔）")
-        options = st.columns(2)
+        options = st.columns(3)
         with options[0]:
             sort_label = st.selectbox(
                 "排序",
@@ -302,6 +305,12 @@ with st.form("search_form", border=True):
             )
         with options[1]:
             page_size = st.selectbox("每页结果", [10, 20, 50], index=1)
+        with options[2]:
+            doc_type_label = st.selectbox(
+                "文献类型",
+                ["论文（期刊/会议/预印本）", "期刊论文", "会议论文", "预印本", "全部类型"],
+                help="默认排除书籍章节、社论、勘误等非论文类型。",
+            )
         if query.strip() and sort_label in {"最新发表", "最早发表"}:
             st.caption("按年份排序会替代相关度排序；若要优先相关结果，请选择 Sciverse 默认排序。")
 
@@ -405,15 +414,33 @@ if search_clicked:
                         params["journals"] = split_filter_values(journals)
                     if subjects.strip():
                         params["subjects"] = split_filter_values(subjects)
+                    doc_types = {
+                        "论文（期刊/会议/预印本）": ["article", "review", "conference", "preprint"],
+                        "期刊论文": ["article", "review"],
+                        "会议论文": ["conference"],
+                        "预印本": ["preprint"],
+                        "全部类型": [],
+                    }[doc_type_label]
+                    filters_advanced = []
+                    if doc_types:
+                        filters_advanced.append(
+                            {
+                                "field": "type",
+                                "operator": "FILTER_OP_IN",
+                                "value": doc_types,
+                            }
+                        )
                     if advanced_filter_spec and advanced_filter_spec[3].strip():
                         field_name, field_type, operator, raw_value = advanced_filter_spec
-                        params["filters_advanced"] = [
+                        filters_advanced.append(
                             {
                                 "field": field_name,
                                 "operator": operator,
                                 "value": parse_catalog_value(raw_value, field_type, operator),
                             }
-                        ]
+                        )
+                    if filters_advanced:
+                        params["filters_advanced"] = filters_advanced
                     search_kind = "structured"
                 _execute_search(token, search_kind, params)
                 st.rerun()

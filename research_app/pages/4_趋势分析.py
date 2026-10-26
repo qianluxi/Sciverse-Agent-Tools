@@ -103,6 +103,7 @@ scope = {
     "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     "sample_size": analysis["sample_size"],
     "duplicates_removed": analysis["duplicates_removed"],
+    "identifier_conflicts": analysis["identifier_conflicts"],
     "requests": requests_used,
     "truncated": truncated,
     "year_range": analysis["year_range"],
@@ -120,6 +121,11 @@ metric_cols[2].metric(
 metric_cols[3].metric("请求次数", requests_used)
 if truncated:
     st.warning("扩展采样达到页数上限，结果只是部分样本，不能代表全体文献。")
+if analysis["identifier_conflicts"]:
+    st.warning(
+        f"检测到 {analysis['identifier_conflicts']} 组强标识符冲突，"
+        "冲突记录已保留为独立样本，请人工核对后再用于统计。"
+    )
 st.caption("统计口径：仅使用本次样本，不代表 Sciverse 全库；缺失字段不会被猜测填充。")
 
 with st.expander("查看样本与缺失率", expanded=False):

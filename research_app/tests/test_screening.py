@@ -109,12 +109,16 @@ def test_metadata_completion_is_order_independent(monkeypatch, tmp_path):
         _isolate(monkeypatch, tmp_path / directory)
         project_id = storage.create_screening_project("Review", "Q", "Include", "Exclude")
         storage.add_screening_candidates(project_id, papers)
-        candidates, _ = storage.list_screening_candidates(project_id)
-        return candidates[0]
+        candidates, total = storage.list_screening_candidates(project_id)
+        return candidates[0], total
 
-    first = import_order([weak, strong], "forward")
-    second = import_order([strong, weak], "reverse")
+    first, first_total = import_order([weak, strong], "forward")
+    second, second_total = import_order([strong, weak], "reverse")
 
+    assert first_total == 1
+    assert second_total == 1
+    assert first["candidate_key"] == "title:orderpaper"
+    assert second["candidate_key"] == "doi:10.1000/order"
     for field in ("title", "doi", "paper_id", "year"):
         assert first[field] == second[field]
 
@@ -150,6 +154,72 @@ def test_conflicting_strong_identifiers_are_recorded_without_remapping(monkeypat
         }
     assert mappings["doi:10.1000/a"] == "doi:10.1000/a"
     assert mappings["doi:10.1000/b"] == "doi:10.1000/b"
+
+
+def test_conflicting_unregistered_ids_are_not_aliased(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    project_id = storage.create_screening_project("Review", "Q", "Include", "Exclude")
+    storage.add_screening_candidates(
+        project_id,
+        [{"title": "Paper A", "doi": "10.1000/a", "unique_id": "paper:A"}],
+    )
+
+    result = storage.add_screening_candidates(
+        project_id,
+        [{"title": "Paper A copy", "doi": "10.1000/a", "unique_id": "paper:B"}],
+    )
+
+    assert result == {"identified": 1, "added": 1, "duplicates": 0, "conflicts": 1}
+    with storage._connection() as connection:
+        mappings = {
+            row["identifier_key"]: row["candidate_key"]
+            for row in connection.execute(
+                "SELECT identifier_key, candidate_key FROM screening_candidate_identifiers WHERE project_id = ?",
+                (project_id,),
+            )
+        }
+    assert "uid:paper:B" not in mappings
+    assert mappings["doi:10.1000/a"] == "doi:10.1000/a"
+    duplicates = storage.list_screening_duplicates(project_id)
+    assert "uid" in duplicates[0]["basis"]
+    assert "paper:B" in duplicates[0]["basis"]
+
+    later = storage.add_screening_candidates(
+        project_id,
+        [{"title": "Paper B only", "unique_id": "paper:B"}],
+    )
+    assert later == {"identified": 1, "added": 1, "duplicates": 0, "conflicts": 0}
+
+
+def test_conflicting_unregistered_doi_is_not_aliased(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    project_id = storage.create_screening_project("Review", "Q", "Include", "Exclude")
+    storage.add_screening_candidates(
+        project_id,
+        [{"title": "Paper A", "doi": "10.1000/a", "unique_id": "paper:A"}],
+    )
+
+    result = storage.add_screening_candidates(
+        project_id,
+        [{"title": "Paper A copy", "doi": "10.1000/b", "unique_id": "paper:A"}],
+    )
+
+    assert result == {"identified": 1, "added": 1, "duplicates": 0, "conflicts": 1}
+    with storage._connection() as connection:
+        mappings = {
+            row["identifier_key"]: row["candidate_key"]
+            for row in connection.execute(
+                "SELECT identifier_key, candidate_key FROM screening_candidate_identifiers WHERE project_id = ?",
+                (project_id,),
+            )
+        }
+    assert "doi:10.1000/b" not in mappings
+
+    later = storage.add_screening_candidates(
+        project_id,
+        [{"title": "Paper B only", "doi": "10.1000/b"}],
+    )
+    assert later == {"identified": 1, "added": 1, "duplicates": 0, "conflicts": 0}
 
 
 def test_conflicting_strong_ids_do_not_merge_by_title(monkeypatch, tmp_path):

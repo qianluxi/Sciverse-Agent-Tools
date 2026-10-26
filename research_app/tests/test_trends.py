@@ -86,6 +86,27 @@ def test_analysis_dedupes_across_doi_and_unique_id():
     assert analysis["duplicates_removed"] == 1
 
 
+def test_analysis_does_not_merge_conflicting_strong_identifiers():
+    cases = [
+        [
+            {"title": "Same", "doi": "10.1000/a", "unique_id": "paper:A"},
+            {"title": "Same", "doi": "10.1000/a", "unique_id": "paper:B"},
+        ],
+        [
+            {"title": "Same", "doi": "10.1000/a", "unique_id": "paper:A"},
+            {"title": "Same", "doi": "10.1000/b", "unique_id": "paper:A"},
+        ],
+    ]
+
+    for papers in cases:
+        forward = analyze_papers(papers)
+        reverse = analyze_papers(list(reversed(papers)))
+        for analysis in (forward, reverse):
+            assert analysis["sample_size"] == 2
+            assert analysis["duplicates_removed"] == 0
+            assert analysis["identifier_conflicts"] == 1
+
+
 def test_analysis_uses_unicode_titles_for_duplicates():
     papers = [
         {"title": "Привет, мир!", "publication_published_year": 2024},

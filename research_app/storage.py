@@ -409,6 +409,28 @@ def get_screening_project(project_id: str) -> dict[str, Any]:
         return dict(_screening_project(connection, project_id))
 
 
+def _identifier_values(identifiers: list[str]) -> dict[str, set[str]]:
+    values: dict[str, set[str]] = {}
+    for identifier in identifiers:
+        prefix, _, value = identifier.partition(":")
+        if value:
+            values.setdefault(prefix, set()).add(value)
+    return values
+
+
+def _strong_conflicts(
+    existing: dict[str, set[str]],
+    incoming: dict[str, set[str]],
+) -> list[tuple[str, list[str], list[str]]]:
+    conflicts = []
+    for identifier_type in ("doi", "uid", "doc"):
+        old = existing.get(identifier_type)
+        new = incoming.get(identifier_type)
+        if old and new and old.isdisjoint(new):
+            conflicts.append((identifier_type, sorted(old), sorted(new)))
+    return conflicts
+
+
 def _find_duplicate(
     connection: sqlite3.Connection,
     project_id: str,
@@ -425,9 +447,27 @@ def _find_duplicate(
         if row:
             strong_matches.setdefault(str(row["candidate_key"]), []).append(identifier)
     if len(strong_matches) > 1:
-        return {"kind": "conflict", "matches": strong_matches}
+        return {"kind": "conflict", "matches": strong_matches, "conflicts": []}
     if strong_matches:
         candidate_key, identifiers = next(iter(strong_matches.items()))
+        existing_keys = [
+            str(row["identifier_key"])
+            for row in connection.execute(
+                """SELECT identifier_key FROM screening_candidate_identifiers
+                   WHERE project_id = ? AND candidate_key = ?""",
+                (project_id, candidate_key),
+            )
+        ]
+        conflicts = _strong_conflicts(
+            _identifier_values(existing_keys),
+            _identifier_values(strong),
+        )
+        if conflicts:
+            return {
+                "kind": "conflict",
+                "matches": strong_matches,
+                "conflicts": conflicts,
+            }
         return {
             "kind": "duplicate",
             "candidate_key": candidate_key,
@@ -465,21 +505,35 @@ def _find_duplicate(
     }
 
 
-def _conflict_key(matches: dict[str, list[str]]) -> str:
-    raw = "|".join(
+def _conflict_key(
+    matches: dict[str, list[str]],
+    conflicts: list[tuple[str, list[str], list[str]]] | None = None,
+) -> str:
+    raw_parts = [
         f"{identifier}->{candidate}"
         for candidate, identifiers in sorted(matches.items())
         for identifier in sorted(identifiers)
-    )
-    return "conflict:" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+    ]
+    for identifier_type, existing, incoming in conflicts or []:
+        raw_parts.append(
+            f"{identifier_type}:{','.join(existing)}!={','.join(incoming)}"
+        )
+    return "conflict:" + hashlib.sha1("|".join(raw_parts).encode("utf-8")).hexdigest()[:16]
 
 
-def _conflict_detail(matches: dict[str, list[str]]) -> str:
+def _conflict_detail(
+    matches: dict[str, list[str]],
+    conflicts: list[tuple[str, list[str], list[str]]] | None = None,
+) -> str:
     parts = [
         f"{identifier}→{candidate}"
         for candidate, identifiers in sorted(matches.items())
         for identifier in sorted(identifiers)
     ]
+    for identifier_type, existing, incoming in conflicts or []:
+        parts.append(
+            f"{identifier_type} 已登记 {', '.join(existing)}，新记录 {', '.join(incoming)}"
+        )
     return "强标识符冲突，需人工处理：" + "；".join(parts)
 
 
@@ -555,7 +609,10 @@ def add_screening_candidates(project_id: str, papers: list[dict[str, Any]]) -> d
             canonical_key = key
             if decision and decision["kind"] == "conflict":
                 conflicts += 1
-                canonical_key = _conflict_key(decision["matches"])
+                canonical_key = _conflict_key(
+                    decision["matches"],
+                    decision.get("conflicts"),
+                )
                 cursor = connection.execute(
                     """INSERT OR IGNORE INTO screening_candidates(
                            project_id, candidate_key, paper_id, title, year, doi,
@@ -582,7 +639,7 @@ def add_screening_candidates(project_id: str, papers: list[dict[str, Any]]) -> d
                         project_id,
                         canonical_key,
                         " | ".join(sorted(decision["matches"])),
-                        _conflict_detail(decision["matches"]),
+                        _conflict_detail(decision["matches"], decision.get("conflicts")),
                         title,
                         now,
                     ),

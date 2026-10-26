@@ -91,8 +91,21 @@ def _merge_group(records: list[dict[str, Any]]) -> dict[str, Any]:
     return merged
 
 
-def _dedupe(papers: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+def _strong_values(paper: dict[str, Any]) -> dict[str, set[str]]:
+    values: dict[str, set[str]] = {}
+    for identifier in strong_identifier_keys(paper):
+        prefix, _, value = identifier.partition(":")
+        if value:
+            values.setdefault(prefix, set()).add(value)
+    return values
+
+
+def _dedupe(
+    papers: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int, int]:
     parent = list(range(len(papers)))
+    root_values = {index: _strong_values(paper) for index, paper in enumerate(papers)}
+    conflict_pairs: set[tuple[int, int]] = set()
 
     def find(index: int) -> int:
         while parent[index] != index:
@@ -100,11 +113,20 @@ def _dedupe(papers: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
             index = parent[index]
         return index
 
-    def union(left: int, right: int) -> None:
+    def union(left: int, right: int) -> bool:
         left_root = find(left)
         right_root = find(right)
-        if left_root != right_root:
-            parent[right_root] = left_root
+        if left_root == right_root:
+            return True
+        for identifier_type, values in root_values[left_root].items():
+            other = root_values[right_root].get(identifier_type)
+            if other and values.isdisjoint(other):
+                conflict_pairs.add(tuple(sorted((left_root, right_root))))
+                return False
+        parent[right_root] = left_root
+        for identifier_type, values in root_values[right_root].items():
+            root_values[left_root].setdefault(identifier_type, set()).update(values)
+        return True
 
     strong_first: dict[str, int] = {}
     for index, paper in enumerate(papers):
@@ -153,7 +175,7 @@ def _dedupe(papers: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
         _merge_group(grouped[root])
         for root in sorted(grouped, key=lambda root: first_seen[root])
     ]
-    return unique, len(papers) - len(unique)
+    return unique, len(papers) - len(unique), len(conflict_pairs)
 
 
 def _is_missing(value: Any) -> bool:
@@ -183,7 +205,7 @@ def analyze_papers(
     top_n: int = 10,
     recent_years: int = 5,
 ) -> dict[str, Any]:
-    unique, duplicates_removed = _dedupe(papers)
+    unique, duplicates_removed, identifier_conflicts = _dedupe(papers)
     year_counter: Counter[int] = Counter()
     venue_counter: Counter[str] = Counter()
     author_counter: Counter[str] = Counter()
@@ -278,6 +300,7 @@ def analyze_papers(
     return {
         "sample_size": len(unique),
         "duplicates_removed": duplicates_removed,
+        "identifier_conflicts": identifier_conflicts,
         "year_range": year_range,
         "year_counts": [
             {"year": year, "count": count} for year, count in sorted(year_counter.items())

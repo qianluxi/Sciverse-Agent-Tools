@@ -13,6 +13,12 @@ from research_app.ai import (
     extract_evidence,
     generate_outline,
 )
+from research_app.ai_settings import (
+    DEFAULT_BASE_URL,
+    default_profile,
+    list_ai_profiles,
+    record_ai_profile,
+)
 from research_app.service import call_api
 
 
@@ -25,11 +31,28 @@ st.caption(
 )
 ai_session_id = st.session_state.setdefault("ai_session_id", uuid.uuid4().hex)
 
-st.session_state.setdefault(
-    "ai_base_url", os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
-)
+_default_profile = default_profile()
+st.session_state.setdefault("ai_base_url", _default_profile["base_url"])
+st.session_state.setdefault("ai_model", _default_profile["model"])
 st.session_state.setdefault("ai_key", os.environ.get("OPENAI_API_KEY", ""))
-st.session_state.setdefault("ai_model", os.environ.get("OPENAI_MODEL", "gpt-4o-mini"))
+
+_profiles = list_ai_profiles()
+_base_url_options = [profile["base_url"] for profile in _profiles]
+if DEFAULT_BASE_URL not in _base_url_options:
+    _base_url_options.insert(0, DEFAULT_BASE_URL)
+_base_url_options.append("自定义 URL")
+_current_base_url = st.session_state.get("ai_base_url", DEFAULT_BASE_URL)
+if _current_base_url not in _base_url_options:
+    _base_url_options.append(_current_base_url)
+
+
+def _on_base_url_change() -> None:
+    selected = st.session_state.get("ai_base_url_select")
+    for profile in _profiles:
+        if profile["base_url"] == selected and profile.get("model"):
+            st.session_state["ai_model"] = profile["model"]
+            break
+
 
 with st.sidebar:
     st.markdown("### Sciverse")
@@ -37,11 +60,22 @@ with st.sidebar:
     sciverse_token = sciverse_token.strip() or resolve_token()
     st.divider()
     st.markdown("### AI 服务（OpenAI 兼容）")
-    base_url = st.text_input(
+    selected_base_url = st.selectbox(
         "Base URL",
-        key="ai_base_url",
-        placeholder="https://api.openai.com/v1",
+        _base_url_options,
+        index=_base_url_options.index(_current_base_url),
+        key="ai_base_url_select",
+        on_change=_on_base_url_change,
     )
+    if selected_base_url == "自定义 URL":
+        base_url = st.text_input(
+            "自定义 Base URL",
+            key="ai_custom_base_url",
+            placeholder="https://api.example.com/v1",
+        ).strip()
+    else:
+        base_url = selected_base_url
+        st.session_state["ai_base_url"] = base_url
     ai_key = st.text_input(
         "API Key",
         type="password",
@@ -53,7 +87,7 @@ with st.sidebar:
         key="ai_model",
         help="OpenCode Go 推荐 glm-5.3-flash 等非推理模型；推理模型可能耗尽输出预算。",
     )
-    st.caption("AI 配置在当前浏览器会话内保留；关闭浏览器后清除。")
+    st.caption("Base URL 和模型会记录在本机；API Key 只在当前浏览器会话保留。")
     if st.button(
         "测试 AI 连接",
         disabled=not base_url or not ai_key or not model,
@@ -65,6 +99,7 @@ with st.sidebar:
                 model=model,
                 session_id=ai_session_id,
             )
+            record_ai_profile(base_url, model)
             reply = test_client.chat(
                 [{"role": "user", "content": "只回复 OK"}],
                 max_tokens=16,
@@ -149,6 +184,7 @@ if extract_clicked:
             model=model,
             session_id=ai_session_id,
         )
+        record_ai_profile(base_url, model)
         with st.spinner("正在调用 AI 提取证据…"):
             evidence = extract_evidence(client, documents)
         st.session_state["ai_evidence"] = evidence
@@ -190,6 +226,7 @@ if evidence:
                 model=model,
                 session_id=ai_session_id,
             )
+            record_ai_profile(base_url, model)
             with st.spinner("正在生成提纲…"):
                 outline = generate_outline(client, question, evidence)
             st.session_state["ai_outline"] = outline

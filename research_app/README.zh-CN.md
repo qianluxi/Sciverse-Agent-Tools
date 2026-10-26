@@ -45,7 +45,7 @@ python3 -m streamlit run research_app/app.py
 8. 左侧“引用网络”：选择中心论文，加载引用/被引/相关工作的一层关系，按需继续展开节点；可补全年份、期刊等元数据，按条件过滤，并导出 GraphML 或边列表 CSV。
 9. 左侧“趋势分析”：统计当前检索结果的年份、期刊、作者、学科、关键词、高被引和增长关键词；条件筛选可扩展到最多 5 页，页面显示样本量、请求次数、缺失率和截断风险，并导出统计 ZIP 或 PNG。
 10. 左侧“图表证据板”：从最多 5 篇有全文记录的论文中提取图表（每篇最多 4 张），为每张图添加备注，并导出证据清单 CSV 或图片 ZIP。是否能读以实际读取结果为准；`is_content_accessible=false` 的论文也可以尝试，单个失败不会阻塞其他结果。
-11. 左侧“AI 证据与提纲”：配置 OpenAI 兼容的 Base URL、API Key 和模型名；从最多 5 篇论文中提取研究问题、方法、样本、发现、局限和引文，再生成带来源标注的 Markdown 综述提纲。API Key 只在当前会话使用。
+11. 左侧“AI 证据与提纲”：从最近使用的 Base URL 中选择或填写自定义 OpenAI 兼容服务，配置 API Key 和模型名；从最多 5 篇论文中提取研究问题、方法、样本、发现、局限和引文，再生成带来源标注的 Markdown 综述提纲。API Key 只在当前会话使用。
 
 ## 运行离线测试
 
@@ -69,14 +69,15 @@ python -m pytest research_app/tests/ -v
 
 ## AI 证据与提纲
 
-“AI 证据与提纲”页面需要用户自备 OpenAI 兼容服务。填写 Base URL（例如 `https://api.openai.com/v1`）、API Key 和模型名后，可对最多 5 篇论文提取结构化证据并生成 Markdown 提纲。
+“AI 证据与提纲”页面需要用户自备 OpenAI 兼容服务。默认 Base URL 为 OpenCode Go（`https://opencode.ai/zen/go/v1`）；填写 API Key 和模型名后，可对最多 5 篇论文提取结构化证据并生成 Markdown 提纲。也可选择“自定义 URL”连接其他服务。
 
-- API Key 只在当前会话使用，不写入本地数据库或源码。
+- Base URL 和模型名会记录在本机 `~/.sciverse/ai-settings.json`，下次从下拉列表选择；选择历史 URL 会自动带出其上次使用的模型。
+- API Key 只在当前会话使用，不写入本地数据库、配置文件或源码。
 - 每条证据保留论文 ID；模型输出仍需人工核对原文。
 - AI 失败按论文隔离，不阻塞其他论文。
 - 不会自动写入 Zotero 或生成最终论文。
 
-OpenCode Go 示例：Base URL 填 `https://opencode.ai/zen/go/v1`，模型填 `glm-5.3-flash` 或其他走 `/chat/completions` 的非推理模型 ID（不要加 `opencode-go/` 前缀）。客户端会自动发送稳定的 `x-opencode-session` 会话头和专用 User-Agent。若反复出现 `finish_reason=length` 和空内容，说明推理过程耗尽了输出预算，应换用非推理模型。
+OpenCode Go 推荐模型为 `glm-5.3-flash` 或其他走 `/chat/completions` 的非推理模型 ID（不要加 `opencode-go/` 前缀）。客户端会自动发送稳定的 `x-opencode-session` 会话头和专用 User-Agent。若反复出现 `finish_reason=length` 和空内容，说明推理过程耗尽了输出预算，应换用非推理模型。
 
 ## Windows 便携版 exe
 
@@ -88,7 +89,7 @@ powershell -ExecutionPolicy Bypass -File scripts/build_desktop.ps1
 
 构建结果位于 `dist/SciverseResearchWorkbench.exe`。双击后会启动本地服务并自动打开浏览器；不需要命令行。首次构建需要安装 PyInstaller，耗时和体积取决于当前 Python 环境。当前构建已验证可启动并返回页面，产物约 100 MB；onefile 首次启动需要解压，可能等待数十秒。
 
-AI 页面的 API Key 只在当前会话输入，不写入 exe 或本地数据库；Sciverse Token 仍按原有方式从环境变量或凭据文件读取。
+AI 页面的 API Key 只在当前会话输入，不写入 exe 或本地数据库；Base URL 和模型名保存在本机 `~/.sciverse/ai-settings.json`。Sciverse Token 仍按原有方式从环境变量或凭据文件读取。
 
 ## 后续规划
 

@@ -110,12 +110,14 @@ class OpenAICompatibleClient:
                 content = _message_text(message.get("content"))
             except (KeyError, IndexError, TypeError) as error:
                 raise AIError("AI 响应缺少 choices/message/content。") from error
-            if content:
-                return content
-
             finish_reason = choice.get("finish_reason")
             reasoning = message.get("reasoning_content") or ""
             refusal = message.get("refusal")
+            if content:
+                if finish_reason == "length" and attempt < len(budgets) - 1:
+                    continue
+                return content
+
             if attempt < len(budgets) - 1 and (finish_reason == "length" or reasoning):
                 continue
             detail = f"finish_reason={finish_reason!r}, reasoning_chars={len(reasoning)}"

@@ -6,6 +6,8 @@ import unicodedata
 from datetime import datetime, timezone
 from typing import Any
 
+from research_app.csv_safe import write_safe_rows
+
 
 FIELD_KEYS = (
     "research_question",
@@ -147,7 +149,7 @@ def export_evidence_csv(evidence: list[dict[str, Any]]) -> bytes:
     output = io.StringIO(newline="")
     writer = csv.DictWriter(output, fieldnames=CSV_COLUMNS)
     writer.writeheader()
-    writer.writerows(evidence_rows(evidence))
+    write_safe_rows(writer, evidence_rows(evidence))
     return output.getvalue().encode("utf-8-sig")
 
 

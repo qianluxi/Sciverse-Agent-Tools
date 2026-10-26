@@ -53,6 +53,51 @@ def _papers():
     ]
 
 
+def test_analysis_dedupes_across_doi_and_unique_id():
+    papers = [
+        {
+            "title": "Shared work",
+            "doi": "10.1000/shared",
+            "unique_id": "paper:shared",
+            "publication_published_year": 2024,
+        },
+        {
+            "title": "Shared work",
+            "unique_id": "paper:shared",
+            "publication_published_year": 2024,
+        },
+        {
+            "title": "Shared title but different work",
+            "doi": "10.1000/other-a",
+            "unique_id": "paper:other-a",
+            "publication_published_year": 2023,
+        },
+        {
+            "title": "Shared title but different work",
+            "doi": "10.1000/other-b",
+            "unique_id": "paper:other-b",
+            "publication_published_year": 2022,
+        },
+    ]
+
+    analysis = analyze_papers(papers)
+
+    assert analysis["sample_size"] == 3
+    assert analysis["duplicates_removed"] == 1
+
+
+def test_analysis_uses_unicode_titles_for_duplicates():
+    papers = [
+        {"title": "Привет, мир!", "publication_published_year": 2024},
+        {"title": "привет мир", "publication_published_year": 2024},
+    ]
+
+    analysis = analyze_papers(papers)
+
+    assert analysis["sample_size"] == 1
+    assert analysis["duplicates_removed"] == 1
+
+
 def test_analysis_dedupes_and_computes_missing_rates():
     analysis = analyze_papers(_papers())
 

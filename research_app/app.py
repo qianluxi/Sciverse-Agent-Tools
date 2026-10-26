@@ -149,6 +149,8 @@ def _execute_search(
             if key.startswith("export_item_"):
                 del st.session_state[key]
         st.session_state["export_selection"] = {}
+        for key in ("trend_sample", "trend_source", "trend_requests", "trend_truncated"):
+            st.session_state.pop(key, None)
     if not preserve_selection:
         try:
             record_search(search_kind, params, total_count)

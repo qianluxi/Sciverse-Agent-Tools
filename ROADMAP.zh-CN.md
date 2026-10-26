@@ -15,8 +15,8 @@
 | 3 | 引用网络 | 已完成 | 本地 63 项测试、CI 及用户功能验收通过 | 100 节点性能测试用户明确取消 |
 | 4 | 趋势分析 | 已完成 | 本地 70 项测试、CI 及用户真实扩展采样验收通过 | 无 |
 | 5 | 可选增强 | 已完成（当前范围） | 本地 76 项测试、CI 及真实图表提取通过 | AI/桌面转入阶段 6、7 |
-| 6 | AI 证据检索与综述提纲 | 已完成 | 本地 107 项测试及 Test CI 通过；真实模型提取、核对和 CSV/Markdown 导出验收通过 | 包发布暂停，见独立维护项 |
-| 7 | Windows 便携封装 | 已完成 | exe 109,120,968 字节；本机启动约 6.7 秒；用户确认无 Python 的 Windows 双击验收通过（2026-10-26） | 无；包发布暂停，见独立维护项 |
+| 6 | AI 证据检索与综述提纲 | 已完成 | 本地 119 项测试及 Test CI 通过；真实模型提取、核对和 CSV/Markdown 导出验收通过 | 包发布暂停，见独立维护项 |
+| 7 | Windows 便携封装 | 已完成 | exe 109,140,523 字节；本机启动约 7.0 秒；用户确认无 Python 的 Windows 双击验收通过（2026-10-26） | 无；包发布暂停，见独立维护项 |
 
 执行规则：
 
@@ -462,7 +462,7 @@ SQLite 仅保存：
 - OpenAI 兼容客户端、证据 JSON 解析、按论文隔离错误、提纲生成和页面均已实现。
 - 证据数据规范化、引句与输入文本自动比对、模型/提示词版本/生成时间记录、人工编辑、核对备注和逐篇核对状态均已实现。
 - 证据表可导出 CSV 和 Markdown；CSV 每篇一行，最多 3 条引句分列并保留校验状态和核对备注；提纲导出带模型、提示词版本和生成时间注释。
-- `pytest research_app/tests/ -v`：107 passed、1 skipped；覆盖 AI 页面无 Key 状态、JSON 解析、引句校验、编辑/核对状态、CSV/Markdown 导出、`outline_markdown` 包装/截断恢复和 mock 调用。
+- `pytest research_app/tests/ -v`：119 passed、1 skipped；覆盖 AI 页面无 Key 状态、JSON 解析、引句校验、编辑/核对状态、CSV/Markdown 导出、`outline_markdown` 包装/截断恢复、截断响应重试和 mock 调用。
 - 提纲提示词升级到 `outline-v2`，直接要求 Markdown；同时兼容模型返回的 `outline_markdown` JSON 包装、Markdown 代码块及被截断的 JSON 字符串，避免下载文件出现原始 JSON。
 - 2026-10-26 使用 `deepseek-v4.1-flash` 完成真实模型验收：3 篇剪力墙论文提取成功，9 条引句全部在输入文本中匹配，逐篇标记已核对并导出 CSV/Markdown。
 - 验收后修正 CSV 行高和年份显示：引句改为独立列，`2002.0` 显示为 `2002`。
@@ -472,8 +472,8 @@ SQLite 仅保存：
 
 阶段 7 本地记录：
 
-- `scripts/build_desktop.ps1` 已成功生成 109,120,968 字节（约 104 MB）的单文件 exe。
-- 已验证 exe 启动本地服务并返回 HTTP 200；2026-10-26 最新构建首次启动实测约 6.7 秒。
+- `scripts/build_desktop.ps1` 已成功生成 109,140,523 字节（约 104 MB）的单文件 exe。
+- 已验证 exe 启动本地服务并返回 HTTP 200；2026-10-26 最新构建首次启动实测约 7.0 秒。
 - 已补充故障排查、卸载说明和干净 Windows 验收清单。
 - 用户在无 Python 的 Windows 10/11 机器上双击 exe 验收通过（2026-10-26），阶段 7 完成。
 - `v1.9.0`/`v1.9.1` 的 tag 和版本提交已生成，GitHub Release 页面已手动补建；PyPI/npm 未发布，这是独立包发布维护项，不阻塞阶段 7。
@@ -491,3 +491,18 @@ SQLite 仅保存：
 - 工作台继续通过 GitHub Release 和便携 exe 分发；SDK 用户可暂时从源码安装。
 
 恢复自动发布的条件：获得相应包名权限并配置可信发布或有效 token；届时先手动 `Republish` 最新版本，确认成功后再恢复 `publishCmd`。
+
+## 13. 数据正确性与导出加固（2026-10-26）
+
+按代码审查报告完成以下修正：
+
+- 去重改为收集全部可用标识符并跨字段匹配；新增 `screening_candidate_identifiers` 表（数据库 Schema v3），支持一条记录有 DOI、另一条只有相同 `unique_id` 的场景。冲突的强标识符不因标题相同而合并。
+- 标题规范化改用 Unicode NFKC + `isalnum()`，保留日文、韩文、西里尔文等文字字符。
+- 新检索会清除 `trend_sample`、`trend_source`、`trend_requests`、`trend_truncated`，避免趋势分析复用旧检索样本。
+- 相关工作在 DOT 中使用虚线无箭头，在 GraphML 中写入 `directed="false"`；引用/被引仍为有向边。
+- AI 客户端对非空但 `finish_reason="length"` 的响应也会在预算内重试更大输出；最终仍截断时由调用方恢复/报错。
+- SQLite 每个连接启用 `PRAGMA foreign_keys=ON`，并验证项目删除级联。
+- 所有 CSV 导出对 `= + - @` 等公式前缀添加单引号，降低电子表格公式注入风险。
+- `pytest research_app/tests/ -v`：119 passed、1 skipped。
+
+未纳入本轮：MCP HTTP 请求体限制（按仓库约定独立安全任务）、图片缓存上限、非本地 HTTP Base URL 警告。

@@ -7,8 +7,9 @@ from collections import Counter
 from datetime import datetime, timezone
 from typing import Any, Callable
 
+from research_app.csv_safe import safe_csv_row
 from research_app.exports import author_names
-from research_app.screening import candidate_key
+from research_app.screening import normalize_title, strong_identifier_keys
 
 
 MISSING_FIELDS = (
@@ -57,15 +58,25 @@ def _citation_count(paper: dict[str, Any]) -> int | None:
 
 
 def _dedupe(papers: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
-    seen: set[str] = set()
+    seen_strong: set[str] = set()
+    title_has_strong: dict[str, bool] = {}
     unique: list[dict[str, Any]] = []
-    for index, paper in enumerate(papers):
-        key = candidate_key(paper, index)
-        if key in seen:
+    duplicates = 0
+    for paper in papers:
+        strong = set(strong_identifier_keys(paper))
+        title = normalize_title(paper.get("title"))
+        title_key = f"title:{title}" if title else ""
+        duplicate = bool(strong & seen_strong)
+        if not duplicate and title_key and title_key in title_has_strong:
+            duplicate = not strong or not title_has_strong[title_key]
+        seen_strong.update(strong)
+        if title_key:
+            title_has_strong[title_key] = title_has_strong.get(title_key, False) or bool(strong)
+        if duplicate:
+            duplicates += 1
             continue
-        seen.add(key)
         unique.append(paper)
-    return unique, len(papers) - len(unique)
+    return unique, duplicates
 
 
 def _is_missing(value: Any) -> bool:
@@ -236,7 +247,8 @@ def _write_csv(rows: list[dict[str, Any]], columns: list[str]) -> bytes:
     output = io.StringIO(newline="")
     writer = csv.DictWriter(output, fieldnames=columns)
     writer.writeheader()
-    writer.writerows(rows)
+    for row in rows:
+        writer.writerow(safe_csv_row(row))
     return output.getvalue().encode("utf-8-sig")
 
 

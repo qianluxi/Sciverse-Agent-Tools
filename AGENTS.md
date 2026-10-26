@@ -35,3 +35,4 @@ Security hardening in `packages/mcp` (including HTTP request-body limits and tim
 - Update the owning package's documentation when usage changes.
 - Keep changes focused and preserve unrelated worktree changes.
 - Do not commit or push unless explicitly requested.
+- Exception: after implementing fixes requested from an expert review, run validation, then commit and push the validated changes to `main` automatically without waiting for another request.

@@ -6,6 +6,8 @@ import re
 import zipfile
 from typing import Any
 
+from research_app.csv_safe import safe_csv_row
+
 
 IMAGE_REF_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
 MAX_IMAGES_PER_PAPER = 4
@@ -65,7 +67,7 @@ def export_evidence_manifest_csv(items: list[dict[str, Any]]) -> bytes:
     writer = csv.DictWriter(output, fieldnames=columns)
     writer.writeheader()
     for item in items:
-        writer.writerow({column: item.get(column, "") for column in columns})
+        writer.writerow(safe_csv_row({column: item.get(column, "") for column in columns}))
     return output.getvalue().encode("utf-8-sig")
 
 

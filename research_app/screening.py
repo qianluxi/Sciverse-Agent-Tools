@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import re
+import unicodedata
 from typing import Any
 
 
@@ -29,23 +29,35 @@ def normalize_doi(value: Any) -> str:
 
 
 def normalize_title(value: Any) -> str:
-    return re.sub(r"[^0-9a-z\u4e00-\u9fff]+", "", str(value or "").casefold())
+    text = unicodedata.normalize("NFKC", str(value or "")).casefold()
+    return "".join(char for char in text if char.isalnum())
+
+
+def strong_identifier_keys(paper: dict[str, Any]) -> list[str]:
+    keys = []
+    doi = normalize_doi(paper.get("doi"))
+    if doi:
+        keys.append(f"doi:{doi}")
+    unique_id = str(paper.get("unique_id") or "").strip()
+    if unique_id:
+        keys.append(f"uid:{unique_id}")
+    doc_id = str(paper.get("doc_id") or "").strip()
+    if doc_id:
+        keys.append(f"doc:{doc_id}")
+    return keys
+
+
+def identifier_keys(paper: dict[str, Any]) -> list[str]:
+    keys = strong_identifier_keys(paper)
+    title = normalize_title(paper.get("title"))
+    if title:
+        keys.append(f"title:{title}")
+    return keys
 
 
 def candidate_key(paper: dict[str, Any], index: int = 0) -> str:
-    doi = normalize_doi(paper.get("doi"))
-    if doi:
-        return f"doi:{doi}"
-    unique_id = str(paper.get("unique_id") or "").strip()
-    if unique_id:
-        return f"uid:{unique_id}"
-    doc_id = str(paper.get("doc_id") or "").strip()
-    if doc_id:
-        return f"doc:{doc_id}"
-    title = normalize_title(paper.get("title"))
-    if title:
-        return f"title:{title}"
-    return f"unknown:{index}"
+    identifiers = identifier_keys(paper)
+    return identifiers[0] if identifiers else f"unknown:{index}"
 
 
 def duplicate_basis(key: str) -> str:

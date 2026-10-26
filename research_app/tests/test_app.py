@@ -110,6 +110,40 @@ def test_structured_search_reads_text_and_figure_offline(monkeypatch, tmp_path):
     assert read_count == 2
 
 
+def test_new_search_clears_old_trend_sample(monkeypatch, tmp_path):
+    _isolate_storage(monkeypatch, tmp_path)
+    monkeypatch.delenv("SCIVERSE_API_TOKEN", raising=False)
+    monkeypatch.setattr(sciverse.credentials, "resolve_token", lambda *_args: None)
+
+    def fake_call_api(token, action, **kwargs):
+        assert action == "search_papers"
+        return {
+            "results": [{"title": "New paper", "unique_id": "paper:new"}],
+            "total_count": 1,
+            "page": 1,
+            "page_size": 20,
+        }
+
+    monkeypatch.setattr(service, "call_api", fake_call_api)
+    app = AppTest.from_file(str(APP_PATH), default_timeout=30).run(timeout=30)
+    app.radio[0].set_value("条件筛选").run(timeout=30)
+    next(widget for widget in app.text_input if widget.label == "API Token").set_value(
+        "sv-offline-test"
+    )
+    next(widget for widget in app.text_input if widget.label == "关键词或题名（可选）").set_value(
+        "new topic"
+    )
+    app.session_state["trend_sample"] = [{"title": "Old paper"}]
+    app.session_state["trend_source"] = "old sample"
+    app.session_state["trend_requests"] = 3
+    app.session_state["trend_truncated"] = True
+    next(button for button in app.button if button.label == "筛选论文").click().run(timeout=30)
+
+    assert not app.exception
+    for key in ("trend_sample", "trend_source", "trend_requests", "trend_truncated"):
+        assert key not in app.session_state
+
+
 def test_semantic_search_uses_hits_response_offline(monkeypatch, tmp_path):
     _isolate_storage(monkeypatch, tmp_path)
     monkeypatch.delenv("SCIVERSE_API_TOKEN", raising=False)

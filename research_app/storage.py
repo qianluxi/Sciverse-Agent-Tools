@@ -14,11 +14,15 @@ from research_app.screening import (
     EXCLUSION_REASONS,
     candidate_key,
     duplicate_basis,
+    identifier_keys,
+    normalize_title,
     paper_id,
+    strong_identifier_keys,
 )
 
 
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
+_BACKUP_SCHEMA_VERSION = 2
 _MAX_HISTORY_ENTRIES = 50
 _MAX_SAVED_SEARCHES = 100
 _MAX_PARAMS_BYTES = 16 * 1024
@@ -146,6 +150,39 @@ def _migrate(connection: sqlite3.Connection) -> None:
         )
         version = 2
         connection.execute("PRAGMA user_version = 2")
+    if version < 3:
+        connection.executescript(
+            """
+            CREATE TABLE screening_candidate_identifiers (
+                project_id TEXT NOT NULL REFERENCES screening_projects(id) ON DELETE CASCADE,
+                identifier_key TEXT NOT NULL,
+                candidate_key TEXT NOT NULL,
+                PRIMARY KEY (project_id, identifier_key)
+            );
+            CREATE INDEX screening_candidate_identifiers_candidate
+                ON screening_candidate_identifiers(project_id, candidate_key);
+            """
+        )
+        for row in connection.execute(
+            "SELECT project_id, candidate_key, paper_id, title, doi FROM screening_candidates"
+        ).fetchall():
+            paper: dict[str, Any] = {"doi": row["doi"], "title": row["title"]}
+            key = str(row["candidate_key"] or "")
+            if key.startswith("uid:"):
+                paper["unique_id"] = key[4:]
+            elif key.startswith("doc:"):
+                paper["doc_id"] = key[4:]
+            if str(row["paper_id"] or "").startswith("paper:"):
+                paper.setdefault("unique_id", row["paper_id"])
+            for identifier in identifier_keys(paper):
+                connection.execute(
+                    """INSERT OR IGNORE INTO screening_candidate_identifiers(
+                           project_id, identifier_key, candidate_key
+                       ) VALUES (?, ?, ?)""",
+                    (row["project_id"], identifier, key),
+                )
+        version = 3
+        connection.execute("PRAGMA user_version = 3")
 
 
 @contextmanager
@@ -155,6 +192,7 @@ def _connection() -> Iterator[sqlite3.Connection]:
     connection = sqlite3.connect(path)
     connection.row_factory = sqlite3.Row
     try:
+        connection.execute("PRAGMA foreign_keys = ON")
         _migrate(connection)
         if os.name != "nt":
             try:
@@ -255,7 +293,7 @@ def delete_saved_search(search_id: str) -> bool:
 def export_saved_searches_backup() -> bytes:
     payload = {
         "format": _BACKUP_FORMAT,
-        "schema_version": _SCHEMA_VERSION,
+        "schema_version": _BACKUP_SCHEMA_VERSION,
         "saved_searches": list_saved_searches(),
     }
     data = (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
@@ -273,7 +311,7 @@ def restore_saved_searches_backup(data: bytes) -> int:
         raise ValueError("备份文件不是有效的 UTF-8 JSON。") from error
     if not isinstance(payload, dict) or payload.get("format") != _BACKUP_FORMAT:
         raise ValueError("备份文件格式不匹配。")
-    if payload.get("schema_version") not in {1, _SCHEMA_VERSION}:
+    if payload.get("schema_version") not in {1, _BACKUP_SCHEMA_VERSION}:
         raise ValueError("备份文件版本不受支持。")
     _reject_secrets(payload)
 
@@ -370,6 +408,46 @@ def get_screening_project(project_id: str) -> dict[str, Any]:
         return dict(_screening_project(connection, project_id))
 
 
+def _find_duplicate(
+    connection: sqlite3.Connection,
+    project_id: str,
+    paper: dict[str, Any],
+) -> tuple[str, str] | None:
+    strong = strong_identifier_keys(paper)
+    for identifier in strong:
+        row = connection.execute(
+            """SELECT candidate_key FROM screening_candidate_identifiers
+               WHERE project_id = ? AND identifier_key = ?""",
+            (project_id, identifier),
+        ).fetchone()
+        if row:
+            return str(row["candidate_key"]), duplicate_basis(identifier)
+
+    title = normalize_title(paper.get("title"))
+    title_identifier = f"title:{title}" if title else ""
+    if not title_identifier:
+        return None
+    row = connection.execute(
+        """SELECT candidate_key FROM screening_candidate_identifiers
+           WHERE project_id = ? AND identifier_key = ?""",
+        (project_id, title_identifier),
+    ).fetchone()
+    if not row:
+        return None
+    existing_has_strong = connection.execute(
+        """SELECT 1 FROM screening_candidate_identifiers
+           WHERE project_id = ? AND candidate_key = ?
+             AND (identifier_key LIKE 'doi:%'
+                  OR identifier_key LIKE 'uid:%'
+                  OR identifier_key LIKE 'doc:%')
+           LIMIT 1""",
+        (project_id, row["candidate_key"]),
+    ).fetchone()
+    if strong and existing_has_strong:
+        return None
+    return str(row["candidate_key"]), duplicate_basis(title_identifier)
+
+
 def add_screening_candidates(project_id: str, papers: list[dict[str, Any]]) -> dict[str, int]:
     if len(papers) > 500:
         raise ValueError("单次最多加入 500 条候选文献。")
@@ -387,22 +465,40 @@ def add_screening_candidates(project_id: str, papers: list[dict[str, Any]]) -> d
             except (TypeError, ValueError):
                 year = None
             doi = str(paper.get("doi") or "") or None
-            cursor = connection.execute(
-                """INSERT OR IGNORE INTO screening_candidates(
-                       project_id, candidate_key, paper_id, title, year, doi,
-                       status, notes, created_at, updated_at
-                   ) VALUES (?, ?, ?, ?, ?, ?, 'pending', '', ?, ?)""",
-                (project_id, key, paper_id(paper, key), title, year, doi, now, now),
-            )
-            if cursor.rowcount:
+            duplicate = _find_duplicate(connection, project_id, paper)
+            duplicate_of = None
+            basis = ""
+            if duplicate:
+                duplicate_of, basis = duplicate
+            else:
+                cursor = connection.execute(
+                    """INSERT OR IGNORE INTO screening_candidates(
+                           project_id, candidate_key, paper_id, title, year, doi,
+                           status, notes, created_at, updated_at
+                       ) VALUES (?, ?, ?, ?, ?, ?, 'pending', '', ?, ?)""",
+                    (project_id, key, paper_id(paper, key), title, year, doi, now, now),
+                )
+                if not cursor.rowcount:
+                    duplicate_of = key
+                    basis = duplicate_basis(key)
+            if duplicate_of is None:
                 added += 1
+                canonical_key = key
             else:
                 duplicates += 1
+                canonical_key = duplicate_of
                 connection.execute(
                     """INSERT INTO screening_duplicates(
                            project_id, candidate_key, duplicate_of, basis, title, created_at
                        ) VALUES (?, ?, ?, ?, ?, ?)""",
-                    (project_id, key, key, duplicate_basis(key), title, now),
+                    (project_id, key, duplicate_of, basis, title, now),
+                )
+            for identifier in identifier_keys(paper):
+                connection.execute(
+                    """INSERT OR IGNORE INTO screening_candidate_identifiers(
+                           project_id, identifier_key, candidate_key
+                       ) VALUES (?, ?, ?)""",
+                    (project_id, identifier, canonical_key),
                 )
         identified = len(papers)
         connection.execute(

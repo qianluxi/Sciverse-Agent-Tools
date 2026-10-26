@@ -1,5 +1,6 @@
 import csv
 import io
+import xml.etree.ElementTree as ET
 
 from research_app.graph import (
     build_network,
@@ -94,6 +95,38 @@ def test_graph_exports_escape_values_and_include_edges():
     assert '<graph id="citation-network"' in graphml
     assert next(csv.DictReader(io.StringIO(edge_csv)))["source"] == "paper:center"
     assert "digraph citation_network" in dot
+
+
+def test_related_works_edges_are_undirected_in_dot_and_graphml():
+    network = build_network(
+        _center(),
+        "RELATED_WORKS",
+        [{"id": "paper:related", "title": "Related"}],
+    )
+
+    graphml = export_graphml(network["nodes"], network["edges"]).decode("utf-8")
+    dot = render_dot(network["nodes"], network["edges"])
+
+    root = ET.fromstring(graphml)
+    namespace = {"g": "http://graphml.graphdrawing.org/xmlns"}
+    edge = root.find(".//g:edge", namespace)
+    assert edge is not None
+    assert edge.get("directed") == "false"
+    assert 'style="dashed", dir="none"' in dot
+
+
+def test_directed_edges_remain_directed_in_graphml():
+    network = build_network(
+        _center(),
+        "REFERENCES",
+        [{"id": "paper:reference", "title": "Reference"}],
+    )
+
+    root = ET.fromstring(export_graphml(network["nodes"], network["edges"]).decode("utf-8"))
+    namespace = {"g": "http://graphml.graphdrawing.org/xmlns"}
+    edge = root.find(".//g:edge", namespace)
+    assert edge is not None
+    assert edge.get("directed") == "true"
 
 
 def test_only_sciverse_ids_are_expandable():

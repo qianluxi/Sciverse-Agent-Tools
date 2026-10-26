@@ -5,6 +5,7 @@ import io
 import re
 from typing import Any
 
+from research_app.csv_safe import safe_csv_row
 from research_app.screening import STATUS_LABELS
 
 
@@ -29,16 +30,18 @@ def export_results_csv(papers: list[dict[str, Any]]) -> bytes:
     writer.writeheader()
     for paper in papers:
         writer.writerow(
-            {
-                "title": paper.get("title", ""),
-                "authors": format_authors(paper),
-                "year": paper.get("publication_published_year", ""),
-                "journal": paper.get("publication_venue_name_unified", ""),
-                "doi": paper.get("doi", ""),
-                "abstract": paper.get("abstract") or paper.get("chunk", ""),
-                "unique_id": paper.get("unique_id", ""),
-                "doc_id": paper.get("doc_id", ""),
-            }
+            safe_csv_row(
+                {
+                    "title": paper.get("title", ""),
+                    "authors": format_authors(paper),
+                    "year": paper.get("publication_published_year", ""),
+                    "journal": paper.get("publication_venue_name_unified", ""),
+                    "doi": paper.get("doi", ""),
+                    "abstract": paper.get("abstract") or paper.get("chunk", ""),
+                    "unique_id": paper.get("unique_id", ""),
+                    "doc_id": paper.get("doc_id", ""),
+                }
+            )
         )
     return output.getvalue().encode("utf-8-sig")
 
@@ -171,17 +174,19 @@ def export_screening_csv(candidates: list[dict[str, Any]]) -> bytes:
     writer.writeheader()
     for candidate in candidates:
         writer.writerow(
-            {
-                "candidate_key": candidate.get("candidate_key", ""),
-                "paper_id": candidate.get("paper_id", ""),
-                "title": candidate.get("title", ""),
-                "year": candidate.get("year", ""),
-                "doi": candidate.get("doi", ""),
-                "status": candidate.get("status", ""),
-                "status_label": STATUS_LABELS.get(candidate.get("status", ""), ""),
-                "exclusion_reason": candidate.get("exclusion_reason") or "",
-                "notes": candidate.get("notes", ""),
-                "updated_at": candidate.get("updated_at", ""),
-            }
+            safe_csv_row(
+                {
+                    "candidate_key": candidate.get("candidate_key", ""),
+                    "paper_id": candidate.get("paper_id", ""),
+                    "title": candidate.get("title", ""),
+                    "year": candidate.get("year", ""),
+                    "doi": candidate.get("doi", ""),
+                    "status": candidate.get("status", ""),
+                    "status_label": STATUS_LABELS.get(candidate.get("status", ""), ""),
+                    "exclusion_reason": candidate.get("exclusion_reason") or "",
+                    "notes": candidate.get("notes", ""),
+                    "updated_at": candidate.get("updated_at", ""),
+                }
+            )
         )
     return output.getvalue().encode("utf-8-sig")

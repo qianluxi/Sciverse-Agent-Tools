@@ -32,6 +32,36 @@ def test_export_results_csv_preserves_unicode_and_semantic_chunks():
     assert row["doc_id"] == "doc-1"
 
 
+def test_csv_exports_neutralize_spreadsheet_formulas():
+    output = export_results_csv(
+        [
+            {
+                "title": "=HYPERLINK(\"https://example.com\")",
+                "author": [{"name": "+cmd"}],
+                "abstract": "@SUM(A1:A2)",
+            }
+        ]
+    ).decode("utf-8-sig")
+    row = next(csv.DictReader(io.StringIO(output)))
+
+    assert row["title"].startswith("'=")
+    assert row["authors"].startswith("'+")
+    assert row["abstract"].startswith("'@")
+
+    screening = export_screening_csv(
+        [
+            {
+                "candidate_key": "doi:10.1/x",
+                "title": "-2+3",
+                "notes": "=1+1",
+            }
+        ]
+    ).decode("utf-8-sig")
+    screening_row = next(csv.DictReader(io.StringIO(screening)))
+    assert screening_row["title"].startswith("'-")
+    assert screening_row["notes"].startswith("'=")
+
+
 def test_format_authors_accepts_string_and_empty_values():
     assert format_authors({"author": "Single author"}) == "Single author"
     assert format_authors({}) == ""

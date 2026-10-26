@@ -5,6 +5,8 @@ import html
 import io
 from typing import Any
 
+from research_app.csv_safe import write_safe_rows
+
 
 RELATION_LABELS = {
     "REFERENCES": "参考文献（本文引用）",
@@ -174,7 +176,7 @@ def export_edges_csv(edges: list[dict[str, Any]]) -> bytes:
     output = io.StringIO(newline="")
     writer = csv.DictWriter(output, fieldnames=["source", "target", "relation", "directed"])
     writer.writeheader()
-    writer.writerows(edges)
+    write_safe_rows(writer, edges)
     return output.getvalue().encode("utf-8-sig")
 
 
@@ -200,9 +202,10 @@ def export_graphml(nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> 
             lines.append(f'      <data key="year">{int(node["year"])}</data>')
         lines.append("    </node>")
     for index, edge in enumerate(edges, start=1):
+        directed = "false" if edge.get("directed") is False else "true"
         lines.append(
             f'    <edge id="e{index}" source="{html.escape(str(edge["source"]), quote=True)}" '
-            f'target="{html.escape(str(edge["target"]), quote=True)}">'
+            f'target="{html.escape(str(edge["target"]), quote=True)}" directed="{directed}">'
         )
         lines.append(f'      <data key="relation">{html.escape(str(edge["relation"]))}</data>')
         lines.append("    </edge>")
@@ -228,7 +231,14 @@ def render_dot(nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> str:
             f'  "{esc(node["id"])}" [label="{esc(label)}", fillcolor="{color}", style="filled,rounded"];'
         )
     for edge in edges:
-        style = "solid" if edge.get("directed") else "dashed"
-        lines.append(f'  "{esc(edge["source"])}" -> "{esc(edge["target"])}" [style="{style}"];')
+        if edge.get("directed") is False:
+            lines.append(
+                f'  "{esc(edge["source"])}" -> "{esc(edge["target"])}" '
+                '[style="dashed", dir="none"];'
+            )
+        else:
+            lines.append(
+                f'  "{esc(edge["source"])}" -> "{esc(edge["target"])}" [style="solid"];'
+            )
     lines.append("}")
     return "\n".join(lines)

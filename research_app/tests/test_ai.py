@@ -200,6 +200,46 @@ def test_client_retries_empty_length_response_with_larger_budget(monkeypatch):
     assert calls == [2048, 8192]
 
 
+def test_client_retries_nonempty_length_response_with_larger_budget(monkeypatch):
+    calls = []
+
+    def fake_post(*args, **kwargs):
+        calls.append(kwargs["json"]["max_tokens"])
+        request = httpx.Request("POST", "https://api.example/v1/chat/completions")
+        if len(calls) == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {"content": '{"partial":'},
+                            "finish_reason": "length",
+                        }
+                    ]
+                },
+                request=request,
+            )
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {"message": {"content": '{"complete": true}'}, "finish_reason": "stop"}
+                ]
+            },
+            request=request,
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    client = OpenAICompatibleClient(
+        base_url="https://api.example/v1",
+        api_key="secret",
+        model="model",
+    )
+
+    assert client.chat([{"role": "user", "content": "hi"}]) == '{"complete": true}'
+    assert calls == [2048, 8192]
+
+
 def test_client_reports_empty_content_reason(monkeypatch):
     def fake_post(*args, **kwargs):
         return httpx.Response(

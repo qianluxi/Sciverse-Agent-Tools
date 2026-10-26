@@ -1,3 +1,10 @@
+## [1.9.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.8.7...v1.9.0) (2026-10-26)
+
+### Features
+
+* complete AI evidence review and export ([009bdb4](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/009bdb4e365703e85c03e9333b29d9fd1735f176))
+* remember AI base URLs and default to OpenCode ([1e0d0eb](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/1e0d0ebe8a23546abbf40e5bb229f6ea785fe8c2))
+
 ## [1.8.7](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.8.6...v1.8.7) (2026-10-26)
 
 ### Bug Fixes

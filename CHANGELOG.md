@@ -1,3 +1,9 @@
+## [1.9.5](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.9.4...v1.9.5) (2026-10-26)
+
+### Bug Fixes
+
+* add identifier integrity repair tool ([4798773](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/47987736f7c9605388d30d7c9dabdfee0fe731f3))
+
 ## [1.9.4](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.9.3...v1.9.4) (2026-10-26)
 
 ### Bug Fixes

@@ -28,6 +28,8 @@ All six tools share the same Bearer-Token authentication and are exposed identic
 | **CLI** | Shell scripts, quick exploration, no agent loop | Comes with the Python SDK — `sciverse auth login` |
 | **Web well-known URL** | Agent hosts that auto-discover skills via the well-known URI convention | Point your agent host at <https://sciverse.space/.well-known/agent-skills/> |
 
+> **Package release status:** This fork currently publishes GitHub tags/releases and the portable research workbench exe. PyPI/npm/ClawHub publishing is temporarily paused because the fork does not own those package names; the existing published packages remain at their previous version. Use GitHub Releases or install the SDK from source until package ownership is resolved.
+
 ## Quickstart — Skills CLI
 
 The easiest way to install the skill for projects supporting the Skills CLI is via the `npx skills` command:

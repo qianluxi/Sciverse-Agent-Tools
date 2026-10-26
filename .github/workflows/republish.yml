@@ -5,6 +5,11 @@
 # ClawHub already exists）自动跳过，只补没发出去的。
 #
 # 触发：gh workflow run republish.yml -f version=0.14.1
+#
+# 前置条件：当前账号必须是 PyPI sciverse、npm sciverse /
+# sciverse-mcp-server、ClawHub skill 的所有者或 Maintainer，
+# 并在 repo Settings → Secrets and variables → Actions 配置
+# PYPI_API_TOKEN / NPM_TOKEN / CLAWHUB_TOKEN。
 name: Republish
 
 on:

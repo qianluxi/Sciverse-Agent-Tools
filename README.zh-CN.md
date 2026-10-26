@@ -30,6 +30,8 @@
 | **CLI** | shell 脚本 / 快速试用 / 无 agent loop | 随 Python SDK 一起装 —— `sciverse auth login` |
 | **Web well-known URL** | 通过 well-known URI 约定自动发现 skill 的 agent host | 把 agent host 指向 <https://sciverse.space/.well-known/agent-skills/> |
 
+> **包发布状态：** 当前 fork 只发布 GitHub tag/Release 和科研工作台便携 exe。由于没有 PyPI/npm/ClawHub 的包名所有权，包发布暂时停用；已发布的旧版本保持不变。在解决包权限前，请使用 GitHub Release 或从源码安装 SDK。
+
 ## 5 分钟接入 —— Skills CLI
 
 对于支持 Skills CLI 的环境或项目，你可以通过一行命令快速添加 Sciverse 能力：

@@ -18,10 +18,10 @@
 #   NPM_TOKEN         — npm 上传 token（两个包共用）
 #   CLAWHUB_TOKEN     — ClawHub publish token
 #
-# 失败行为：set -e 任一步失败立即退出，semantic-release 整体 fail，
-# 留下 next release notes 草稿但不创建 GitHub Release / 不打 tag。
-# 该版本号会"卡住"——下次再合 main 时如果还有未发版改动，会算成
-# next version + 0.1（patch）继续尝试。
+# 失败行为：set -e 任一步失败立即退出。此时 semantic-release 的
+# prepare 阶段通常已经创建版本提交和 tag；失败只影响包发布和
+# GitHub Release，不会回滚 tag。修复权限后请用 Republish workflow
+# 补发该版本，不要删除或重打 tag。
 set -euo pipefail
 
 VERSION="${1:?usage: publish.sh <version>}"

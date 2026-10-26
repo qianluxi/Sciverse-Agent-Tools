@@ -2,8 +2,10 @@
 #
 # 每次 push 到 main 后 GitHub Actions 的 release.yml workflow 会跑
 # semantic-release：算 next version → bump 五处 version 文件 → 重派生
-# dist/ + tools.* + SKILL.md → 串行发 PyPI / npm / ClawHub → commit
-# bump 改动 + 创建 GitHub Release。
+# dist/ + tools.* + SKILL.md → commit bump 改动 + 创建 GitHub Release。
+#
+# PyPI / npm / ClawHub 发布暂时停用：当前仓库没有这些包名的发布权限。
+# 拿到权限后可手动运行 Republish workflow 或 scripts/publish.sh。
 tagFormat: "v${version}"
 branches:
   - main
@@ -40,11 +42,9 @@ plugins:
   - "@semantic-release/changelog"
 
   # 4. 同步 agent-tools 五处 version 文件 + 重派生（dist/ + tools.* +
-  #    SKILL.md 等），统一版本号
+  #    SKILL.md 等），统一版本号。不在这里发布包。
   - - "@semantic-release/exec"
     - prepareCmd: "node scripts/bump-versions.mjs ${nextRelease.version}"
-      # publishCmd 在每次 release 触发后跑，串行发 PyPI / npm / ClawHub
-      publishCmd: "bash scripts/publish.sh ${nextRelease.version}"
 
   # 5. commit bump 改动 + 派生产物 + tag
   - - "@semantic-release/git"

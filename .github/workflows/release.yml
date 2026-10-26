@@ -1,13 +1,11 @@
-# semantic-release：算 next version → bump 文件 → 派生 → 发包 →
+# semantic-release：算 next version → bump 文件 → 派生 →
 # commit + tag + GitHub Release。
 #
 # 触发：main 分支 push（merge PR 或直接 push）。
 #
-# Prerequisite — 在 repo Settings → Secrets and variables → Actions 配三个
-# secret：
-#   - PYPI_API_TOKEN     PyPI sciverse 上传 token
-#   - NPM_TOKEN          npm sciverse + sciverse-mcp-server 上传 token
-#   - CLAWHUB_TOKEN      ClawHub publish token
+# 包发布暂时停用：当前仓库没有 PyPI sciverse / npm sciverse /
+# sciverse-mcp-server / ClawHub skill 的发布权限。
+# 拿到权限后请手动运行 Republish workflow 或 scripts/publish.sh。
 # GITHUB_TOKEN 默认存在，用于 push commit + 打 tag + 创建 Release。
 name: Release
 
@@ -53,15 +51,13 @@ jobs:
           rm -f package-lock.json
           npm install --no-audit --no-fund
 
-      - name: Install python SDK deps (for build.sh + publish)
+      - name: Install python SDK deps (for build.sh)
         working-directory: packages/python
         run: |
           uv venv --python 3.13
           uv sync
-          # publish 需要 twine
-          uv pip install twine
 
-      - name: Install mcp deps (for publish)
+      - name: Install mcp deps (for build.sh)
         working-directory: packages/mcp
         run: |
           rm -f package-lock.json
@@ -70,9 +66,6 @@ jobs:
       - name: Run semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
         run: |
           # 用 npx 拉 semantic-release + 所需插件（避免 repo 加 package.json
           # 单独管理 dev deps）

@@ -1,3 +1,9 @@
+## [1.9.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.9.0...v1.9.1) (2026-10-26)
+
+### Bug Fixes
+
+* recover markdown from wrapped AI outline output ([1d82faa](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/1d82faaf28d5bbec86b5cc6696d1b7cee9657dcd))
+
 ## [1.9.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.8.7...v1.9.0) (2026-10-26)
 
 ### Features

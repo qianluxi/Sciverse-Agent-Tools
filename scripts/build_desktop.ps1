@@ -12,6 +12,7 @@ Write-Host "Installing PyInstaller..."
 
 $hiddenImports = @(
     "research_app.ai",
+    "research_app.ai_review",
     "research_app.ai_settings",
     "research_app.errors",
     "research_app.evidence",

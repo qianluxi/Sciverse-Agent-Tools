@@ -3,9 +3,12 @@ from __future__ import annotations
 import json
 import re
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
+
+from research_app.ai_review import normalize_evidence_data, verify_quotes
 
 
 SYSTEM_PROMPT = """你是严谨的科研证据提取助手。
@@ -22,6 +25,8 @@ EVIDENCE_SCHEMA = {
     "limitations": "局限性",
     "evidence_quotes": [{"quote": "原文引句", "section": "章节或位置"}],
 }
+EVIDENCE_PROMPT_VERSION = "evidence-v1"
+OUTLINE_PROMPT_VERSION = "outline-v1"
 
 
 class AIError(RuntimeError):
@@ -159,21 +164,28 @@ def extract_evidence(
 ) -> list[dict[str, Any]]:
     results = []
     for document in documents:
+        source_text = str(document.get("text") or "")
         item = {
             "paper_id": document.get("paper_id", ""),
             "title": document.get("title", ""),
             "year": document.get("year", ""),
             "data": None,
             "error": None,
+            "model": str(getattr(client, "model", "") or ""),
+            "prompt_version": EVIDENCE_PROMPT_VERSION,
+            "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "quote_checks": [],
         }
         try:
             raw = client.chat(
                 build_evidence_messages(
                     str(document.get("title") or ""),
-                    str(document.get("text") or ""),
+                    source_text,
                 )
             )
-            item["data"] = parse_json_object(raw)
+            data = normalize_evidence_data(parse_json_object(raw))
+            item["data"] = data
+            item["quote_checks"] = verify_quotes(data, source_text)
         except AIError as error:
             item["error"] = str(error)
         results.append(item)

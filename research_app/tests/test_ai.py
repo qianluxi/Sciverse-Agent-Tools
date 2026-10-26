@@ -48,14 +48,38 @@ def test_extract_evidence_keeps_source_and_error_isolated():
             AIError("bad response"),
         ]
     )
+    client.model = "test-model"
     documents = [_document(), {**_document(), "paper_id": "paper:2"}]
 
     results = extract_evidence(client, documents)
 
     assert results[0]["paper_id"] == "paper:1"
     assert results[0]["data"]["methods"] == "RCT"
+    assert results[0]["model"] == "test-model"
+    assert results[0]["prompt_version"] == "evidence-v1"
+    assert results[0]["generated_at"]
+    assert results[0]["quote_checks"][0]["verified"] is True
     assert results[1]["error"] == "bad response"
     assert results[1]["data"] is None
+
+
+def test_extract_evidence_flags_missing_and_invented_quotes():
+    client = FakeClient(
+        [
+            '{"findings": "ok", "evidence_quotes": ['
+            '{"quote": "We studied 100 patients."},'
+            '{"quote": "not in the paper"},'
+            '{"quote": "third"},'
+            '{"quote": "fourth"}]}'
+        ]
+    )
+    documents = [_document()]
+
+    result = extract_evidence(client, documents)[0]
+
+    assert result["data"]["methods"] == "未提及"
+    assert len(result["data"]["evidence_quotes"]) == 3
+    assert [check["verified"] for check in result["quote_checks"]] == [True, False, False]
 
 
 def test_generate_outline_requires_evidence_and_calls_model():

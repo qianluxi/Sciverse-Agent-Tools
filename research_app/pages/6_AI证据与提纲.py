@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 import streamlit as st
@@ -9,9 +10,19 @@ from sciverse.credentials import resolve_token
 
 from research_app.ai import (
     AIError,
+    EVIDENCE_PROMPT_VERSION,
+    OUTLINE_PROMPT_VERSION,
     OpenAICompatibleClient,
     extract_evidence,
     generate_outline,
+)
+from research_app.ai_review import (
+    FIELD_KEYS,
+    FIELD_LABELS,
+    export_evidence_csv,
+    export_evidence_markdown,
+    normalize_evidence_data,
+    quote_status,
 )
 from research_app.ai_settings import (
     DEFAULT_BASE_URL,
@@ -136,6 +147,114 @@ def _paper_text(paper: dict[str, Any], warnings: list[str]) -> str:
     return ""
 
 
+def _edited_evidence_item(
+    item: dict[str, Any],
+    epoch: str,
+) -> dict[str, Any]:
+    paper_id = str(item.get("paper_id") or "paper")
+    title = item.get("title") or "（无标题）"
+    key_prefix = f"ai_{epoch}_{paper_id}"
+    with st.container(border=True):
+        st.markdown(f"#### {title}")
+        st.caption(
+            f"来源：`{paper_id}` · 年份：{item.get('year') or '未知'} · "
+            f"模型：{item.get('model') or '未知'} · "
+            f"证据提示词：{item.get('prompt_version') or '未知'}"
+        )
+        if item.get("error"):
+            st.error(item["error"])
+            return item
+
+        data = normalize_evidence_data(item.get("data"))
+        original_quotes = data.get("evidence_quotes") or []
+        original_checks = item.get("quote_checks") or []
+        edited_data: dict[str, Any] = {}
+        for field in FIELD_KEYS:
+            edited_data[field] = st.text_area(
+                FIELD_LABELS[field],
+                value=str(data.get(field) or ""),
+                height=68,
+                key=f"{key_prefix}_{field}",
+            )
+
+        edited_quotes = []
+        edited_checks = []
+        for index, quote in enumerate(original_quotes):
+            quote_text = str(quote.get("quote") or "")
+            section = str(quote.get("section") or "")
+            check = original_checks[index] if index < len(original_checks) else {}
+            quote_column, section_column = st.columns([4, 1])
+            with quote_column:
+                edited_quote = st.text_area(
+                    f"原文引句 {index + 1}",
+                    value=quote_text,
+                    height=68,
+                    key=f"{key_prefix}_quote_{index}",
+                )
+            with section_column:
+                edited_section = st.text_input(
+                    "位置",
+                    value=section,
+                    key=f"{key_prefix}_section_{index}",
+                )
+            if edited_quote == quote_text and edited_section == section:
+                edited_check = {
+                    "quote": edited_quote,
+                    "section": edited_section,
+                    "verified": check.get("verified"),
+                }
+            else:
+                edited_check = {
+                    "quote": edited_quote,
+                    "section": edited_section,
+                    "verified": None,
+                }
+            edited_quotes.append({"quote": edited_quote, "section": edited_section})
+            edited_checks.append(edited_check)
+            status = quote_status(edited_check)
+            if edited_check["verified"] is True:
+                st.caption(f"引句 {index + 1} 自动校验：{status}")
+            else:
+                st.warning(f"引句 {index + 1} 自动校验：{status}")
+
+        extra_quote = st.text_area(
+            "人工补充原文引句（可选）",
+            height=68,
+            key=f"{key_prefix}_quote_extra",
+            placeholder="把论文原文中的一句话粘贴到这里；留空则不添加。",
+        ).strip()
+        if extra_quote:
+            extra_section = st.text_input(
+                "补充引句位置",
+                key=f"{key_prefix}_section_extra",
+                placeholder="例如：Results, p. 5",
+            ).strip()
+            edited_quotes.append({"quote": extra_quote, "section": extra_section})
+            edited_checks.append(
+                {"quote": extra_quote, "section": extra_section, "verified": None}
+            )
+            st.caption("人工补充引句：未自动校验，导出时标记为人工修改。")
+
+        if not original_quotes and not extra_quote:
+            st.warning("AI 未提供原文引句，暂时无法自动核对；建议人工补充引句。")
+
+        edited_data["evidence_quotes"] = edited_quotes
+        reviewed = st.checkbox("我已核对这篇文献的 AI 证据", key=f"{key_prefix}_reviewed")
+        reviewer_note = st.text_area(
+            "核对备注",
+            key=f"{key_prefix}_note",
+            height=68,
+            placeholder="可记录修改原因、存疑点或与原文不一致之处。",
+        )
+        return {
+            **item,
+            "data": edited_data,
+            "quote_checks": edited_checks,
+            "reviewed": reviewed,
+            "reviewer_note": reviewer_note,
+        }
+
+
 papers = st.session_state.get("papers", [])
 if not papers:
     st.info("主页还没有检索结果。请先检索，再回到此页提取证据。")
@@ -190,6 +309,7 @@ if extract_clicked:
         st.session_state["ai_evidence"] = evidence
         st.session_state["ai_warnings"] = warnings
         st.session_state["ai_outline"] = ""
+        st.session_state["ai_editor_epoch"] = uuid.uuid4().hex
     except Exception as error:
         _show_error(error)
 
@@ -199,16 +319,54 @@ for warning in warnings:
 
 evidence = st.session_state.get("ai_evidence", [])
 if evidence:
-    st.markdown("### 文献证据")
-    st.caption("每条证据都保留来源论文；请人工核对引文是否确实来自原文。")
+    editor_epoch = st.session_state.setdefault("ai_editor_epoch", uuid.uuid4().hex)
+    st.markdown("### 文献证据（可编辑）")
+    st.caption(
+        "AI 结果不会自动保存为最终结论；修改仅保留在当前浏览器会话。"
+        "请核对每条引句是否确实来自原文。"
+    )
+    reviewed_evidence = []
     for item in evidence:
-        with st.container(border=True):
-            st.markdown(f"#### {item.get('title') or '（无标题）'}")
-            st.caption(f"来源：`{item.get('paper_id')}` · 年份：{item.get('year') or '未知'}")
-            if item.get("error"):
-                st.error(item["error"])
-            else:
-                st.json(item.get("data"))
+        reviewed_evidence.append(_edited_evidence_item(item, editor_epoch))
+
+    total_quotes = sum(
+        len(item.get("quote_checks") or []) for item in reviewed_evidence if not item.get("error")
+    )
+    verified_quotes = sum(
+        1
+        for item in reviewed_evidence
+        for check in item.get("quote_checks") or []
+        if check.get("verified") is True
+    )
+    reviewed_count = sum(1 for item in reviewed_evidence if item.get("reviewed"))
+    error_count = sum(1 for item in reviewed_evidence if item.get("error"))
+    metric_columns = st.columns(3)
+    metric_columns[0].metric("文献", len(reviewed_evidence))
+    metric_columns[1].metric("已核对", f"{reviewed_count}/{len(reviewed_evidence)}")
+    metric_columns[2].metric("引句自动匹配", f"{verified_quotes}/{total_quotes}")
+    if error_count:
+        st.warning(f"有 {error_count} 篇文献提取失败，未阻塞其他结果。")
+    if total_quotes and verified_quotes < total_quotes:
+        st.warning("存在未匹配的原文引句，请人工核对；修改后的引句会标记为人工校验。")
+    st.progress(reviewed_count / len(reviewed_evidence))
+
+    download_columns = st.columns(2)
+    with download_columns[0]:
+        st.download_button(
+            "下载证据表 CSV",
+            data=export_evidence_csv(reviewed_evidence),
+            file_name="sciverse-ai-evidence.csv",
+            mime="text/csv",
+            key="download_ai_evidence_csv",
+        )
+    with download_columns[1]:
+        st.download_button(
+            "下载证据表 Markdown",
+            data=export_evidence_markdown(reviewed_evidence),
+            file_name="sciverse-ai-evidence.md",
+            mime="text/markdown",
+            key="download_ai_evidence_markdown",
+        )
 
     st.markdown("### 综述提纲")
     default_question = str(st.session_state.get("search_params", {}).get("query") or "")
@@ -217,6 +375,10 @@ if evidence:
         value=default_question,
         placeholder="例如：现有研究如何评估该干预的效果？",
         height=80,
+    )
+    st.caption(
+        f"生成模型：{model or '未知'} · 提纲提示词：{OUTLINE_PROMPT_VERSION} · "
+        f"证据提示词：{EVIDENCE_PROMPT_VERSION}"
     )
     if st.button("生成综述提纲", type="primary"):
         try:
@@ -228,7 +390,7 @@ if evidence:
             )
             record_ai_profile(base_url, model)
             with st.spinner("正在生成提纲…"):
-                outline = generate_outline(client, question, evidence)
+                outline = generate_outline(client, question, reviewed_evidence)
             st.session_state["ai_outline"] = outline
         except AIError as error:
             _show_error(error)
@@ -238,9 +400,13 @@ if evidence:
     outline = st.session_state.get("ai_outline", "")
     if outline:
         st.markdown(outline)
+        outline_header = (
+            f"<!-- model: {model} | prompt_version: {OUTLINE_PROMPT_VERSION} | "
+            f"generated_at: {datetime.now(timezone.utc).isoformat(timespec='seconds')} -->\n\n"
+        )
         st.download_button(
             "下载提纲 Markdown",
-            data=outline.encode("utf-8"),
+            data=(outline_header + outline).encode("utf-8"),
             file_name="sciverse-review-outline.md",
             mime="text/markdown",
             key="download_outline",
@@ -251,4 +417,5 @@ if evidence:
         st.session_state.pop("ai_evidence", None)
         st.session_state.pop("ai_warnings", None)
         st.session_state.pop("ai_outline", None)
+        st.session_state.pop("ai_editor_epoch", None)
         st.rerun()

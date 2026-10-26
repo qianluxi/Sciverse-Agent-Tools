@@ -98,6 +98,30 @@ def test_analysis_uses_unicode_titles_for_duplicates():
     assert analysis["duplicates_removed"] == 1
 
 
+def test_duplicate_metadata_is_merged_regardless_of_order():
+    weak = {"title": "Order paper", "publication_published_year": None}
+    strong = {
+        "title": "Order paper",
+        "publication_published_year": 2024,
+        "publication_venue_name_unified": "Venue",
+        "author": [{"name": "Alice"}],
+        "citation_count": 10,
+        "doi": "10.1000/order",
+        "unique_id": "paper:order",
+    }
+
+    forward = analyze_papers([weak, strong])
+    reverse = analyze_papers([strong, weak])
+
+    for analysis in (forward, reverse):
+        assert analysis["sample_size"] == 1
+        assert analysis["duplicates_removed"] == 1
+        assert analysis["year_counts"] == [{"year": 2024, "count": 1}]
+        assert analysis["venue_counts"] == [{"venue": "Venue", "count": 1}]
+        assert analysis["top_cited"][0]["citation_count"] == 10
+        assert analysis["top_cited"][0]["venue"] == "Venue"
+
+
 def test_analysis_dedupes_and_computes_missing_rates():
     analysis = analyze_papers(_papers())
 

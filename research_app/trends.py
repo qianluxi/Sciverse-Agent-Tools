@@ -57,26 +57,103 @@ def _citation_count(paper: dict[str, Any]) -> int | None:
         return None
 
 
+def _completeness(paper: dict[str, Any]) -> tuple[int, int, int, str]:
+    fields = (
+        "title",
+        "publication_published_year",
+        "publication_venue_name_unified",
+        "author",
+        "subjects",
+        "keywords",
+        "citation_count",
+        "doi",
+        "unique_id",
+        "doc_id",
+        "abstract",
+        "chunk",
+    )
+    filled = sum(1 for field in fields if not _is_missing(paper.get(field)))
+    title = str(paper.get("title") or "")
+    tie_breaker = "|".join(
+        str(paper.get(key) or "")
+        for key in ("unique_id", "doc_id", "doi", "title")
+    )
+    return (len(strong_identifier_keys(paper)), filled, len(title), tie_breaker)
+
+
+def _merge_group(records: list[dict[str, Any]]) -> dict[str, Any]:
+    ordered = sorted(records, key=_completeness, reverse=True)
+    merged = dict(ordered[0])
+    for record in ordered[1:]:
+        for field, value in record.items():
+            if _is_missing(merged.get(field)) and not _is_missing(value):
+                merged[field] = value
+    return merged
+
+
 def _dedupe(papers: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
-    seen_strong: set[str] = set()
-    title_has_strong: dict[str, bool] = {}
-    unique: list[dict[str, Any]] = []
-    duplicates = 0
-    for paper in papers:
-        strong = set(strong_identifier_keys(paper))
+    parent = list(range(len(papers)))
+
+    def find(index: int) -> int:
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    def union(left: int, right: int) -> None:
+        left_root = find(left)
+        right_root = find(right)
+        if left_root != right_root:
+            parent[right_root] = left_root
+
+    strong_first: dict[str, int] = {}
+    for index, paper in enumerate(papers):
+        for identifier in strong_identifier_keys(paper):
+            if identifier in strong_first:
+                union(index, strong_first[identifier])
+            else:
+                strong_first[identifier] = index
+
+    title_groups: dict[str, list[int]] = {}
+    for index, paper in enumerate(papers):
         title = normalize_title(paper.get("title"))
-        title_key = f"title:{title}" if title else ""
-        duplicate = bool(strong & seen_strong)
-        if not duplicate and title_key and title_key in title_has_strong:
-            duplicate = not strong or not title_has_strong[title_key]
-        seen_strong.update(strong)
-        if title_key:
-            title_has_strong[title_key] = title_has_strong.get(title_key, False) or bool(strong)
-        if duplicate:
-            duplicates += 1
-            continue
-        unique.append(paper)
-    return unique, duplicates
+        if title:
+            title_groups.setdefault(title, []).append(index)
+
+    for indices in title_groups.values():
+        roots = {find(index) for index in indices}
+        strong_roots = {
+            root
+            for root in roots
+            if any(
+                find(index) == root and strong_identifier_keys(papers[index]) for index in indices
+            )
+        }
+        weak_roots = roots - strong_roots
+        if len(strong_roots) == 1:
+            anchor = next(iter(strong_roots))
+            for root in weak_roots:
+                union(root, anchor)
+        elif not strong_roots and roots:
+            anchor = next(iter(roots))
+            for root in roots:
+                union(root, anchor)
+        elif weak_roots:
+            anchor = next(iter(weak_roots))
+            for root in weak_roots:
+                union(root, anchor)
+
+    grouped: dict[int, list[dict[str, Any]]] = {}
+    first_seen: dict[int, int] = {}
+    for index, paper in enumerate(papers):
+        root = find(index)
+        grouped.setdefault(root, []).append(paper)
+        first_seen.setdefault(root, index)
+    unique = [
+        _merge_group(grouped[root])
+        for root in sorted(grouped, key=lambda root: first_seen[root])
+    ]
+    return unique, len(papers) - len(unique)
 
 
 def _is_missing(value: Any) -> bool:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sqlite3
@@ -412,8 +413,9 @@ def _find_duplicate(
     connection: sqlite3.Connection,
     project_id: str,
     paper: dict[str, Any],
-) -> tuple[str, str] | None:
+) -> dict[str, Any] | None:
     strong = strong_identifier_keys(paper)
+    strong_matches: dict[str, list[str]] = {}
     for identifier in strong:
         row = connection.execute(
             """SELECT candidate_key FROM screening_candidate_identifiers
@@ -421,7 +423,17 @@ def _find_duplicate(
             (project_id, identifier),
         ).fetchone()
         if row:
-            return str(row["candidate_key"]), duplicate_basis(identifier)
+            strong_matches.setdefault(str(row["candidate_key"]), []).append(identifier)
+    if len(strong_matches) > 1:
+        return {"kind": "conflict", "matches": strong_matches}
+    if strong_matches:
+        candidate_key, identifiers = next(iter(strong_matches.items()))
+        return {
+            "kind": "duplicate",
+            "candidate_key": candidate_key,
+            "basis": duplicate_basis(identifiers[0]),
+            "matches": strong_matches,
+        }
 
     title = normalize_title(paper.get("title"))
     title_identifier = f"title:{title}" if title else ""
@@ -445,7 +457,80 @@ def _find_duplicate(
     ).fetchone()
     if strong and existing_has_strong:
         return None
-    return str(row["candidate_key"]), duplicate_basis(title_identifier)
+    return {
+        "kind": "duplicate",
+        "candidate_key": str(row["candidate_key"]),
+        "basis": duplicate_basis(title_identifier),
+        "matches": {str(row["candidate_key"]): [title_identifier]},
+    }
+
+
+def _conflict_key(matches: dict[str, list[str]]) -> str:
+    raw = "|".join(
+        f"{identifier}->{candidate}"
+        for candidate, identifiers in sorted(matches.items())
+        for identifier in sorted(identifiers)
+    )
+    return "conflict:" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def _conflict_detail(matches: dict[str, list[str]]) -> str:
+    parts = [
+        f"{identifier}→{candidate}"
+        for candidate, identifiers in sorted(matches.items())
+        for identifier in sorted(identifiers)
+    ]
+    return "强标识符冲突，需人工处理：" + "；".join(parts)
+
+
+def _merge_candidate_metadata(
+    connection: sqlite3.Connection,
+    project_id: str,
+    candidate_key_value: str,
+    paper: dict[str, Any],
+) -> None:
+    row = connection.execute(
+        """SELECT title, year, doi, paper_id FROM screening_candidates
+           WHERE project_id = ? AND candidate_key = ?""",
+        (project_id, candidate_key_value),
+    ).fetchone()
+    if row is None:
+        return
+    updates: dict[str, Any] = {}
+    title = str(paper.get("title") or "").strip()
+    if (not row["title"] or row["title"] == "（暂无标题）") and title:
+        updates["title"] = title[:1000]
+    year = paper.get("publication_published_year")
+    try:
+        year = int(year) if year is not None else None
+    except (TypeError, ValueError):
+        year = None
+    if row["year"] is None and year is not None:
+        updates["year"] = year
+    doi = str(paper.get("doi") or "").strip()
+    if not row["doi"] and doi:
+        updates["doi"] = doi
+    incoming_paper_id = paper_id(paper, candidate_key_value)
+    existing_paper_id = str(row["paper_id"] or "")
+    missing_stable_id = (
+        not existing_paper_id
+        or existing_paper_id == candidate_key_value
+        or existing_paper_id.startswith(("title:", "unknown:"))
+    )
+    upgrades_to_paper_id = (
+        not existing_paper_id.startswith("paper:") and incoming_paper_id.startswith("paper:")
+    )
+    if incoming_paper_id and (
+        missing_stable_id or upgrades_to_paper_id
+    ) and incoming_paper_id != existing_paper_id:
+        updates["paper_id"] = incoming_paper_id
+    if updates:
+        assignments = ", ".join(f"{column} = ?" for column in updates)
+        connection.execute(
+            f"""UPDATE screening_candidates SET {assignments}
+                WHERE project_id = ? AND candidate_key = ?""",
+            (*updates.values(), project_id, candidate_key_value),
+        )
 
 
 def add_screening_candidates(project_id: str, papers: list[dict[str, Any]]) -> dict[str, int]:
@@ -454,6 +539,7 @@ def add_screening_candidates(project_id: str, papers: list[dict[str, Any]]) -> d
     now = _timestamp()
     added = 0
     duplicates = 0
+    conflicts = 0
     with _connection() as connection:
         _screening_project(connection, project_id)
         for index, paper in enumerate(papers):
@@ -465,11 +551,53 @@ def add_screening_candidates(project_id: str, papers: list[dict[str, Any]]) -> d
             except (TypeError, ValueError):
                 year = None
             doi = str(paper.get("doi") or "") or None
-            duplicate = _find_duplicate(connection, project_id, paper)
-            duplicate_of = None
-            basis = ""
-            if duplicate:
-                duplicate_of, basis = duplicate
+            decision = _find_duplicate(connection, project_id, paper)
+            canonical_key = key
+            if decision and decision["kind"] == "conflict":
+                conflicts += 1
+                canonical_key = _conflict_key(decision["matches"])
+                cursor = connection.execute(
+                    """INSERT OR IGNORE INTO screening_candidates(
+                           project_id, candidate_key, paper_id, title, year, doi,
+                           status, notes, created_at, updated_at
+                       ) VALUES (?, ?, ?, ?, ?, ?, 'pending', '', ?, ?)""",
+                    (
+                        project_id,
+                        canonical_key,
+                        paper_id(paper, canonical_key),
+                        title,
+                        year,
+                        doi,
+                        now,
+                        now,
+                    ),
+                )
+                if cursor.rowcount:
+                    added += 1
+                connection.execute(
+                    """INSERT INTO screening_duplicates(
+                           project_id, candidate_key, duplicate_of, basis, title, created_at
+                       ) VALUES (?, ?, ?, ?, ?, ?)""",
+                    (
+                        project_id,
+                        canonical_key,
+                        " | ".join(sorted(decision["matches"])),
+                        _conflict_detail(decision["matches"]),
+                        title,
+                        now,
+                    ),
+                )
+                continue
+            if decision and decision["kind"] == "duplicate":
+                canonical_key = decision["candidate_key"]
+                duplicates += 1
+                _merge_candidate_metadata(connection, project_id, canonical_key, paper)
+                connection.execute(
+                    """INSERT INTO screening_duplicates(
+                           project_id, candidate_key, duplicate_of, basis, title, created_at
+                       ) VALUES (?, ?, ?, ?, ?, ?)""",
+                    (project_id, key, canonical_key, decision["basis"], title, now),
+                )
             else:
                 cursor = connection.execute(
                     """INSERT OR IGNORE INTO screening_candidates(
@@ -478,21 +606,17 @@ def add_screening_candidates(project_id: str, papers: list[dict[str, Any]]) -> d
                        ) VALUES (?, ?, ?, ?, ?, ?, 'pending', '', ?, ?)""",
                     (project_id, key, paper_id(paper, key), title, year, doi, now, now),
                 )
-                if not cursor.rowcount:
-                    duplicate_of = key
-                    basis = duplicate_basis(key)
-            if duplicate_of is None:
-                added += 1
-                canonical_key = key
-            else:
-                duplicates += 1
-                canonical_key = duplicate_of
-                connection.execute(
-                    """INSERT INTO screening_duplicates(
-                           project_id, candidate_key, duplicate_of, basis, title, created_at
-                       ) VALUES (?, ?, ?, ?, ?, ?)""",
-                    (project_id, key, duplicate_of, basis, title, now),
-                )
+                if cursor.rowcount:
+                    added += 1
+                else:
+                    duplicates += 1
+                    _merge_candidate_metadata(connection, project_id, key, paper)
+                    connection.execute(
+                        """INSERT INTO screening_duplicates(
+                               project_id, candidate_key, duplicate_of, basis, title, created_at
+                           ) VALUES (?, ?, ?, ?, ?, ?)""",
+                        (project_id, key, key, duplicate_basis(key), title, now),
+                    )
             for identifier in identifier_keys(paper):
                 connection.execute(
                     """INSERT OR IGNORE INTO screening_candidate_identifiers(
@@ -509,7 +633,12 @@ def add_screening_candidates(project_id: str, papers: list[dict[str, Any]]) -> d
                WHERE id = ?""",
             (identified, duplicates, now, project_id),
         )
-    return {"identified": len(papers), "added": added, "duplicates": duplicates}
+    return {
+        "identified": len(papers),
+        "added": added,
+        "duplicates": duplicates,
+        "conflicts": conflicts,
+    }
 
 
 def list_screening_candidates(

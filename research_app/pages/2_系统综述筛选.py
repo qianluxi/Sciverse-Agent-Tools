@@ -94,10 +94,13 @@ if papers:
     if st.button(f"将主页当前 {len(papers)} 条检索结果加入项目", type="primary"):
         try:
             result = storage.add_screening_candidates(project_id, papers)
-            st.session_state["screening_message"] = (
+            message = (
                 f"已加入 {result['added']} 条候选；"
                 f"识别 {result['identified']} 条，其中重复 {result['duplicates']} 条。"
             )
+            if result.get("conflicts"):
+                message += f" 另有 {result['conflicts']} 条强标识符冲突，请人工核对。"
+            st.session_state["screening_message"] = message
             st.rerun()
         except Exception as error:
             _show_error(error)

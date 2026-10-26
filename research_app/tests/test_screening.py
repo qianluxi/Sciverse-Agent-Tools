@@ -56,10 +56,100 @@ def test_cross_identifier_dedup_uses_doi_and_unique_id(monkeypatch, tmp_path):
         ],
     )
 
-    assert result == {"identified": 2, "added": 1, "duplicates": 1}
+    assert result == {"identified": 2, "added": 1, "duplicates": 1, "conflicts": 0}
     duplicates = storage.list_screening_duplicates(project_id)
     assert duplicates[0]["duplicate_of"] == "doi:10.1000/same"
     assert duplicates[0]["basis"] == "unique_id 相同"
+
+
+def test_weak_candidate_gets_metadata_without_losing_review_state(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    project_id = storage.create_screening_project("Review", "Q", "Include", "Exclude")
+    storage.add_screening_candidates(project_id, [{"title": "Weak paper"}])
+    candidates, _ = storage.list_screening_candidates(project_id)
+    key = candidates[0]["candidate_key"]
+    storage.set_screening_decision(project_id, key, "included", notes="Keep this decision")
+    audit_before = storage.list_screening_audit(project_id)
+
+    result = storage.add_screening_candidates(
+        project_id,
+        [
+            {
+                "title": "Weak paper",
+                "doi": "10.1000/weak",
+                "unique_id": "paper:weak",
+                "publication_published_year": 2024,
+            }
+        ],
+    )
+
+    assert result == {"identified": 1, "added": 0, "duplicates": 1, "conflicts": 0}
+    candidates, _ = storage.list_screening_candidates(project_id)
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate["candidate_key"] == key
+    assert candidate["doi"] == "10.1000/weak"
+    assert candidate["paper_id"] == "paper:weak"
+    assert candidate["year"] == 2024
+    assert candidate["status"] == "included"
+    assert candidate["notes"] == "Keep this decision"
+    assert storage.list_screening_audit(project_id) == audit_before
+
+
+def test_metadata_completion_is_order_independent(monkeypatch, tmp_path):
+    weak = {"title": "Order paper", "publication_published_year": None}
+    strong = {
+        "title": "Order paper",
+        "doi": "10.1000/order",
+        "unique_id": "paper:order",
+        "publication_published_year": 2024,
+    }
+
+    def import_order(papers, directory):
+        _isolate(monkeypatch, tmp_path / directory)
+        project_id = storage.create_screening_project("Review", "Q", "Include", "Exclude")
+        storage.add_screening_candidates(project_id, papers)
+        candidates, _ = storage.list_screening_candidates(project_id)
+        return candidates[0]
+
+    first = import_order([weak, strong], "forward")
+    second = import_order([strong, weak], "reverse")
+
+    for field in ("title", "doi", "paper_id", "year"):
+        assert first[field] == second[field]
+
+
+def test_conflicting_strong_identifiers_are_recorded_without_remapping(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    project_id = storage.create_screening_project("Review", "Q", "Include", "Exclude")
+    storage.add_screening_candidates(
+        project_id,
+        [
+            {"title": "A", "doi": "10.1000/a", "unique_id": "paper:a"},
+            {"title": "B", "doi": "10.1000/b", "unique_id": "paper:b"},
+        ],
+    )
+
+    result = storage.add_screening_candidates(
+        project_id,
+        [{"title": "Conflict", "doi": "10.1000/a", "unique_id": "paper:b"}],
+    )
+
+    assert result == {"identified": 1, "added": 1, "duplicates": 0, "conflicts": 1}
+    duplicates = storage.list_screening_duplicates(project_id)
+    assert "强标识符冲突" in duplicates[0]["basis"]
+    assert "doi:10.1000/a" in duplicates[0]["duplicate_of"]
+    assert "doi:10.1000/b" in duplicates[0]["duplicate_of"]
+    with storage._connection() as connection:
+        mappings = {
+            row["identifier_key"]: row["candidate_key"]
+            for row in connection.execute(
+                "SELECT identifier_key, candidate_key FROM screening_candidate_identifiers WHERE project_id = ?",
+                (project_id,),
+            )
+        }
+    assert mappings["doi:10.1000/a"] == "doi:10.1000/a"
+    assert mappings["doi:10.1000/b"] == "doi:10.1000/b"
 
 
 def test_conflicting_strong_ids_do_not_merge_by_title(monkeypatch, tmp_path):
@@ -74,7 +164,7 @@ def test_conflicting_strong_ids_do_not_merge_by_title(monkeypatch, tmp_path):
         ],
     )
 
-    assert result == {"identified": 2, "added": 2, "duplicates": 0}
+    assert result == {"identified": 2, "added": 2, "duplicates": 0, "conflicts": 0}
 
 
 def test_foreign_keys_are_enabled_and_cascade(monkeypatch, tmp_path):
@@ -102,7 +192,7 @@ def test_project_candidates_dedup_stats_and_audit(monkeypatch, tmp_path):
     papers.append({"title": "Study 0", "doi": "DOI:10.1000/study-0"})
     result = storage.add_screening_candidates(project_id, papers)
 
-    assert result == {"identified": 4, "added": 3, "duplicates": 1}
+    assert result == {"identified": 4, "added": 3, "duplicates": 1, "conflicts": 0}
     stats = storage.screening_stats(project_id)
     assert stats == {
         "identified": 4,
@@ -215,5 +305,5 @@ def test_v2_database_migrates_identifiers_for_cross_id_dedup(monkeypatch, tmp_pa
         [{"title": "Paper", "unique_id": "paper:1"}],
     )
 
-    assert result == {"identified": 1, "added": 0, "duplicates": 1}
+    assert result == {"identified": 1, "added": 0, "duplicates": 1, "conflicts": 0}
     assert storage.screening_stats(project_id)["unique"] == 1

@@ -61,7 +61,7 @@ python -m pytest research_app/tests/ -v
 
 网页中输入的 Token 仅用于当前会话，不写入本地数据库。检索条件、最近检索、综述项目、候选元数据、筛选决定、备注和审计记录保存在 `~/.sciverse/research-workbench.sqlite3`，最近检索最多保留 50 条；不会保存检索结果全文或附件。左侧“已保存检索的备份”只导出/恢复已保存的检索条件 JSON，不包含综述项目和审计记录。当前无自动备份，删除数据库文件会丢失本地记录。默认只在本机运行；不要将该应用公开到互联网或与他人共享 Token。
 
-系统综述筛选中，候选会综合所有可用标识符（DOI、`unique_id`、`doc_id` 和 Unicode 规范化标题）进行跨字段匹配；例如一条记录有 DOI 和 `unique_id`，另一条只有相同 `unique_id`，也会识别为重复。重复候选单独记录依据。PRISMA 数量由候选和决定记录实时计算，导出的筛选 CSV 包含状态、排除原因、备注和更新时间。
+系统综述筛选中，候选会综合所有可用标识符（DOI、`unique_id`、`doc_id` 和 Unicode 规范化标题）进行跨字段匹配；例如一条记录有 DOI 和 `unique_id`，另一条只有相同 `unique_id`，也会识别为重复。若弱标识记录先入库、之后才出现带 DOI/稳定 ID 的同一论文，主候选会补全缺失元数据，但不会覆盖已有筛选决定、备注和审计历史。一个记录的多个强标识符指向不同候选时，会生成一个 `conflict:` 候选并在“重复记录”页标记为身份冲突，需人工核对。PRISMA 数量由候选和决定记录实时计算，导出的筛选 CSV 包含状态、排除原因、备注和更新时间。
 
 引用网络的关系接口只返回标题和标识；年份、期刊、引用量需要点击“补全节点元数据”额外发起检索，页面会显示请求次数。未补全的节点标记为 `relation`，不会显示为已知元数据。关系接口只接受 Sciverse 的 `paper:...` unique_id；Semantic Scholar 数字 ID 或仅 DOI 的节点不能继续展开，页面会将其排除在“从哪个节点展开”之外。参考文献和被引关系保留方向；相关工作按无向虚线展示，并在 GraphML 中写入 `directed="false"`。
 
@@ -89,7 +89,7 @@ OpenCode Go 推荐模型为 `glm-5.3-flash` 或其他走 `/chat/completions` 的
 powershell -ExecutionPolicy Bypass -File scripts/build_desktop.ps1
 ```
 
-构建结果位于 `dist/SciverseResearchWorkbench.exe`。双击后会启动本地服务并自动打开浏览器；不需要命令行。首次构建需要安装 PyInstaller，耗时和体积取决于当前 Python 环境。当前产物为 109,140,523 字节（约 104 MB）；本机最新构建首次启动实测约 7.0 秒，干净 Windows 机器可能更慢。onefile 首次启动需要解压，请等待浏览器自动打开。
+构建结果位于 `dist/SciverseResearchWorkbench.exe`。双击后会启动本地服务并自动打开浏览器；不需要命令行。首次构建需要安装 PyInstaller，耗时和体积取决于当前 Python 环境。当前产物为 109,152,078 字节（约 104 MB）；本机最新构建首次启动实测约 6.7 秒，干净 Windows 机器可能更慢。onefile 首次启动需要解压，请等待浏览器自动打开。
 
 AI 页面的 API Key 只在当前会话输入，不写入 exe 或本地数据库；Base URL 和模型名保存在本机 `~/.sciverse/ai-settings.json`。Sciverse Token 仍按原有方式从环境变量或凭据文件读取。
 

@@ -468,7 +468,7 @@ SQLite 仅保存：
 - 验收后修正 CSV 行高和年份显示：引句改为独立列，`2002.0` 显示为 `2002`。
 - AI Key 不写入本地存储。
 - 代码提交 `009bdb4` 已推送；Test CI 成功（[run](https://github.com/qianluxi/Sciverse-Agent-Tools/actions/runs/40279322977)）。
-- Release CI 曾在 PyPI 上传阶段因 403 失败（[run](https://github.com/qianluxi/Sciverse-Agent-Tools/actions/runs/40279322994)）：已生成 tag 和版本提交，但 PyPI/npm 仍为 0.15.1，GitHub Release 未创建。当前仓库没有 PyPI/npm/ClawHub 包名权限，已改为暂停包发布，只发布 tag/GitHub Release。
+- Release CI 曾在 PyPI 上传阶段因 403 失败（[run](https://github.com/qianluxi/Sciverse-Agent-Tools/actions/runs/40279322994)）：已生成 tag 和版本提交，但 PyPI/npm 仍为 0.15.1，GitHub Release 未自动创建；后续已手动补建 `v1.9.0`、`v1.9.1` Release 页面。当前仓库没有 PyPI/npm/ClawHub 包名权限，已改为暂停包发布，只发布 tag/GitHub Release。
 
 阶段 7 本地记录：
 
@@ -476,7 +476,7 @@ SQLite 仅保存：
 - 已验证 exe 启动本地服务并返回 HTTP 200；2026-10-26 最新构建首次启动实测约 6.7 秒。
 - 已补充故障排查、卸载说明和干净 Windows 验收清单。
 - 用户在无 Python 的 Windows 10/11 机器上双击 exe 验收通过（2026-10-26），阶段 7 完成。
-- `v1.9.0`/`v1.9.1` 的 tag 和版本提交已生成，但 PyPI/npm 未发布；这是独立包发布维护项，不阻塞阶段 7。
+- `v1.9.0`/`v1.9.1` 的 tag 和版本提交已生成，GitHub Release 页面已手动补建；PyPI/npm 未发布，这是独立包发布维护项，不阻塞阶段 7。
 
 阶段 7 验收：用户确认在无 Python 的 Windows 10/11 上双击 exe 可启动并通过清单；产物约 104 MB，启动耗时已记录。阶段 7 完成。下一阶段尚未定义，建议按 AI 辅助筛选进入阶段 8。
 
@@ -487,7 +487,7 @@ SQLite 仅保存：
 - Release workflow 只负责版本计算、版本文件同步、tag、GitHub Release 和 `web-skill.tgz` 上传。
 - `.releaserc.yaml` 已移除 `publishCmd`；不再自动发布 PyPI/npm/ClawHub。
 - `Republish` workflow 和 `scripts/publish.sh` 保留，供以后拿到包权限时手动补发。
-- 现有 `v1.9.0`/`v1.9.1` tag 保留；GitHub Release 页面按需从 tag 手动创建。
+- 现有 `v1.9.0`/`v1.9.1` tag 保留；对应 GitHub Release 页面已手动补建。
 - 工作台继续通过 GitHub Release 和便携 exe 分发；SDK 用户可暂时从源码安装。
 
 恢复自动发布的条件：获得相应包名权限并配置可信发布或有效 token；届时先手动 `Republish` 最新版本，确认成功后再恢复 `publishCmd`。

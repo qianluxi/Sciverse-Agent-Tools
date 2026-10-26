@@ -1,3 +1,9 @@
+## [1.8.7](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.8.6...v1.8.7) (2026-10-26)
+
+### Bug Fixes
+
+* add fulltext result filter and clarify OA coverage ([7e1ee72](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/7e1ee72a5e543f75a1f6fc1fcadfa94a25ae2b12))
+
 ## [1.8.6](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.8.5...v1.8.6) (2026-10-23)
 
 ### Bug Fixes

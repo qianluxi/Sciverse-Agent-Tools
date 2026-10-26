@@ -76,6 +76,7 @@ python -m pytest research_app/tests/ -v
 - 每条证据保留论文 ID、模型、提示词版本和生成时间；引句会自动与输入文本比对，未匹配项会明确提示。
 - 证据字段、引句和核对备注可直接编辑；逐篇标记“已核对”后，可导出证据表 CSV 和 Markdown。CSV 每篇一行，最多 3 条引句分列，便于在表格软件中筛选。
 - 编辑和核对只保留在当前浏览器会话，不覆盖原始 AI 输出，也不会自动保存为最终结论；提纲导出附带模型和提示词版本。
+- 提纲直接生成 Markdown；若模型仍返回 JSON 包装或输出被截断，应用会自动提取其中的 Markdown 正文，避免下载到原始 JSON。
 - AI 失败按论文隔离，不阻塞其他论文；不会自动写入 Zotero 或生成最终论文。
 
 OpenCode Go 推荐模型为 `glm-5.3-flash` 或其他走 `/chat/completions` 的非推理模型 ID（不要加 `opencode-go/` 前缀）。客户端会自动发送稳定的 `x-opencode-session` 会话头和专用 User-Agent。若反复出现 `finish_reason=length` 和空内容，说明推理过程耗尽了输出预算，应换用非推理模型。
@@ -88,9 +89,32 @@ OpenCode Go 推荐模型为 `glm-5.3-flash` 或其他走 `/chat/completions` 的
 powershell -ExecutionPolicy Bypass -File scripts/build_desktop.ps1
 ```
 
-构建结果位于 `dist/SciverseResearchWorkbench.exe`。双击后会启动本地服务并自动打开浏览器；不需要命令行。首次构建需要安装 PyInstaller，耗时和体积取决于当前 Python 环境。当前构建已验证可启动并返回页面，产物约 100 MB；onefile 首次启动需要解压，可能等待数十秒。
+构建结果位于 `dist/SciverseResearchWorkbench.exe`。双击后会启动本地服务并自动打开浏览器；不需要命令行。首次构建需要安装 PyInstaller，耗时和体积取决于当前 Python 环境。当前产物为 109,120,968 字节（约 104 MB）；本机最新构建首次启动实测约 6.7 秒，干净 Windows 机器可能更慢。onefile 首次启动需要解压，请等待浏览器自动打开。
 
 AI 页面的 API Key 只在当前会话输入，不写入 exe 或本地数据库；Base URL 和模型名保存在本机 `~/.sciverse/ai-settings.json`。Sciverse Token 仍按原有方式从环境变量或凭据文件读取。
+
+### 故障排查
+
+- 浏览器没有自动打开：手动访问 `http://localhost:8501`；如果端口被占用，应用会依次尝试 `8501-8600`。
+- 双击后长时间没有反应：先等待 30 秒；确认杀毒软件没有拦截 PyInstaller 单文件程序，可尝试把 exe 放到普通本地目录后重新运行。
+- 提示缺少文件或启动即退出：重新运行 `scripts/build_desktop.ps1` 生成 exe；不要只复制 `dist` 中的临时文件。
+- 页面能打开但检索失败：检查 Sciverse Token；AI 功能还需单独配置 API Key。
+- 端口被其他程序占用：关闭其他 Streamlit/本地服务，或重启应用让它选择新端口。
+- 数据异常：本地记录位于 `~/.sciverse/`（Windows 为 `C:\Users\<用户名>\.sciverse`）；删除前请先备份 `research-workbench.sqlite3`。
+
+### 卸载
+
+1. 关闭黑色命令行窗口或结束 `SciverseResearchWorkbench.exe` 进程。
+2. 删除 `dist/SciverseResearchWorkbench.exe`。
+3. 如需清除本地检索、筛选和 AI 服务地址记录，再删除 `~/.sciverse/`；这会丢失工作台本地数据，不会影响 Zotero。
+
+### 干净 Windows 验收清单
+
+1. 准备一台未安装 Python 的 Windows 10/11 机器，复制 exe 到本地目录。
+2. 双击 exe，记录从双击到浏览器打开的时间。
+3. 确认首页可打开，执行一次检索并导出 CSV。
+4. 打开“AI 证据与提纲”，确认页面可编辑证据和导出。
+5. 关闭应用，确认没有残留 `SciverseResearchWorkbench.exe` 进程。
 
 ## 后续规划
 

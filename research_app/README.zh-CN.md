@@ -67,6 +67,22 @@ python -m pytest research_app/tests/ -v
 
 若已配置 `SCIVERSE_API_TOKEN` 环境变量，应用也可以直接使用该凭据，无需再次输入。
 
+## 数据库维护
+
+如果本地数据库曾运行过 v1.9.3 或更早版本，可能残留错误的强标识符别名。先关闭应用，在仓库根目录运行检查：
+
+```powershell
+python -m research_app.maintenance inspect
+```
+
+检查只读，不修改数据库。确认问题后可运行修复：
+
+```powershell
+python -m research_app.maintenance repair
+```
+
+修复会先创建 `research-workbench.sqlite3.bak-时间戳` 备份，再删除能够确定归属的错误别名和孤立映射；无法确定归属的映射会保留并输出到 `ambiguous` 清单，需要人工核对。修复不会修改候选、筛选状态、排除原因、备注或审计历史。修复后建议重新运行 `inspect`，确认 `conflicts` 和 `orphans` 为 0。
+
 ## AI 证据与提纲
 
 “AI 证据与提纲”页面需要用户自备 OpenAI 兼容服务。默认 Base URL 为 OpenCode Go（`https://opencode.ai/zen/go/v1`）；填写 API Key 和模型名后，可对最多 5 篇论文提取结构化证据并生成 Markdown 提纲。也可选择“自定义 URL”连接其他服务。
@@ -89,7 +105,7 @@ OpenCode Go 推荐模型为 `glm-5.3-flash` 或其他走 `/chat/completions` 的
 powershell -ExecutionPolicy Bypass -File scripts/build_desktop.ps1
 ```
 
-构建结果位于 `dist/SciverseResearchWorkbench.exe`。双击后会启动本地服务并自动打开浏览器；不需要命令行。首次构建需要安装 PyInstaller，耗时和体积取决于当前 Python 环境。当前产物为 109,179,067 字节（约 104 MB）；本机最新构建首次启动实测约 7.1 秒，干净 Windows 机器可能更慢。onefile 首次启动需要解压，请等待浏览器自动打开。
+构建结果位于 `dist/SciverseResearchWorkbench.exe`。双击后会启动本地服务并自动打开浏览器；不需要命令行。首次构建需要安装 PyInstaller，耗时和体积取决于当前 Python 环境。当前产物为 109,196,630 字节（约 104 MB）；本机最新构建首次启动实测约 7.2 秒，干净 Windows 机器可能更慢。onefile 首次启动需要解压，请等待浏览器自动打开。
 
 AI 页面的 API Key 只在当前会话输入，不写入 exe 或本地数据库；Base URL 和模型名保存在本机 `~/.sciverse/ai-settings.json`。Sciverse Token 仍按原有方式从环境变量或凭据文件读取。
 

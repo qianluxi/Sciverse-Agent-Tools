@@ -107,6 +107,33 @@ def test_analysis_does_not_merge_conflicting_strong_identifiers():
             assert analysis["identifier_conflicts"] == 1
 
 
+def test_conflict_count_is_order_independent_for_mixed_records():
+    papers = [
+        {"title": "Same", "doi": "10.1000/a", "unique_id": "paper:A"},
+        {"title": "Same", "doi": "10.1000/a", "unique_id": "paper:B"},
+        {"title": "Same", "doi": "10.1000/a", "unique_id": "paper:B"},
+    ]
+    orders = [
+        [0, 1, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ]
+
+    results = []
+    for order in orders:
+        analysis = analyze_papers([papers[index] for index in order])
+        results.append(
+            (
+                analysis["sample_size"],
+                analysis["duplicates_removed"],
+                analysis["identifier_conflicts"],
+            )
+        )
+
+    assert results == [(2, 1, 1)] * len(orders)
+
+
 def test_analysis_uses_unicode_titles_for_duplicates():
     papers = [
         {"title": "Привет, мир!", "publication_published_year": 2024},

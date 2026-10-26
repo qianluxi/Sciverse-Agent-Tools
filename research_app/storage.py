@@ -16,6 +16,7 @@ from research_app.screening import (
     candidate_key,
     duplicate_basis,
     identifier_keys,
+    normalize_doi,
     normalize_title,
     paper_id,
     strong_identifier_keys,
@@ -207,6 +208,200 @@ def _connection() -> Iterator[sqlite3.Connection]:
         raise
     finally:
         connection.close()
+
+
+def _canonical_strong_values(
+    candidate: dict[str, Any],
+    identifier_type: str,
+) -> set[str]:
+    key = str(candidate.get("candidate_key") or "")
+    values: set[str] = set()
+    if identifier_type == "doi":
+        if key.startswith("doi:"):
+            values.add(normalize_doi(key[4:]))
+        doi = normalize_doi(candidate.get("doi"))
+        if doi:
+            values.add(doi)
+    elif identifier_type == "uid":
+        if key.startswith("uid:"):
+            values.add(key[4:])
+        paper_id_value = str(candidate.get("paper_id") or "")
+        if paper_id_value.startswith("paper:"):
+            values.add(paper_id_value)
+    elif identifier_type == "doc":
+        if key.startswith("doc:"):
+            values.add(key[4:])
+        paper_id_value = str(candidate.get("paper_id") or "")
+        if paper_id_value.startswith("doc:"):
+            values.add(paper_id_value)
+    return values
+
+
+def _mapping_value(identifier_key: str, identifier_type: str) -> str:
+    value = identifier_key.split(":", 1)[1] if ":" in identifier_key else ""
+    return normalize_doi(value) if identifier_type == "doi" else value
+
+
+def inspect_identifier_integrity() -> dict[str, Any]:
+    path = database_path()
+    if not path.exists():
+        return {
+            "conflicts": [],
+            "ambiguous": [],
+            "orphans": [],
+            "counts": {"conflicts": 0, "ambiguous": 0, "orphans": 0},
+        }
+    with _connection() as connection:
+        candidates = {
+            (row["project_id"], row["candidate_key"]): dict(row)
+            for row in connection.execute(
+                """SELECT project_id, candidate_key, paper_id, title, doi
+                   FROM screening_candidates"""
+            )
+        }
+        mappings = [
+            dict(row)
+            for row in connection.execute(
+                """SELECT project_id, candidate_key, identifier_key
+                   FROM screening_candidate_identifiers
+                   ORDER BY project_id, candidate_key, identifier_key"""
+            )
+        ]
+
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    orphans = []
+    for mapping in mappings:
+        identity = (mapping["project_id"], mapping["candidate_key"])
+        if identity not in candidates:
+            orphans.append(mapping)
+            continue
+        grouped.setdefault(identity, []).append(mapping)
+
+    conflicts = []
+    ambiguous = []
+    for (project_id, candidate_key), items in grouped.items():
+        candidate = candidates[(project_id, candidate_key)]
+        by_type: dict[str, list[dict[str, Any]]] = {}
+        for item in items:
+            identifier_type = item["identifier_key"].split(":", 1)[0]
+            if identifier_type in {"doi", "uid", "doc"}:
+                by_type.setdefault(identifier_type, []).append(item)
+        for identifier_type, type_items in by_type.items():
+            canonical = _canonical_strong_values(candidate, identifier_type)
+            values = {
+                _mapping_value(item["identifier_key"], identifier_type): item
+                for item in type_items
+            }
+            if len(canonical) == 1:
+                canonical_value = next(iter(canonical))
+                aliases = {
+                    value: item
+                    for value, item in values.items()
+                    if value != canonical_value
+                }
+                if aliases:
+                    conflicts.append(
+                        {
+                            "project_id": project_id,
+                            "candidate_key": candidate_key,
+                            "type": identifier_type,
+                            "canonical": canonical_value,
+                            "aliases": sorted(aliases),
+                            "identifier_keys": sorted(
+                                item["identifier_key"] for item in aliases.values()
+                            ),
+                        }
+                    )
+            elif len(canonical) > 1:
+                ambiguous.append(
+                    {
+                        "project_id": project_id,
+                        "candidate_key": candidate_key,
+                        "type": identifier_type,
+                        "reason": "候选自身存在多个不同的规范标识",
+                        "values": sorted(values),
+                    }
+                )
+            elif len(values) > 1:
+                ambiguous.append(
+                    {
+                        "project_id": project_id,
+                        "candidate_key": candidate_key,
+                        "type": identifier_type,
+                        "reason": "没有唯一规范标识，无法判断别名归属",
+                        "values": sorted(values),
+                    }
+                )
+
+    return {
+        "conflicts": conflicts,
+        "ambiguous": ambiguous,
+        "orphans": orphans,
+        "counts": {
+            "conflicts": len(conflicts),
+            "ambiguous": len(ambiguous),
+            "orphans": len(orphans),
+        },
+    }
+
+
+def _backup_database(path: Path) -> Path:
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    backup = path.with_name(f"{path.name}.bak-{timestamp}")
+    suffix = 2
+    while backup.exists():
+        backup = path.with_name(f"{path.name}.bak-{timestamp}-{suffix}")
+        suffix += 1
+    with sqlite3.connect(path) as source, sqlite3.connect(backup) as target:
+        source.backup(target)
+    return backup
+
+
+def repair_identifier_integrity(*, backup: bool = True) -> dict[str, Any]:
+    report = inspect_identifier_integrity()
+    removed_aliases = 0
+    removed_orphans = 0
+    backup_path = None
+    if not report["conflicts"] and not report["orphans"]:
+        return {
+            **report,
+            "backup_path": None,
+            "removed_aliases": 0,
+            "removed_orphans": 0,
+        }
+    path = database_path()
+    if backup and path.exists():
+        backup_path = _backup_database(path)
+    with _connection() as connection:
+        for conflict in report["conflicts"]:
+            for identifier_key in conflict["identifier_keys"]:
+                cursor = connection.execute(
+                    """DELETE FROM screening_candidate_identifiers
+                       WHERE project_id = ? AND candidate_key = ? AND identifier_key = ?""",
+                    (
+                        conflict["project_id"],
+                        conflict["candidate_key"],
+                        identifier_key,
+                    ),
+                )
+                removed_aliases += cursor.rowcount
+        for orphan in report["orphans"]:
+            cursor = connection.execute(
+                """DELETE FROM screening_candidate_identifiers
+                   WHERE project_id = ? AND candidate_key = ? AND identifier_key = ?""",
+                (
+                    orphan["project_id"],
+                    orphan["candidate_key"],
+                    orphan["identifier_key"],
+                ),
+            )
+            removed_orphans += cursor.rowcount
+    return {
+        **report,
+        "backup_path": str(backup_path) if backup_path else None,
+        "removed_aliases": removed_aliases,
+        "removed_orphans": removed_orphans,
+    }
 
 
 def record_search(mode: str, params: dict[str, Any], result_count: int) -> None:

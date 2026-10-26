@@ -123,7 +123,7 @@ if truncated:
     st.warning("扩展采样达到页数上限，结果只是部分样本，不能代表全体文献。")
 if analysis["identifier_conflicts"]:
     st.warning(
-        f"检测到 {analysis['identifier_conflicts']} 组强标识符冲突，"
+        f"检测到 {analysis['identifier_conflicts']} 项强标识符冲突关系，"
         "冲突记录已保留为独立样本，请人工核对后再用于统计。"
     )
 st.caption("统计口径：仅使用本次样本，不代表 Sciverse 全库；缺失字段不会被猜测填充。")

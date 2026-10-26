@@ -100,12 +100,36 @@ def _strong_values(paper: dict[str, Any]) -> dict[str, set[str]]:
     return values
 
 
+def _strong_conflict_signatures(papers: list[dict[str, Any]]) -> int:
+    signatures: set[tuple[str, str, str]] = set()
+    values = [_strong_values(paper) for paper in papers]
+    identifiers = [set(strong_identifier_keys(paper)) for paper in papers]
+    for left in range(len(papers)):
+        for right in range(left + 1, len(papers)):
+            if identifiers[left].isdisjoint(identifiers[right]):
+                continue
+            for identifier_type in ("doi", "uid", "doc"):
+                left_values = values[left].get(identifier_type)
+                right_values = values[right].get(identifier_type)
+                if not left_values or not right_values:
+                    continue
+                if left_values.isdisjoint(right_values):
+                    for left_value in left_values:
+                        for right_value in right_values:
+                            signatures.add(
+                                (
+                                    identifier_type,
+                                    *sorted((left_value, right_value)),
+                                )
+                            )
+    return len(signatures)
+
+
 def _dedupe(
     papers: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], int, int]:
     parent = list(range(len(papers)))
     root_values = {index: _strong_values(paper) for index, paper in enumerate(papers)}
-    conflict_pairs: set[tuple[int, int]] = set()
 
     def find(index: int) -> int:
         while parent[index] != index:
@@ -121,7 +145,6 @@ def _dedupe(
         for identifier_type, values in root_values[left_root].items():
             other = root_values[right_root].get(identifier_type)
             if other and values.isdisjoint(other):
-                conflict_pairs.add(tuple(sorted((left_root, right_root))))
                 return False
         parent[right_root] = left_root
         for identifier_type, values in root_values[right_root].items():
@@ -175,7 +198,7 @@ def _dedupe(
         _merge_group(grouped[root])
         for root in sorted(grouped, key=lambda root: first_seen[root])
     ]
-    return unique, len(papers) - len(unique), len(conflict_pairs)
+    return unique, len(papers) - len(unique), _strong_conflict_signatures(papers)
 
 
 def _is_missing(value: Any) -> bool:

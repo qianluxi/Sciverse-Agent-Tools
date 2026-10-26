@@ -139,6 +139,11 @@ with queue_tab:
         key = candidate["candidate_key"]
         with st.container(border=True):
             st.markdown(f"#### {candidate['title']}")
+            if key.startswith("conflict:"):
+                st.error(
+                    "身份冲突：该记录的强标识符指向不同候选，"
+                    "请先在“重复记录”页核对，再决定筛选状态。"
+                )
             metadata = " · ".join(
                 str(value) for value in (candidate.get("year"), candidate.get("doi")) if value
             )

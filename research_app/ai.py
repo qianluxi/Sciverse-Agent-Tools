@@ -26,7 +26,7 @@ EVIDENCE_SCHEMA = {
     "evidence_quotes": [{"quote": "原文引句", "section": "章节或位置"}],
 }
 EVIDENCE_PROMPT_VERSION = "evidence-v1"
-OUTLINE_PROMPT_VERSION = "outline-v1"
+OUTLINE_PROMPT_VERSION = "outline-v2"
 
 
 class AIError(RuntimeError):
@@ -209,24 +209,83 @@ def build_outline_messages(question: str, evidence: list[dict[str, Any]]) -> lis
             "content": (
                 f"综述问题：{question}\n\n"
                 "根据以下已提取证据生成 Markdown 综述提纲。要求：\n"
-                "1. 先给出研究背景与问题；2. 按主题组织证据；3. 指出证据空白和局限；"
-                "4. 每个论点后用 [paper_id] 标注来源；5. 不生成最终论文全文，不编造来源。\n\n"
+                "1. 直接输出 Markdown 正文，不要 JSON 对象，不要代码块；\n"
+                "2. 先给出研究背景与问题；3. 按主题组织证据；4. 指出证据空白和局限；\n"
+                "5. 每个论点后用 [paper_id] 标注来源；6. 不生成最终论文全文，不编造来源。\n\n"
                 f"证据：{json.dumps(compact, ensure_ascii=False)}"
             ),
         },
     ]
 
 
+def _unescape_json_fragment(text: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        token = match.group(0)
+        mapping = {
+            r"\"": '"',
+            r"\\": "\\",
+            r"\/": "/",
+            r"\b": "\b",
+            r"\f": "\f",
+            r"\n": "\n",
+            r"\r": "\r",
+            r"\t": "\t",
+        }
+        if token in mapping:
+            return mapping[token]
+        if token.startswith(r"\u") and len(token) == 6:
+            return chr(int(token[2:], 16))
+        return token[1:]
+
+    return re.sub(r'\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4})', replace, text)
+
+
 def _outline_markdown(raw: str) -> str:
+    cleaned = raw.strip()
+    if not cleaned:
+        return ""
+    if cleaned.startswith("```"):
+        cleaned = re.sub(
+            r"^```(?:json|markdown|md)?\s*",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        cleaned = re.sub(r"\s*```$", "", cleaned)
     try:
-        payload = parse_json_object(raw)
+        payload = parse_json_object(cleaned)
     except AIError:
-        return raw.strip()
-    for key in ("markdown_outline", "outline", "markdown", "content"):
-        value = payload.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return raw.strip()
+        payload = None
+    if payload:
+        for key in ("outline_markdown", "markdown_outline", "outline", "markdown", "content"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+    match = re.search(
+        r'"(?:outline_markdown|markdown_outline|outline|markdown|content)"\s*:\s*"',
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        body = cleaned[match.end() :]
+        chars = []
+        escaped = False
+        for char in body:
+            if char == '"' and not escaped:
+                break
+            chars.append(char)
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+        fragment = "".join(chars)
+        if escaped:
+            fragment = fragment[:-1]
+        value = _unescape_json_fragment(fragment).strip()
+        if value:
+            return value
+    return cleaned
 
 
 def generate_outline(
@@ -240,6 +299,6 @@ def generate_outline(
         raise ValueError("没有可用于生成提纲的证据。")
     raw = client.chat(
         build_outline_messages(question.strip(), evidence),
-        max_tokens=4096,
+        max_tokens=8192,
     )
     return _outline_markdown(raw)

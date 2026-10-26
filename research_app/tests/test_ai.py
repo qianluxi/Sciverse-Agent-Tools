@@ -89,7 +89,7 @@ def test_generate_outline_requires_evidence_and_calls_model():
     outline = generate_outline(client, "What works?", evidence)
 
     assert "paper:1" in outline
-    assert client.calls[0][1] == 4096
+    assert client.calls[0][1] == 8192
     with pytest.raises(ValueError, match="证据"):
         generate_outline(client, "What works?", [{"paper_id": "x", "data": None}])
 
@@ -234,3 +234,36 @@ def test_generate_outline_extracts_json_markdown_field():
 
     assert outline == "# 提纲\n\n## 背景\n证据"
     assert "markdown_outline" not in outline
+
+
+def test_generate_outline_extracts_outline_markdown_field():
+    client = FakeClient(['{"outline_markdown": "# 提纲\\n\\n## 背景\\n证据"}'])
+    evidence = [{"paper_id": "paper:1", "data": {"findings": "improvement"}}]
+
+    outline = generate_outline(client, "What works?", evidence)
+
+    assert outline == "# 提纲\n\n## 背景\n证据"
+    assert "outline_markdown" not in outline
+
+
+def test_generate_outline_strips_markdown_code_fence():
+    client = FakeClient(["```markdown\n# 提纲\n\n## 背景\n证据\n```"])
+    evidence = [{"paper_id": "paper:1", "data": {"findings": "improvement"}}]
+
+    outline = generate_outline(client, "What works?", evidence)
+
+    assert outline == "# 提纲\n\n## 背景\n证据"
+    assert not outline.startswith("```")
+
+
+def test_generate_outline_recovers_truncated_json_wrapper():
+    client = FakeClient(
+        ['{"outline_markdown":"# 提纲\\n\\n## 背景\\n- 证据 [paper:10']
+    )
+    evidence = [{"paper_id": "paper:1", "data": {"findings": "improvement"}}]
+
+    outline = generate_outline(client, "What works?", evidence)
+
+    assert outline == "# 提纲\n\n## 背景\n- 证据 [paper:10"
+    assert not outline.startswith("{")
+    assert "\\n" not in outline

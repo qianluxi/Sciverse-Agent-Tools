@@ -15,7 +15,7 @@
 | 3 | 引用网络 | 已完成 | 本地 63 项测试、CI 及用户功能验收通过 | 100 节点性能测试用户明确取消 |
 | 4 | 趋势分析 | 已完成 | 本地 70 项测试、CI 及用户真实扩展采样验收通过 | 无 |
 | 5 | 可选增强 | 已完成（当前范围） | 本地 76 项测试、CI 及真实图表提取通过 | AI/桌面转入阶段 6、7 |
-| 6 | AI 证据检索与综述提纲 | 已完成 | 本地 104 项测试通过；真实模型提取、核对和 CSV/Markdown 导出验收通过 | 提交后复核 CI |
+| 6 | AI 证据检索与综述提纲 | 已完成 | 本地 104 项测试及 Test CI 通过；真实模型提取、核对和 CSV/Markdown 导出验收通过 | Release 发布任务失败，属既有发布凭据问题 |
 | 7 | Windows 便携封装 | 进行中 | exe 已构建、启动验证及 CI 通过 | 干净 Windows 环境验收 |
 
 执行规则：
@@ -466,7 +466,8 @@ SQLite 仅保存：
 - 2026-10-26 使用 `deepseek-v4.1-flash` 完成真实模型验收：3 篇剪力墙论文提取成功，9 条引句全部在输入文本中匹配，逐篇标记已核对并导出 CSV/Markdown。
 - 验收后修正 CSV 行高和年份显示：引句改为独立列，`2002.0` 显示为 `2002`。
 - AI Key 不写入本地存储。
-- 待提交并重新运行 CI；此前阶段 6 CI 已通过（[run](https://github.com/qianluxi/Sciverse-Agent-Tools/actions/runs/39934485210)）。
+- 代码提交 `009bdb4` 已推送；Test CI 成功（[run](https://github.com/qianluxi/Sciverse-Agent-Tools/actions/runs/40279322977)）。
+- Release CI 在 semantic-release 发布阶段失败（[run](https://github.com/qianluxi/Sciverse-Agent-Tools/actions/runs/40279322994)）：已生成 `v1.9.0` tag 和版本提交，但 PyPI/npm 仍为 0.15.1，GitHub Release 未创建；该问题在阶段 6 提交前已存在，不属于工作台代码。
 
 阶段 7 本地记录：
 

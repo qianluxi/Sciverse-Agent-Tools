@@ -1,5 +1,5 @@
 /** Auto-generated. Do not edit. Run scripts/build.sh. */
-export const TOOLS_VERSION = '1.9.3';
+export const TOOLS_VERSION = '1.9.4';
 export const OPENAI_TOOLS = [
   {
     "type": "function",

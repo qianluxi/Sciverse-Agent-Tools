@@ -1,3 +1,9 @@
+## [1.9.4](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.9.3...v1.9.4) (2026-10-26)
+
+### Bug Fixes
+
+* enforce strong identifier consistency ([2c239d4](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/2c239d466765e953da8b8d0e3dc6adad65b97da7))
+
 ## [1.9.3](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.9.2...v1.9.3) (2026-10-26)
 
 ### Bug Fixes

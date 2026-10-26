@@ -1,3 +1,9 @@
+## [1.9.3](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.9.2...v1.9.3) (2026-10-26)
+
+### Bug Fixes
+
+* preserve duplicate metadata and detect identifier conflicts ([f1f4450](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/f1f445052951ca12e8d5ad9d96dc62e82fe805a0))
+
 ## [1.9.2](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.9.1...v1.9.2) (2026-10-26)
 
 ### Bug Fixes

@@ -50,5 +50,5 @@ def test_evidence_page_extracts_figures_offline(monkeypatch):
     assert len(items) == 2
     assert [item["file_name"] for item in items] == ["dt=x/p1/f1.png", "dt=x/p1/f2.png"]
     assert app.session_state["evidence_requests"] == 3
-    download_keys = {button.key for button in app.get("download_button")}
-    assert {"download_evidence_csv", "download_evidence_zip"} <= download_keys
+    download_labels = {button.label for button in app.get("download_button")}
+    assert {"下载证据清单 CSV", "下载图表 ZIP"} <= download_labels

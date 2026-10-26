@@ -167,7 +167,7 @@ for index, item in enumerate(items):
     with st.container(border=True):
         image_col, detail_col = st.columns([1, 2])
         with image_col:
-            st.image(item["image"], caption=item["alt"], use_container_width=True)
+            st.image(item["image"], caption=item["alt"])
         with detail_col:
             st.markdown(f"#### {item['title'] or '（无标题）'}")
             st.caption(f"来源 ID：`{item['paper_id']}` · 文件：`{item['file_name']}`")

@@ -68,8 +68,8 @@ def test_graph_page_loads_and_exports_network(monkeypatch):
     assert len(app.get("graphviz_chart")) == 1
     rows = str(app.dataframe[0].value)
     assert all(title in rows for title in ("Center paper", "Paper A", "Paper B"))
-    download_keys = {button.key for button in app.get("download_button")}
-    assert {"download_graphml", "download_edges"} <= download_keys
+    download_labels = {button.label for button in app.get("download_button")}
+    assert {"导出 GraphML", "导出边列表 CSV"} <= download_labels
 
     next(button for button in app.button if button.label == "补全节点元数据").click().run(
         timeout=30

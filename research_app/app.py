@@ -93,8 +93,10 @@ def _execute_search(
     params: dict[str, Any],
     *,
     preserve_selection: bool = False,
+    fulltext_only: bool = False,
 ) -> None:
     enrichment = None
+    filtered_info = None
     if search_kind == "semantic":
         response = call_api(token, "semantic_search", **params)
         hits = response.get("hits", [])
@@ -118,11 +120,21 @@ def _execute_search(
         total_pages = 1
     else:
         response = call_api(token, "search_papers", **params)
-        papers = response.get("results", [])
+        page_papers = response.get("results", [])
+        if fulltext_only:
+            papers = [paper for paper in page_papers if paper.get("doc_id")]
+            filtered_info = {
+                "page_total": len(page_papers),
+                "shown": len(papers),
+            }
+        else:
+            papers = page_papers
         total_count = response.get("total_count", len(papers))
         total_pages = response.get("total_pages") or max(1, ceil(total_count / params["page_size"]))
 
     st.session_state["semantic_enrichment"] = enrichment
+    st.session_state["fulltext_only"] = fulltext_only
+    st.session_state["fulltext_filtered"] = filtered_info
     st.session_state["papers"] = papers
     st.session_state["has_searched"] = True
     st.session_state["search_kind"] = search_kind
@@ -278,6 +290,7 @@ mode_label = st.radio(
 )
 advanced_filter_spec = None
 advanced_filter_error = None
+fulltext_only = False
 
 with st.form("search_form", border=True):
     if mode_label == "智能语义检索":
@@ -317,7 +330,11 @@ with st.form("search_form", border=True):
             subjects = st.text_input("学科主题（可选，多个用逗号分隔）")
         oa_only = st.checkbox(
             "仅开放获取（OA）",
-            help="按 access_is_oa=true 过滤，更可能找到可读取全文的论文；是否可读仍以实际读取结果为准。",
+            help="按 access_is_oa=true 过滤。OA 不等于有全文记录，可能减少 doc_id 覆盖率；需要全文请用下面的过滤。",
+        )
+        fulltext_only = st.checkbox(
+            "仅显示有全文记录（doc_id）",
+            help="只过滤当前页结果，不改变服务端检索总量；翻页可继续查找。",
         )
         options = st.columns(3)
         with options[0]:
@@ -472,7 +489,12 @@ if search_clicked:
                     if filters_advanced:
                         params["filters_advanced"] = filters_advanced
                     search_kind = "structured"
-                _execute_search(token, search_kind, params)
+                _execute_search(
+                    token,
+                    search_kind,
+                    params,
+                    fulltext_only=fulltext_only if search_kind == "structured" else False,
+                )
                 st.rerun()
         except ValueError as error:
             st.warning(f"筛选值格式不正确：{error}")
@@ -509,7 +531,14 @@ if papers:
         search_params = st.session_state.get("search_params", {})
         current_page = search_params.get("page", 1)
         total_pages = st.session_state.get("total_pages", 1)
-        st.caption(f"第 {current_page} / {total_pages} 页 · 本页 {len(papers)} 篇")
+        filtered_info = st.session_state.get("fulltext_filtered")
+        if filtered_info:
+            st.caption(
+                f"第 {current_page} / {total_pages} 页 · 本页 {filtered_info['page_total']} 条，"
+                f"显示 {filtered_info['shown']} 条有全文记录"
+            )
+        else:
+            st.caption(f"第 {current_page} / {total_pages} 页 · 本页 {len(papers)} 篇")
         if total_pages > 1:
             previous_col, _, next_col = st.columns([1, 4, 1])
             with previous_col:
@@ -521,6 +550,7 @@ if papers:
                                 "structured",
                                 {**search_params, "page": current_page - 1},
                                 preserve_selection=True,
+                                fulltext_only=st.session_state.get("fulltext_only", False),
                             )
                         st.rerun()
                     except Exception as error:
@@ -534,6 +564,7 @@ if papers:
                                 "structured",
                                 {**search_params, "page": current_page + 1},
                                 preserve_selection=True,
+                                fulltext_only=st.session_state.get("fulltext_only", False),
                             )
                         st.rerun()
                     except Exception as error:

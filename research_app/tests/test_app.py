@@ -91,8 +91,8 @@ def test_structured_search_reads_text_and_figure_offline(monkeypatch, tmp_path):
     assert actions[0][1]["query"] == "climate"
     assert actions[0][1]["page_size"] == 20
     assert any("Fixture paper" in block.value for block in app.markdown)
-    download_keys = {button.key for button in app.get("download_button")}
-    assert {"download_csv", "download_ris", "download_bibtex", "download_markdown"} <= download_keys
+    download_labels = {button.label for button in app.get("download_button")}
+    assert {"CSV", "RIS（Zotero）", "BibTeX", "Markdown"} <= download_labels
 
     next(button for button in app.button if button.label == "查看文献").click().run(timeout=30)
     next(button for button in app.button if button.label == "读取论文原文").click().run(timeout=30)
@@ -419,3 +419,41 @@ def test_export_selection_survives_page_changes_and_resets_for_new_search(monkey
     next(button for button in app.button if button.label == "筛选论文").click().run(timeout=30)
 
     assert app.session_state["export_selection"] == {}
+
+
+def test_fulltext_only_filters_current_page_and_shows_counts(monkeypatch, tmp_path):
+    _isolate_storage(monkeypatch, tmp_path)
+    monkeypatch.delenv("SCIVERSE_API_TOKEN", raising=False)
+    monkeypatch.setattr(sciverse.credentials, "resolve_token", lambda *_args: None)
+
+    def fake_call_api(token, action, **kwargs):
+        assert action == "search_papers"
+        return {
+            "results": [
+                {"title": "With fulltext", "doc_id": "doc-1"},
+                {"title": "Metadata only"},
+            ],
+            "total_count": 2,
+            "page": 1,
+            "page_size": 20,
+            "total_pages": 1,
+        }
+
+    monkeypatch.setattr(service, "call_api", fake_call_api)
+    app = AppTest.from_file(str(APP_PATH), default_timeout=30).run(timeout=30)
+    app.radio[0].set_value("条件筛选").run(timeout=30)
+    next(widget for widget in app.text_input if widget.label == "API Token").set_value(
+        "sv-offline-test"
+    )
+    next(widget for widget in app.text_input if widget.label == "关键词或题名（可选）").set_value(
+        "shear wall"
+    )
+    next(
+        widget for widget in app.checkbox if widget.label == "仅显示有全文记录（doc_id）"
+    ).set_value(True)
+    next(button for button in app.button if button.label == "筛选论文").click().run(timeout=30)
+
+    assert not app.exception
+    assert any("With fulltext" in block.value for block in app.markdown)
+    assert not any("Metadata only" in block.value for block in app.markdown)
+    assert any("2 条，显示 1 条有全文记录" in caption.value for caption in app.caption)

@@ -39,5 +39,5 @@ def test_trends_page_renders_current_results(monkeypatch):
 
     assert not app.exception
     assert any(metric.label == "去重后样本" and metric.value == "2" for metric in app.metric)
-    download_keys = {button.key for button in app.get("download_button")}
-    assert "download_trends_zip" in download_keys
+    download_labels = {button.label for button in app.get("download_button")}
+    assert "下载统计 ZIP（CSV）" in download_labels

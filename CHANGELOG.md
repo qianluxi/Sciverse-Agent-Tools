@@ -1,3 +1,9 @@
+## [1.13.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.12.3...v1.13.0) (2026-10-27)
+
+### Features
+
+* complete project recovery and source exports ([8118b8c](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/8118b8ce30d22f8b51a67244522b63491865ff7d))
+
 ## [1.12.3](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.12.2...v1.12.3) (2026-10-27)
 
 ### Bug Fixes

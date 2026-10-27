@@ -1,3 +1,9 @@
+## [1.9.6](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.9.5...v1.9.6) (2026-10-27)
+
+### Bug Fixes
+
+* harden database maintenance tooling ([f0ac1c5](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/f0ac1c5b342e653b23ffcc6031e7ad3f2a7b5f2a))
+
 ## [1.9.5](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.9.4...v1.9.5) (2026-10-26)
 
 ### Bug Fixes

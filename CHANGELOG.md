@@ -1,3 +1,9 @@
+## [1.12.2](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.12.1...v1.12.2) (2026-10-27)
+
+### Bug Fixes
+
+* audit project stats and tighten snapshot semantics ([47dd5fd](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/47dd5fd4b57f5d4a15af7282f657ce13a632991b))
+
 ## [1.12.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.12.0...v1.12.1) (2026-10-27)
 
 ### Bug Fixes

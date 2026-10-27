@@ -1,3 +1,9 @@
+## [1.12.3](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.12.2...v1.12.3) (2026-10-27)
+
+### Bug Fixes
+
+* rebuild project stats from import ledger ([81df187](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/81df187ad042f38e2d55b68163d6ba7c35acdf36))
+
 ## [1.12.2](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.12.1...v1.12.2) (2026-10-27)
 
 ### Bug Fixes

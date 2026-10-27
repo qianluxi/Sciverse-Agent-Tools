@@ -1,3 +1,9 @@
+## [1.12.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.11.0...v1.12.0) (2026-10-27)
+
+### Features
+
+* unify paper selection for export and screening ([0649c19](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/0649c199eb0b11aa470d3737dcf9f444d7dddbfb))
+
 ## [1.11.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.10.0...v1.11.0) (2026-10-27)
 
 ### Features

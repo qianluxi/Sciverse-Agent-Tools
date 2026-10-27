@@ -84,3 +84,37 @@ else:
 
 st.markdown("### 开始工作")
 st.caption("使用左侧页面导航继续：文献发现与检索、去重与筛选、AI 证据与提纲。")
+
+st.divider()
+with st.expander("删除当前研究项目", expanded=False):
+    st.error(
+        "删除会永久移除该项目的检索快照、候选、筛选决定、审计记录、AI 任务和证据，且无法撤销。"
+    )
+    confirmation = st.text_input(
+        "输入项目名称确认删除",
+        placeholder=project["name"],
+    )
+    if st.button(
+        "永久删除项目",
+        disabled=confirmation.strip() != project["name"],
+    ):
+        try:
+            if storage.delete_screening_project(project_id):
+                for key in (
+                    "current_project_id",
+                    "screening_project_id",
+                    "current_search_run_id",
+                    "ai_evidence",
+                    "ai_task_id",
+                    "ai_loaded_project",
+                    "ai_warnings",
+                    "ai_outline",
+                    "ai_editor_epoch",
+                ):
+                    st.session_state.pop(key, None)
+                st.success("研究项目已删除。")
+                st.rerun()
+            else:
+                st.warning("项目不存在或已被删除。")
+        except Exception as error:
+            st.error(str(error))

@@ -12,7 +12,7 @@ from research_app.screening import EXCLUSION_REASONS, STATUS_LABELS
 st.set_page_config(page_title="系统综述筛选 · Sciverse", page_icon="S", layout="wide")
 
 st.title("系统综述筛选")
-st.caption("创建综述项目，将检索结果去重后逐条筛选。全部决定和变更记录保存在本机。")
+st.caption("从“研究项目”选择项目，将检索结果去重后逐条筛选。全部决定和变更记录保存在本机。")
 
 if "screening_message" in st.session_state:
     st.success(st.session_state.pop("screening_message"))
@@ -26,30 +26,9 @@ def _show_error(error: Exception) -> None:
     st.error(str(error))
 
 
-with st.expander("新建综述项目", expanded=not storage.list_screening_projects()):
-    with st.form("create_screening_project"):
-        project_name = st.text_input("项目名称", placeholder="例如：气候适应研究综述")
-        question = st.text_area(
-            "研究问题", placeholder="例如：城市气候适应干预对脆弱人群的效果如何？"
-        )
-        inclusion = st.text_area("纳入标准", placeholder="例如：同行评审实证研究；2015 年后发表")
-        exclusion = st.text_area("排除标准", placeholder="例如：非城市环境；无全文；非英文或中文")
-        create_clicked = st.form_submit_button("创建项目", type="primary")
-    if create_clicked:
-        try:
-            project_id = storage.create_screening_project(
-                project_name, question, inclusion, exclusion
-            )
-            st.session_state["screening_project_id"] = project_id
-            st.session_state["current_project_id"] = project_id
-            st.session_state["screening_message"] = "项目已创建。"
-            st.rerun()
-        except Exception as error:
-            _show_error(error)
-
 projects = storage.list_screening_projects()
 if not projects:
-    st.info("尚未创建综述项目。请先填写上方项目信息。")
+    st.info("尚未创建研究项目。请先到左侧“研究项目”页面创建项目。")
     st.stop()
 
 project_ids = [project["id"] for project in projects]

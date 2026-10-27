@@ -1,5 +1,3 @@
-import sqlite3
-
 import pytest
 
 import research_app.storage as storage
@@ -163,6 +161,53 @@ def test_ai_evidence_persists_raw_and_final_versions(monkeypatch, tmp_path):
     overview = storage.project_overview(project_id)
     assert overview["ai_tasks"] == 1
     assert overview["evidence_items"] == 1
+
+
+def test_delete_project_cascades_all_project_data(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    project_id = _project()
+    other_id = storage.create_screening_project("Other", "Q2", "I", "E")
+    papers = [_paper("a", "Paper A")]
+    run = storage.save_search_run(
+        project_id,
+        "structured",
+        {"query": "topic", "page": 1, "page_size": 20},
+        papers,
+        1,
+    )
+    storage.add_screening_candidates(project_id, papers, source_run_id=run["id"])
+    task_id = storage.create_ai_task(
+        project_id,
+        kind="evidence",
+        model="m",
+        prompt_version="v",
+        input_hash="h",
+    )
+    storage.save_evidence_items(
+        project_id,
+        task_id,
+        [{"paper_id": "paper:a", "data": {"findings": "ok"}}],
+    )
+
+    assert storage.delete_screening_project(project_id) is True
+    assert storage.delete_screening_project(project_id) is False
+    assert [project["id"] for project in storage.list_screening_projects()] == [other_id]
+    with storage._connection() as connection:
+        for table in (
+            "screening_candidates",
+            "screening_candidate_identifiers",
+            "screening_candidate_sources",
+            "screening_duplicates",
+            "screening_audit",
+            "search_runs",
+            "ai_task_runs",
+            "evidence_items",
+        ):
+            count = connection.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE project_id = ?",
+                (project_id,),
+            ).fetchone()[0]
+            assert count == 0
 
 
 def test_schema_v4_tables_are_created(monkeypatch, tmp_path):

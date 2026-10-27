@@ -50,7 +50,10 @@ ai_session_id = st.session_state.setdefault("ai_session_id", uuid.uuid4().hex)
 _default_profile = default_profile()
 st.session_state.setdefault("ai_base_url", _default_profile["base_url"])
 st.session_state.setdefault("ai_model", _default_profile["model"])
-st.session_state.setdefault("ai_key", os.environ.get("OPENAI_API_KEY", ""))
+st.session_state.setdefault(
+    "ai_key_session",
+    st.session_state.get("ai_key") or os.environ.get("OPENAI_API_KEY", ""),
+)
 
 _profiles = list_ai_profiles()
 _base_url_options = [profile["base_url"] for profile in _profiles]
@@ -97,9 +100,11 @@ with st.sidebar:
     ai_key = st.text_input(
         "API Key",
         type="password",
-        key="ai_key",
+        value=st.session_state.get("ai_key_session", ""),
+        key="ai_key_input",
         help="只在当前浏览器会话使用，不写入本地数据库；切换页面不会丢失。",
     )
+    st.session_state["ai_key_session"] = ai_key
     model = st.text_input(
         "模型名",
         key="ai_model",

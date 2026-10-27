@@ -12,22 +12,23 @@ def _isolate(monkeypatch, tmp_path):
     monkeypatch.setattr(storage, "database_path", lambda: tmp_path / "workbench.sqlite3")
 
 
-def test_screening_page_creates_project_and_screens_candidate(monkeypatch, tmp_path):
+def test_screening_page_screens_candidate_in_existing_project(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
-    app = AppTest.from_file(str(PAGE_PATH), default_timeout=30).run(timeout=30)
+    project_id = storage.create_screening_project(
+        "Review",
+        "Does intervention X work?",
+        "Trials",
+        "Not about X",
+    )
+    app = AppTest.from_file(str(PAGE_PATH), default_timeout=30)
+    app.session_state["screening_project_id"] = project_id
+    app.session_state["screening_project_selector"] = project_id
+    app.session_state["current_project_id"] = project_id
+    app.run(timeout=30)
 
     assert not app.exception
-    next(field for field in app.text_input if field.label == "项目名称").set_value("Review")
-    next(field for field in app.text_area if field.label == "研究问题").set_value(
-        "Does intervention X work?"
-    )
-    next(field for field in app.text_area if field.label == "纳入标准").set_value("Trials")
-    next(field for field in app.text_area if field.label == "排除标准").set_value("Not about X")
-    next(button for button in app.button if button.label == "创建项目").click().run(timeout=30)
-
     projects = storage.list_screening_projects()
     assert len(projects) == 1
-    project_id = projects[0]["id"]
 
     app.session_state["papers"] = [
         {

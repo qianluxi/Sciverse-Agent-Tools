@@ -762,6 +762,15 @@ def get_screening_project(project_id: str) -> dict[str, Any]:
         return dict(_screening_project(connection, project_id))
 
 
+def delete_screening_project(project_id: str) -> bool:
+    with _connection() as connection:
+        cursor = connection.execute(
+            "DELETE FROM screening_projects WHERE id = ?",
+            (project_id,),
+        )
+    return cursor.rowcount > 0
+
+
 def _identifier_values(identifiers: list[str]) -> dict[str, set[str]]:
     values: dict[str, set[str]] = {}
     for identifier in identifiers:

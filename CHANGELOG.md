@@ -1,3 +1,9 @@
+## [1.11.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.10.0...v1.11.0) (2026-10-27)
+
+### Features
+
+* add project deletion and session AI key ([070541e](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/070541e85bda01688065f329ffc04672401a8b7d))
+
 ## [1.10.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.9.6...v1.10.0) (2026-10-27)
 
 ### Features

@@ -1,3 +1,9 @@
+## [1.10.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.9.6...v1.10.0) (2026-10-27)
+
+### Features
+
+* add project-centric workflow foundation ([d7f1c52](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/d7f1c52521ddd11de59e65dce15fa62a38b63ead))
+
 ## [1.9.6](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.9.5...v1.9.6) (2026-10-27)
 
 ### Bug Fixes

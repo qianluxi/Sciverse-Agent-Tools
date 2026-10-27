@@ -1,3 +1,9 @@
+## [1.12.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.12.0...v1.12.1) (2026-10-27)
+
+### Bug Fixes
+
+* make project imports idempotent and preserve source runs ([f7981b0](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/f7981b0f49712f08427c784ef0649f8279006c9a))
+
 ## [1.12.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.11.0...v1.12.0) (2026-10-27)
 
 ### Features

@@ -369,6 +369,46 @@ def test_project_manifest_includes_source_traceability(monkeypatch, tmp_path):
     assert manifest["summary"]["unique"] == 1
 
 
+def test_project_manifest_exports_all_runs_and_tasks(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    project_id = _project()
+    paper = _paper("a", "Paper A")
+    first_run = None
+    for index in range(101):
+        run = storage.save_search_run(
+            project_id,
+            "structured",
+            {"query": "topic", "page": index + 1, "page_size": 1},
+            [paper],
+            101,
+        )
+        if first_run is None:
+            first_run = run
+    for _ in range(101):
+        storage.create_ai_task(
+            project_id,
+            kind="evidence",
+            model="m",
+            prompt_version="v",
+            input_hash="h",
+        )
+    storage.add_screening_candidates(
+        project_id,
+        [paper],
+        source_run_id=first_run["id"],
+    )
+
+    manifest = json.loads(storage.project_manifest(project_id))
+
+    assert manifest["summary"]["complete"] is True
+    assert manifest["summary"]["search_runs_exported"] == 101
+    assert manifest["summary"]["ai_tasks_exported"] == 101
+    run_ids = {run["id"] for run in manifest["search_runs"]}
+    for candidate in manifest["candidates"]:
+        for source in candidate["sources"]:
+            assert source["run_id"] in run_ids
+
+
 def test_project_statistics_are_audited_and_rebuilt_from_sources(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     project_id = _project()

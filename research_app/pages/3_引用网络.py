@@ -6,6 +6,7 @@ import httpx
 import streamlit as st
 from sciverse.credentials import resolve_token
 
+from research_app import storage
 from research_app.graph import (
     RELATION_LABELS,
     build_network,
@@ -15,6 +16,7 @@ from research_app.graph import (
     filter_network,
     render_dot,
 )
+from research_app.project_ui import project_selector
 from research_app.screening import normalize_doi
 from research_app.service import call_api
 
@@ -29,6 +31,7 @@ with st.sidebar:
     token = entered_token.strip() or resolve_token()
     if not token:
         st.info("请先输入 Sciverse API Token。")
+    project_id = project_selector("graph_project_selector")
 
 
 def _center_from_paper(paper: dict[str, Any]) -> dict[str, Any]:
@@ -134,7 +137,25 @@ def _reset_network() -> None:
 
 
 st.markdown("### 1. 选择中心论文")
-papers = st.session_state.get("papers", [])
+session_papers = st.session_state.get("papers", [])
+project_run = storage.latest_search_run(project_id) if project_id else None
+source_options = []
+if session_papers:
+    source_options.append("当前会话检索结果")
+if project_run:
+    source_options.append("项目最近检索快照")
+if not source_options:
+    st.info("当前没有可用检索结果。请先在主页检索或载入项目快照。")
+    st.stop()
+data_source = source_options[0]
+if len(source_options) > 1:
+    data_source = st.radio("数据来源", source_options, horizontal=True)
+if data_source == "项目最近检索快照" and project_run:
+    papers = project_run["papers"]
+    st.caption("当前使用项目检索快照；引用网络结果属于本页独立分析，不自动写入项目。")
+else:
+    papers = session_papers
+    st.caption("当前使用会话检索结果；引用网络结果属于本页独立分析，不自动写入项目。")
 paper_options = [paper for paper in papers if paper.get("unique_id")]
 center_mode = st.radio("中心来源", ["当前检索结果", "手动输入"], horizontal=True)
 center_paper: dict[str, Any] | None = None

@@ -1449,16 +1449,17 @@ def save_search_run(
         return _insert_search_run(connection, project_id, mode, params, papers, total_count)
 
 
-def list_search_runs(project_id: str, limit: int = 20) -> list[dict[str, Any]]:
-    limit = max(1, min(limit, 100))
+def list_search_runs(project_id: str, limit: int | None = 20) -> list[dict[str, Any]]:
     with _connection() as connection:
         _screening_project(connection, project_id)
-        rows = connection.execute(
-            """SELECT id, mode, params_json, result_count, snapshot_count, created_at
-               FROM search_runs WHERE project_id = ?
-               ORDER BY created_at DESC, id DESC LIMIT ?""",
-            (project_id, limit),
-        ).fetchall()
+        sql = """SELECT id, mode, params_json, result_count, snapshot_count, created_at
+                 FROM search_runs WHERE project_id = ?
+                 ORDER BY created_at DESC, id DESC"""
+        params: list[Any] = [project_id]
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(max(1, min(limit, 100)))
+        rows = connection.execute(sql, params).fetchall()
     return [
         {
             "id": row["id"],
@@ -1470,6 +1471,13 @@ def list_search_runs(project_id: str, limit: int = 20) -> list[dict[str, Any]]:
         }
         for row in rows
     ]
+
+
+def latest_search_run(project_id: str) -> dict[str, Any] | None:
+    runs = list_search_runs(project_id, limit=1)
+    if not runs:
+        return None
+    return get_search_run(project_id, runs[0]["id"])
 
 
 def get_search_run(project_id: str, run_id: str) -> dict[str, Any] | None:
@@ -1521,8 +1529,8 @@ def list_candidate_sources(project_id: str, candidate_key_value: str) -> list[di
 
 def project_manifest(project_id: str) -> bytes:
     overview = project_overview(project_id)
-    runs = list_search_runs(project_id, limit=100)
-    tasks = list_ai_tasks(project_id, limit=100)
+    runs = list_search_runs(project_id, limit=None)
+    tasks = list_ai_tasks(project_id, limit=None)
     with _connection() as connection:
         _screening_project(connection, project_id)
         candidate_rows = connection.execute(
@@ -1565,6 +1573,10 @@ def project_manifest(project_id: str) -> bytes:
             "search_runs": overview["search_runs"],
             "evidence_items": overview["evidence_items"],
             "ai_tasks": overview["ai_tasks"],
+            "search_runs_exported": len(runs),
+            "ai_tasks_exported": len(tasks),
+            "candidates_exported": len(candidates),
+            "complete": True,
         },
         "search_runs": runs,
         "ai_tasks": tasks,
@@ -1573,16 +1585,17 @@ def project_manifest(project_id: str) -> bytes:
     return (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
 
 
-def list_ai_tasks(project_id: str, limit: int = 20) -> list[dict[str, Any]]:
-    limit = max(1, min(limit, 100))
+def list_ai_tasks(project_id: str, limit: int | None = 20) -> list[dict[str, Any]]:
     with _connection() as connection:
         _screening_project(connection, project_id)
-        rows = connection.execute(
-            """SELECT id, kind, model, prompt_version, status, error, created_at, updated_at
-               FROM ai_task_runs WHERE project_id = ?
-               ORDER BY created_at DESC, id DESC LIMIT ?""",
-            (project_id, limit),
-        ).fetchall()
+        sql = """SELECT id, kind, model, prompt_version, status, error, created_at, updated_at
+                 FROM ai_task_runs WHERE project_id = ?
+                 ORDER BY created_at DESC, id DESC"""
+        params: list[Any] = [project_id]
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(max(1, min(limit, 100)))
+        rows = connection.execute(sql, params).fetchall()
     return [dict(row) for row in rows]
 
 

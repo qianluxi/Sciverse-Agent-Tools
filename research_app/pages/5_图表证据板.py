@@ -5,6 +5,7 @@ from typing import Any
 import streamlit as st
 from sciverse.credentials import resolve_token
 
+from research_app import storage
 from research_app.evidence import (
     MAX_IMAGES_PER_PAPER,
     MAX_PAPERS_PER_RUN,
@@ -13,6 +14,7 @@ from research_app.evidence import (
     extract_figure_refs,
     has_fulltext,
 )
+from research_app.project_ui import project_selector
 from research_app.service import call_api
 
 
@@ -26,15 +28,43 @@ with st.sidebar:
     token = entered_token.strip() or resolve_token()
     if not token:
         st.info("提取图表需要 Sciverse API Token。")
+    project_id = project_selector("figure_project_selector")
 
 
 def _show_error(error: Exception) -> None:
     st.error(str(error))
 
 
-papers = st.session_state.get("papers", [])
+session_papers = st.session_state.get("papers", [])
+project_run = storage.latest_search_run(project_id) if project_id else None
+source_options = []
+if session_papers:
+    source_options.append("当前会话检索结果")
+if project_run:
+    source_options.append("项目最近检索快照")
+if not source_options:
+    st.info("主页还没有检索结果，当前项目也没有检索快照。请先检索。")
+    st.stop()
+data_source = source_options[0]
+if len(source_options) > 1:
+    data_source = st.radio("数据来源", source_options, horizontal=True)
+papers = (
+    project_run["papers"]
+    if data_source == "项目最近检索快照" and project_run
+    else session_papers
+)
+source_key = f"{project_id}:{data_source}"
+if st.session_state.get("figure_source_key") != source_key:
+    st.session_state["figure_source_key"] = source_key
+    for key in ("evidence_items", "evidence_errors", "evidence_requests"):
+        st.session_state.pop(key, None)
+st.caption(
+    "当前使用项目检索快照；图表提取结果属于本页独立分析，不自动写入项目。"
+    if data_source == "项目最近检索快照"
+    else "当前使用会话检索结果；图表提取结果属于本页独立分析，不自动写入项目。"
+)
 if not papers:
-    st.info("主页还没有检索结果。请先检索，再回到此页提取图表。")
+    st.info("所选数据源没有可分析的文献。")
     st.stop()
 
 eligible = [paper for paper in papers if has_fulltext(paper)]

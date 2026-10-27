@@ -6,6 +6,8 @@ import pandas as pd
 import streamlit as st
 from sciverse.credentials import resolve_token
 
+from research_app import storage
+from research_app.project_ui import project_selector
 from research_app.service import call_api
 from research_app.trends import analyze_papers, export_trends_png, export_trends_zip
 
@@ -20,21 +22,49 @@ with st.sidebar:
     token = entered_token.strip() or resolve_token()
     if not token:
         st.info("扩展采样需要 Sciverse API Token；分析当前结果不需要。")
+    project_id = project_selector("trends_project_selector")
 
 
 def _show_error(error: Exception) -> None:
     st.error(str(error))
 
 
-current_papers = st.session_state.get("papers", [])
-if not current_papers:
-    st.info("主页还没有检索结果。请先完成一次检索，再回到此页做趋势分析。")
+session_papers = st.session_state.get("papers", [])
+project_run = storage.latest_search_run(project_id) if project_id else None
+source_options = []
+if session_papers:
+    source_options.append("当前会话检索结果")
+if project_run:
+    source_options.append("项目最近检索快照")
+if not source_options:
+    st.info("主页还没有检索结果，当前项目也没有检索快照。请先完成一次检索。")
     st.stop()
 
-search_kind = st.session_state.get("search_kind")
-search_params = st.session_state.get("search_params", {})
+data_source = source_options[0]
+if len(source_options) > 1:
+    data_source = st.radio("分析数据源", source_options, horizontal=True)
+
+source_key = f"{project_id}:{data_source}"
+if st.session_state.get("trend_source_key") != source_key:
+    st.session_state["trend_source_key"] = source_key
+    for key in ("trend_sample", "trend_source", "trend_requests", "trend_truncated"):
+        st.session_state.pop(key, None)
+
+if data_source == "项目最近检索快照" and project_run:
+    current_papers = project_run["papers"]
+    search_kind = project_run["mode"]
+    search_params = project_run["params"]
+    source_name = f"项目快照 · {project_run['created_at']}"
+    st.caption("当前使用项目已保存的检索快照；扩展采样只用于本页分析，不自动写入项目。")
+else:
+    current_papers = session_papers
+    search_kind = st.session_state.get("search_kind")
+    search_params = st.session_state.get("search_params", {})
+    source_name = "当前会话检索结果（独立分析，不自动写入项目）"
+
 st.markdown("### 样本范围")
 st.caption(
+    f"数据来源：{source_name} · "
     f"检索方式：{'条件筛选' if search_kind == 'structured' else '语义检索'} · "
     f"检索条件：`{search_params}`"
 )
@@ -46,7 +76,11 @@ if sample:
     truncated = st.session_state.get("trend_truncated", False)
 else:
     sample = current_papers
-    source_label = "当前检索结果"
+    source_label = (
+        "项目最近检索快照"
+        if data_source == "项目最近检索快照"
+        else "当前会话检索结果（独立分析）"
+    )
     requests_used = 1
     truncated = False
 

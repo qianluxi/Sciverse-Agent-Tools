@@ -3,6 +3,7 @@ from pathlib import Path
 from streamlit.testing.v1 import AppTest
 
 import research_app.ai_settings as ai_settings
+import research_app.storage as storage
 import sciverse.credentials
 
 
@@ -11,6 +12,7 @@ PAGE_PATH = Path(__file__).parents[1] / "pages" / "6_AI证据与提纲.py"
 
 def _isolate_settings(monkeypatch, tmp_path):
     monkeypatch.setattr(ai_settings, "settings_path", lambda: tmp_path / "ai-settings.json")
+    monkeypatch.setattr(storage, "database_path", lambda: tmp_path / "workbench.sqlite3")
 
 
 def test_ai_page_renders_without_key(monkeypatch, tmp_path):
@@ -63,6 +65,52 @@ def test_ai_page_uses_recorded_base_url_and_model(monkeypatch, tmp_path):
     assert "https://api.example.com/v1" in base_url.options
     assert next(field for field in app.text_input if field.label == "模型名").value == (
         "example-model"
+    )
+
+
+def test_ai_page_loads_saved_project_evidence(monkeypatch, tmp_path):
+    _isolate_settings(monkeypatch, tmp_path)
+    monkeypatch.setattr(sciverse.credentials, "resolve_token", lambda *_args: None)
+    project_id = storage.create_screening_project("Review", "Q", "Include", "Exclude")
+    task_id = storage.create_ai_task(
+        project_id,
+        kind="evidence",
+        model="test-model",
+        prompt_version="evidence-v1",
+        input_hash="hash",
+    )
+    storage.save_evidence_items(
+        project_id,
+        task_id,
+        [
+            {
+                "paper_id": "paper:1",
+                "title": "Saved paper",
+                "year": 2024,
+                "data": {
+                    "research_question": "Q",
+                    "methods": "RCT",
+                    "sample": "10",
+                    "findings": "Saved finding",
+                    "limitations": "None",
+                    "evidence_quotes": [],
+                },
+                "quote_checks": [],
+                "reviewed": False,
+                "model": "test-model",
+                "prompt_version": "evidence-v1",
+            }
+        ],
+    )
+    app = AppTest.from_file(str(PAGE_PATH), default_timeout=30)
+    app.session_state["current_project_id"] = project_id
+    app.session_state["ai_project_selector"] = project_id
+    app.run(timeout=30)
+
+    assert not app.exception
+    assert any("Saved paper" in block.value for block in app.markdown)
+    assert next(field for field in app.text_area if field.label == "主要发现").value == (
+        "Saved finding"
     )
 
 

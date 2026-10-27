@@ -23,9 +23,10 @@ from research_app.screening import (
 )
 
 
-_SCHEMA_VERSION = 3
+_SCHEMA_VERSION = 4
 _BACKUP_SCHEMA_VERSION = 2
 _MAX_HISTORY_ENTRIES = 50
+_MAX_SNAPSHOT_BYTES = 5 * 1024 * 1024
 _MAX_SAVED_SEARCHES = 100
 _MAX_PARAMS_BYTES = 16 * 1024
 _MAX_BACKUP_BYTES = 2 * 1024 * 1024
@@ -185,6 +186,70 @@ def _migrate(connection: sqlite3.Connection) -> None:
                 )
         version = 3
         connection.execute("PRAGMA user_version = 3")
+    if version < 4:
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS search_runs (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL REFERENCES screening_projects(id) ON DELETE CASCADE,
+                mode TEXT NOT NULL CHECK (mode IN ('semantic', 'structured')),
+                params_json TEXT NOT NULL,
+                result_count INTEGER NOT NULL,
+                fingerprint TEXT NOT NULL,
+                snapshot_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE (project_id, fingerprint)
+            );
+            CREATE INDEX IF NOT EXISTS search_runs_project
+                ON search_runs(project_id, created_at DESC);
+            CREATE TABLE IF NOT EXISTS screening_candidate_sources (
+                project_id TEXT NOT NULL REFERENCES screening_projects(id) ON DELETE CASCADE,
+                candidate_key TEXT NOT NULL,
+                run_id TEXT NOT NULL REFERENCES search_runs(id) ON DELETE CASCADE,
+                discovered_at TEXT NOT NULL,
+                PRIMARY KEY (project_id, candidate_key, run_id)
+            );
+            CREATE INDEX IF NOT EXISTS screening_candidate_sources_run
+                ON screening_candidate_sources(run_id);
+            CREATE TABLE IF NOT EXISTS ai_task_runs (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL REFERENCES screening_projects(id) ON DELETE CASCADE,
+                kind TEXT NOT NULL,
+                model TEXT NOT NULL DEFAULT '',
+                prompt_version TEXT NOT NULL DEFAULT '',
+                input_hash TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'completed',
+                error TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ai_task_runs_project
+                ON ai_task_runs(project_id, created_at DESC);
+            CREATE TABLE IF NOT EXISTS evidence_items (
+                project_id TEXT NOT NULL REFERENCES screening_projects(id) ON DELETE CASCADE,
+                task_id TEXT NOT NULL REFERENCES ai_task_runs(id) ON DELETE CASCADE,
+                paper_id TEXT NOT NULL,
+                title TEXT NOT NULL DEFAULT '',
+                year INTEGER,
+                raw_json TEXT NOT NULL,
+                reviewed_json TEXT NOT NULL,
+                final_json TEXT NOT NULL,
+                quote_checks_json TEXT NOT NULL DEFAULT '[]',
+                review_status INTEGER NOT NULL DEFAULT 0,
+                reviewer_note TEXT NOT NULL DEFAULT '',
+                model TEXT NOT NULL DEFAULT '',
+                prompt_version TEXT NOT NULL DEFAULT '',
+                error TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (project_id, task_id, paper_id)
+            );
+            CREATE INDEX IF NOT EXISTS evidence_items_task
+                ON evidence_items(project_id, task_id);
+            """
+        )
+        version = 4
+        connection.execute("PRAGMA user_version = 4")
 
 
 @contextmanager
@@ -195,6 +260,9 @@ def _connection() -> Iterator[sqlite3.Connection]:
     connection.row_factory = sqlite3.Row
     try:
         connection.execute("PRAGMA foreign_keys = ON")
+        current_version = connection.execute("PRAGMA user_version").fetchone()[0]
+        if 0 < current_version < _SCHEMA_VERSION:
+            _backup_database(path)
         _migrate(connection)
         if os.name != "nt":
             try:
@@ -872,7 +940,12 @@ def _merge_candidate_metadata(
         )
 
 
-def add_screening_candidates(project_id: str, papers: list[dict[str, Any]]) -> dict[str, int]:
+def add_screening_candidates(
+    project_id: str,
+    papers: list[dict[str, Any]],
+    *,
+    source_run_id: str | None = None,
+) -> dict[str, int]:
     if len(papers) > 500:
         raise ValueError("单次最多加入 500 条候选文献。")
     now = _timestamp()
@@ -881,6 +954,13 @@ def add_screening_candidates(project_id: str, papers: list[dict[str, Any]]) -> d
     conflicts = 0
     with _connection() as connection:
         _screening_project(connection, project_id)
+        if source_run_id:
+            run = connection.execute(
+                "SELECT 1 FROM search_runs WHERE id = ? AND project_id = ?",
+                (source_run_id, project_id),
+            ).fetchone()
+            if run is None:
+                source_run_id = None
         for index, paper in enumerate(papers):
             key = candidate_key(paper, index)
             title = str(paper.get("title") or "（暂无标题）")[:1000]
@@ -959,6 +1039,13 @@ def add_screening_candidates(project_id: str, papers: list[dict[str, Any]]) -> d
                            ) VALUES (?, ?, ?, ?, ?, ?)""",
                         (project_id, key, key, duplicate_basis(key), title, now),
                     )
+            if source_run_id:
+                connection.execute(
+                    """INSERT OR IGNORE INTO screening_candidate_sources(
+                           project_id, candidate_key, run_id, discovered_at
+                       ) VALUES (?, ?, ?, ?)""",
+                    (project_id, canonical_key, source_run_id, now),
+                )
             for identifier in identifier_keys(paper):
                 connection.execute(
                     """INSERT OR IGNORE INTO screening_candidate_identifiers(
@@ -1032,6 +1119,8 @@ def set_screening_decision(
 ) -> bool:
     if status not in {"pending", "included", "excluded"}:
         raise ValueError("筛选状态无效。")
+    if candidate_key_value.startswith("conflict:"):
+        raise ValueError("身份冲突尚未解决，不能保存筛选决定。")
     if status == "excluded":
         if reason not in EXCLUSION_REASONS:
             raise ValueError("排除时必须选择标准排除原因。")
@@ -1133,3 +1222,311 @@ def list_screening_audit(project_id: str, limit: int = 100) -> list[dict[str, An
             (project_id, limit),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def _search_fingerprint(mode: str, params: dict[str, Any], papers: list[dict[str, Any]]) -> str:
+    identities = []
+    for paper in papers:
+        identities.append(
+            [
+                str(paper.get("unique_id") or ""),
+                str(paper.get("doc_id") or ""),
+                normalize_doi(paper.get("doi")),
+                normalize_title(paper.get("title")),
+            ]
+        )
+    payload = {"mode": mode, "params": params, "papers": sorted(identities)}
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+
+def save_search_run(
+    project_id: str,
+    mode: str,
+    params: dict[str, Any],
+    papers: list[dict[str, Any]],
+    total_count: int,
+) -> dict[str, Any]:
+    if mode not in {"semantic", "structured"}:
+        raise ValueError("检索方式无效。")
+    serialized_params = _serialize_params(params)
+    snapshot = json.dumps(papers, ensure_ascii=False, sort_keys=True)
+    if len(snapshot.encode("utf-8")) > _MAX_SNAPSHOT_BYTES:
+        raise ValueError("检索结果快照超过 5 MiB 限制。")
+    fingerprint = _search_fingerprint(mode, params, papers)
+    now = _timestamp()
+    run_id = uuid.uuid4().hex
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        cursor = connection.execute(
+            """INSERT OR IGNORE INTO search_runs(
+                   id, project_id, mode, params_json, result_count,
+                   fingerprint, snapshot_json, created_at
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                run_id,
+                project_id,
+                mode,
+                serialized_params,
+                int(total_count),
+                fingerprint,
+                snapshot,
+                now,
+            ),
+        )
+        if cursor.rowcount:
+            return {"id": run_id, "created": True}
+        row = connection.execute(
+            """SELECT id FROM search_runs
+               WHERE project_id = ? AND fingerprint = ?""",
+            (project_id, fingerprint),
+        ).fetchone()
+    return {"id": str(row["id"]), "created": False}
+
+
+def list_search_runs(project_id: str, limit: int = 20) -> list[dict[str, Any]]:
+    limit = max(1, min(limit, 100))
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        rows = connection.execute(
+            """SELECT id, mode, params_json, result_count, created_at
+               FROM search_runs WHERE project_id = ?
+               ORDER BY created_at DESC, id DESC LIMIT ?""",
+            (project_id, limit),
+        ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "mode": row["mode"],
+            "params": json.loads(row["params_json"]),
+            "result_count": row["result_count"],
+            "created_at": row["created_at"],
+        }
+        for row in rows
+    ]
+
+
+def list_ai_tasks(project_id: str, limit: int = 20) -> list[dict[str, Any]]:
+    limit = max(1, min(limit, 100))
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        rows = connection.execute(
+            """SELECT id, kind, model, prompt_version, status, error, created_at, updated_at
+               FROM ai_task_runs WHERE project_id = ?
+               ORDER BY created_at DESC, id DESC LIMIT ?""",
+            (project_id, limit),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def create_ai_task(
+    project_id: str,
+    *,
+    kind: str,
+    model: str,
+    prompt_version: str,
+    input_hash: str,
+    status: str = "running",
+) -> str:
+    task_id = uuid.uuid4().hex
+    now = _timestamp()
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        connection.execute(
+            """INSERT INTO ai_task_runs(
+                   id, project_id, kind, model, prompt_version, input_hash,
+                   status, created_at, updated_at
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                task_id,
+                project_id,
+                kind,
+                model,
+                prompt_version,
+                input_hash,
+                status,
+                now,
+                now,
+            ),
+        )
+    return task_id
+
+
+def finish_ai_task(task_id: str, *, status: str = "completed", error: str | None = None) -> None:
+    with _connection() as connection:
+        connection.execute(
+            """UPDATE ai_task_runs
+               SET status = ?, error = ?, updated_at = ?
+               WHERE id = ?""",
+            (status, error, _timestamp(), task_id),
+        )
+
+
+def save_evidence_items(
+    project_id: str,
+    task_id: str,
+    items: list[dict[str, Any]],
+) -> int:
+    now = _timestamp()
+    saved = 0
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        task = connection.execute(
+            "SELECT 1 FROM ai_task_runs WHERE id = ? AND project_id = ?",
+            (task_id, project_id),
+        ).fetchone()
+        if task is None:
+            raise ValueError("AI 任务不存在。")
+        for item in items:
+            paper_id_value = str(item.get("paper_id") or "")
+            if not paper_id_value:
+                continue
+            data = item.get("data") if isinstance(item.get("data"), dict) else {}
+            raw = item.get("raw_data") if isinstance(item.get("raw_data"), dict) else data
+            year = item.get("year")
+            try:
+                year = int(year) if year is not None else None
+            except (TypeError, ValueError):
+                year = None
+            connection.execute(
+                """INSERT INTO evidence_items(
+                       project_id, task_id, paper_id, title, year,
+                       raw_json, reviewed_json, final_json, quote_checks_json,
+                       review_status, reviewer_note, model, prompt_version,
+                       error, created_at, updated_at
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(project_id, task_id, paper_id) DO UPDATE SET
+                       title = excluded.title,
+                       year = excluded.year,
+                       reviewed_json = excluded.reviewed_json,
+                       final_json = excluded.final_json,
+                       quote_checks_json = excluded.quote_checks_json,
+                       review_status = excluded.review_status,
+                       reviewer_note = excluded.reviewer_note,
+                       model = excluded.model,
+                       prompt_version = excluded.prompt_version,
+                       error = excluded.error,
+                       updated_at = excluded.updated_at""",
+                (
+                    project_id,
+                    task_id,
+                    paper_id_value,
+                    str(item.get("title") or ""),
+                    year,
+                    json.dumps(raw, ensure_ascii=False, sort_keys=True),
+                    json.dumps(data, ensure_ascii=False, sort_keys=True),
+                    json.dumps(data, ensure_ascii=False, sort_keys=True),
+                    json.dumps(item.get("quote_checks") or [], ensure_ascii=False),
+                    1 if item.get("reviewed") else 0,
+                    str(item.get("reviewer_note") or ""),
+                    str(item.get("model") or ""),
+                    str(item.get("prompt_version") or ""),
+                    str(item.get("error") or "") or None,
+                    now,
+                    now,
+                ),
+            )
+            saved += 1
+    return saved
+
+
+def load_latest_evidence(project_id: str) -> dict[str, Any] | None:
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        task = connection.execute(
+            """SELECT * FROM ai_task_runs
+               WHERE project_id = ? AND kind = 'evidence'
+               ORDER BY created_at DESC, id DESC LIMIT 1""",
+            (project_id,),
+        ).fetchone()
+        if task is None:
+            return None
+        rows = connection.execute(
+            """SELECT * FROM evidence_items
+               WHERE project_id = ? AND task_id = ?
+               ORDER BY title, paper_id""",
+            (project_id, task["id"]),
+        ).fetchall()
+    items = []
+    for row in rows:
+        items.append(
+            {
+                "paper_id": row["paper_id"],
+                "title": row["title"],
+                "year": row["year"],
+                "data": json.loads(row["final_json"]),
+                "raw_data": json.loads(row["raw_json"]),
+                "quote_checks": json.loads(row["quote_checks_json"]),
+                "reviewed": bool(row["review_status"]),
+                "reviewer_note": row["reviewer_note"],
+                "model": row["model"],
+                "prompt_version": row["prompt_version"],
+                "error": row["error"],
+                "generated_at": row["created_at"],
+            }
+        )
+    return {"task": dict(task), "items": items}
+
+
+def project_overview(project_id: str) -> dict[str, Any]:
+    with _connection() as connection:
+        project = dict(_screening_project(connection, project_id))
+        counts = {
+            row["status"]: row["count"]
+            for row in connection.execute(
+                """SELECT status, COUNT(*) AS count FROM screening_candidates
+                   WHERE project_id = ? GROUP BY status""",
+                (project_id,),
+            ).fetchall()
+        }
+        conflict_count = connection.execute(
+            """SELECT COUNT(*) FROM screening_candidates
+               WHERE project_id = ? AND candidate_key LIKE 'conflict:%'""",
+            (project_id,),
+        ).fetchone()[0]
+        search_run_count = connection.execute(
+            "SELECT COUNT(*) FROM search_runs WHERE project_id = ?",
+            (project_id,),
+        ).fetchone()[0]
+        evidence_count = connection.execute(
+            "SELECT COUNT(*) FROM evidence_items WHERE project_id = ?",
+            (project_id,),
+        ).fetchone()[0]
+        task_count = connection.execute(
+            "SELECT COUNT(*) FROM ai_task_runs WHERE project_id = ?",
+            (project_id,),
+        ).fetchone()[0]
+        latest_run = connection.execute(
+            """SELECT id, mode, params_json, result_count, created_at
+               FROM search_runs WHERE project_id = ?
+               ORDER BY created_at DESC, id DESC LIMIT 1""",
+            (project_id,),
+        ).fetchone()
+    pending = counts.get("pending", 0)
+    included = counts.get("included", 0)
+    excluded = counts.get("excluded", 0)
+    return {
+        "project": project,
+        "identified": project["identified_count"],
+        "duplicates": project["duplicate_count"],
+        "unique": pending + included + excluded,
+        "pending": pending,
+        "included": included,
+        "excluded": excluded,
+        "conflicts": conflict_count,
+        "search_runs": search_run_count,
+        "evidence_items": evidence_count,
+        "ai_tasks": task_count,
+        "latest_search": (
+            {
+                "id": latest_run["id"],
+                "mode": latest_run["mode"],
+                "params": json.loads(latest_run["params_json"]),
+                "result_count": latest_run["result_count"],
+                "created_at": latest_run["created_at"],
+            }
+            if latest_run
+            else None
+        ),
+    }

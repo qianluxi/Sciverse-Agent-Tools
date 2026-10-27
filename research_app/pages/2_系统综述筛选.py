@@ -41,6 +41,7 @@ with st.expander("新建综述项目", expanded=not storage.list_screening_proje
                 project_name, question, inclusion, exclusion
             )
             st.session_state["screening_project_id"] = project_id
+            st.session_state["current_project_id"] = project_id
             st.session_state["screening_message"] = "项目已创建。"
             st.rerun()
         except Exception as error:
@@ -65,6 +66,7 @@ project_id = st.selectbox(
     key="screening_project_selector",
 )
 st.session_state["screening_project_id"] = project_id
+st.session_state["current_project_id"] = project_id
 project = storage.get_screening_project(project_id)
 
 st.markdown(f"### {project['name']}")
@@ -93,7 +95,11 @@ papers = st.session_state.get("papers", [])
 if papers:
     if st.button(f"将主页当前 {len(papers)} 条检索结果加入项目", type="primary"):
         try:
-            result = storage.add_screening_candidates(project_id, papers)
+            result = storage.add_screening_candidates(
+                project_id,
+                papers,
+                source_run_id=st.session_state.get("current_search_run_id"),
+            )
             message = (
                 f"已加入 {result['added']} 条候选；"
                 f"识别 {result['identified']} 条，其中重复 {result['duplicates']} 条。"
@@ -158,40 +164,43 @@ with queue_tab:
             )
             if candidate.get("notes"):
                 st.caption(f"备注：{candidate['notes']}")
-            with st.form(f"decision_{key}"):
-                status_options = ["pending", "included", "excluded"]
-                current_index = status_options.index(candidate["status"])
-                new_status = st.radio(
-                    "决定",
-                    status_options,
-                    index=current_index,
-                    format_func=_label,
-                    horizontal=True,
-                )
-                reason_index = (
-                    EXCLUSION_REASONS.index(candidate["exclusion_reason"])
-                    if candidate.get("exclusion_reason") in EXCLUSION_REASONS
-                    else 0
-                )
-                reason = st.selectbox(
-                    "排除原因（仅排除时必填）",
-                    EXCLUSION_REASONS,
-                    index=reason_index,
-                )
-                notes = st.text_area("备注", value=candidate.get("notes") or "", height=80)
-                if st.form_submit_button("保存决定"):
-                    try:
-                        storage.set_screening_decision(
-                            project_id,
-                            key,
-                            new_status,
-                            reason=reason if new_status == "excluded" else None,
-                            notes=notes,
-                        )
-                        st.session_state["screening_message"] = "筛选决定已保存。"
-                        st.rerun()
-                    except Exception as error:
-                        _show_error(error)
+            if key.startswith("conflict:"):
+                st.caption("解决身份冲突前，此候选不能保存筛选决定。")
+            else:
+                with st.form(f"decision_{key}"):
+                    status_options = ["pending", "included", "excluded"]
+                    current_index = status_options.index(candidate["status"])
+                    new_status = st.radio(
+                        "决定",
+                        status_options,
+                        index=current_index,
+                        format_func=_label,
+                        horizontal=True,
+                    )
+                    reason_index = (
+                        EXCLUSION_REASONS.index(candidate["exclusion_reason"])
+                        if candidate.get("exclusion_reason") in EXCLUSION_REASONS
+                        else 0
+                    )
+                    reason = st.selectbox(
+                        "排除原因（仅排除时必填）",
+                        EXCLUSION_REASONS,
+                        index=reason_index,
+                    )
+                    notes = st.text_area("备注", value=candidate.get("notes") or "", height=80)
+                    if st.form_submit_button("保存决定"):
+                        try:
+                            storage.set_screening_decision(
+                                project_id,
+                                key,
+                                new_status,
+                                reason=reason if new_status == "excluded" else None,
+                                notes=notes,
+                            )
+                            st.session_state["screening_message"] = "筛选决定已保存。"
+                            st.rerun()
+                        except Exception as error:
+                            _show_error(error)
 
 with duplicates_tab:
     duplicates = storage.list_screening_duplicates(project_id)

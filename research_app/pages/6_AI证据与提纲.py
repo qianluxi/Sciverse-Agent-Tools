@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import uuid
 from datetime import datetime, timezone
@@ -7,6 +9,9 @@ from typing import Any
 
 import streamlit as st
 from sciverse.credentials import resolve_token
+
+from research_app import storage
+from research_app.project_ui import project_selector
 
 from research_app.ai import (
     AIError,
@@ -70,6 +75,8 @@ with st.sidebar:
     sciverse_token = st.text_input("Sciverse API Token", type="password", placeholder="sci_...")
     sciverse_token = sciverse_token.strip() or resolve_token()
     st.divider()
+    project_id = project_selector("ai_project_selector")
+    st.divider()
     st.markdown("### AI 服务（OpenAI 兼容）")
     selected_base_url = st.selectbox(
         "Base URL",
@@ -118,6 +125,28 @@ with st.sidebar:
             st.success(f"连接成功：{reply[:80]}")
         except Exception as error:
             st.error(str(error))
+
+
+if project_id and st.session_state.get("ai_loaded_project") != project_id:
+    for key in (
+        "ai_evidence",
+        "ai_task_id",
+        "ai_warnings",
+        "ai_outline",
+        "ai_editor_epoch",
+    ):
+        st.session_state.pop(key, None)
+    st.session_state["ai_loaded_project"] = project_id
+    try:
+        saved = storage.load_latest_evidence(project_id)
+    except Exception:
+        saved = None
+    if saved and saved["items"]:
+        st.session_state["ai_evidence"] = saved["items"]
+        st.session_state["ai_task_id"] = saved["task"]["id"]
+        st.session_state["ai_warnings"] = []
+        st.session_state["ai_outline"] = ""
+        st.session_state["ai_editor_epoch"] = uuid.uuid4().hex
 
 
 def _show_error(error: Exception) -> None:
@@ -249,6 +278,7 @@ def _edited_evidence_item(
         return {
             **item,
             "data": edited_data,
+            "raw_data": item.get("raw_data") or item.get("data"),
             "quote_checks": edited_checks,
             "reviewed": reviewed,
             "reviewer_note": reviewer_note,
@@ -256,9 +286,11 @@ def _edited_evidence_item(
 
 
 papers = st.session_state.get("papers", [])
-if not papers:
+if not papers and not st.session_state.get("ai_evidence"):
     st.info("主页还没有检索结果。请先检索，再回到此页提取证据。")
     st.stop()
+if not papers:
+    st.info("当前会话没有检索结果；下面显示的是已保存到项目的证据。")
 
 paper_map: dict[str, dict[str, Any]] = {}
 for paper in papers:
@@ -296,6 +328,18 @@ if extract_clicked:
                 "text": text[:6000],
             }
         )
+    task_id = None
+    if project_id:
+        input_hash = hashlib.sha256(
+            json.dumps(documents, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        task_id = storage.create_ai_task(
+            project_id,
+            kind="evidence",
+            model=model,
+            prompt_version=EVIDENCE_PROMPT_VERSION,
+            input_hash=input_hash,
+        )
     try:
         client = OpenAICompatibleClient(
             base_url=base_url,
@@ -306,11 +350,19 @@ if extract_clicked:
         record_ai_profile(base_url, model)
         with st.spinner("正在调用 AI 提取证据…"):
             evidence = extract_evidence(client, documents)
+        if task_id:
+            storage.finish_ai_task(task_id, status="completed")
         st.session_state["ai_evidence"] = evidence
+        st.session_state["ai_task_id"] = task_id
         st.session_state["ai_warnings"] = warnings
         st.session_state["ai_outline"] = ""
         st.session_state["ai_editor_epoch"] = uuid.uuid4().hex
     except Exception as error:
+        if task_id:
+            try:
+                storage.finish_ai_task(task_id, status="failed", error=str(error))
+            except Exception:
+                pass
         _show_error(error)
 
 warnings = st.session_state.get("ai_warnings", [])
@@ -322,12 +374,26 @@ if evidence:
     editor_epoch = st.session_state.setdefault("ai_editor_epoch", uuid.uuid4().hex)
     st.markdown("### 文献证据（可编辑）")
     st.caption(
-        "AI 结果不会自动保存为最终结论；修改仅保留在当前浏览器会话。"
-        "请核对每条引句是否确实来自原文。"
+        "AI 结果不会自动保存为最终结论；请核对每条引句是否确实来自原文。"
+        + (
+            "编辑和核对状态会保存到当前研究项目。"
+            if project_id and st.session_state.get("ai_task_id")
+            else "当前未关联研究项目，编辑仅保留在当前浏览器会话。"
+        )
     )
     reviewed_evidence = []
     for item in evidence:
         reviewed_evidence.append(_edited_evidence_item(item, editor_epoch))
+    if project_id and st.session_state.get("ai_task_id") and reviewed_evidence:
+        try:
+            storage.save_evidence_items(
+                project_id,
+                st.session_state["ai_task_id"],
+                reviewed_evidence,
+            )
+            st.caption("证据版本已保存到当前研究项目。")
+        except Exception as error:
+            st.warning(f"证据已生成，但保存到项目失败：{error}")
 
     total_quotes = sum(
         len(item.get("quote_checks") or []) for item in reviewed_evidence if not item.get("error")
@@ -418,4 +484,5 @@ if evidence:
         st.session_state.pop("ai_warnings", None)
         st.session_state.pop("ai_outline", None)
         st.session_state.pop("ai_editor_epoch", None)
+        st.session_state.pop("ai_task_id", None)
         st.rerun()

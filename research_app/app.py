@@ -9,6 +9,7 @@ import streamlit as st
 from sciverse.credentials import resolve_token
 
 from research_app.errors import describe_error
+from research_app.project_ui import project_selector
 from research_app.exports import (
     export_bibtex,
     export_markdown,
@@ -26,6 +27,7 @@ from research_app.storage import (
     record_search,
     restore_saved_searches_backup,
     save_search,
+    save_search_run,
 )
 
 
@@ -156,6 +158,16 @@ def _execute_search(
             record_search(search_kind, params, total_count)
         except Exception:
             st.warning("检索已完成，但本地历史记录未能保存。")
+        project_id = st.session_state.get("current_project_id")
+        if project_id:
+            try:
+                run = save_search_run(project_id, search_kind, params, papers, total_count)
+                st.session_state["current_search_run_id"] = run["id"]
+            except Exception:
+                st.session_state.pop("current_search_run_id", None)
+                st.warning("检索已完成，但项目检索快照未能保存。")
+        else:
+            st.session_state.pop("current_search_run_id", None)
 
 
 def _run_stored_search(token: str | None, search: dict[str, Any]) -> None:
@@ -183,6 +195,12 @@ with st.sidebar:
     else:
         st.info("尚未设置 Token。请在上方输入，或先到 sciverse.space 申请。")
     st.link_button("前往 Sciverse 申请 Token", "https://sciverse.space")
+    st.divider()
+    current_project = project_selector("main_project_selector")
+    if current_project:
+        st.caption("新检索会保存为当前项目的检索快照。")
+    else:
+        st.caption("未关联项目时，检索结果只保留在当前会话。")
     st.divider()
     st.markdown("#### 小提示")
     st.caption("可以直接用自然语言描述你想研究的问题；也可以按作者和发表年份筛选。")

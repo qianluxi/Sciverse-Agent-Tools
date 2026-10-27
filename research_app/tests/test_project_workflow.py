@@ -1,4 +1,5 @@
 import json
+import sqlite3
 
 import pytest
 
@@ -348,6 +349,26 @@ def test_ai_evidence_persists_raw_and_final_versions(monkeypatch, tmp_path):
     assert overview["evidence_items"] == 1
 
 
+def test_project_manifest_includes_source_traceability(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    project_id = _project()
+    paper = _paper("a", "Paper A")
+    run = storage.save_search_run(
+        project_id,
+        "structured",
+        {"query": "topic", "page": 1, "page_size": 20},
+        [paper],
+        1,
+    )
+    storage.add_screening_candidates(project_id, [paper], source_run_id=run["id"])
+
+    manifest = json.loads(storage.project_manifest(project_id))
+    candidate = manifest["candidates"][0]
+    assert candidate["sources"][0]["run_id"] == run["id"]
+    assert manifest["search_runs"][0]["id"] == run["id"]
+    assert manifest["summary"]["unique"] == 1
+
+
 def test_project_statistics_are_audited_and_rebuilt_from_sources(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     project_id = _project()
@@ -377,6 +398,13 @@ def test_project_statistics_are_audited_and_rebuilt_from_sources(monkeypatch, tm
 
     assert result["applied"] is True
     assert result["backup_path"]
+    with sqlite3.connect(result["backup_path"]) as backup:
+        old = backup.execute(
+            "SELECT identified_count, duplicate_count FROM screening_projects WHERE id = ?",
+            (project_id,),
+        ).fetchone()
+        assert backup.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+    assert old == (99, 99)
     stats = storage.screening_stats(project_id)
     assert stats["identified"] == 2
     assert stats["duplicates"] == 0

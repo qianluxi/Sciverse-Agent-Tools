@@ -1472,6 +1472,107 @@ def list_search_runs(project_id: str, limit: int = 20) -> list[dict[str, Any]]:
     ]
 
 
+def get_search_run(project_id: str, run_id: str) -> dict[str, Any] | None:
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        row = connection.execute(
+            """SELECT * FROM search_runs
+               WHERE project_id = ? AND id = ?""",
+            (project_id, run_id),
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "id": row["id"],
+        "mode": row["mode"],
+        "params": json.loads(row["params_json"]),
+        "papers": json.loads(row["snapshot_json"]),
+        "result_count": row["result_count"],
+        "snapshot_count": row["snapshot_count"],
+        "created_at": row["created_at"],
+    }
+
+
+def list_candidate_sources(project_id: str, candidate_key_value: str) -> list[dict[str, Any]]:
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        rows = connection.execute(
+            """SELECT r.id, r.mode, r.params_json, r.result_count,
+                      r.snapshot_count, r.created_at, s.discovered_at
+               FROM screening_candidate_sources s
+               JOIN search_runs r ON r.id = s.run_id
+               WHERE s.project_id = ? AND s.candidate_key = ?
+               ORDER BY s.discovered_at DESC, r.created_at DESC""",
+            (project_id, candidate_key_value),
+        ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "mode": row["mode"],
+            "params": json.loads(row["params_json"]),
+            "result_count": row["result_count"],
+            "snapshot_count": row["snapshot_count"],
+            "created_at": row["created_at"],
+            "discovered_at": row["discovered_at"],
+        }
+        for row in rows
+    ]
+
+
+def project_manifest(project_id: str) -> bytes:
+    overview = project_overview(project_id)
+    runs = list_search_runs(project_id, limit=100)
+    tasks = list_ai_tasks(project_id, limit=100)
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        candidate_rows = connection.execute(
+            """SELECT candidate_key, paper_id, title, year, doi, status,
+                      exclusion_reason, notes, updated_at
+               FROM screening_candidates WHERE project_id = ?
+               ORDER BY title, candidate_key""",
+            (project_id,),
+        ).fetchall()
+        source_rows = connection.execute(
+            """SELECT candidate_key, run_id, discovered_at
+               FROM screening_candidate_sources WHERE project_id = ?""",
+            (project_id,),
+        ).fetchall()
+    sources_by_candidate: dict[str, list[dict[str, Any]]] = {}
+    for row in source_rows:
+        sources_by_candidate.setdefault(row["candidate_key"], []).append(
+            {"run_id": row["run_id"], "discovered_at": row["discovered_at"]}
+        )
+    candidates = [
+        {
+            **dict(row),
+            "sources": sources_by_candidate.get(row["candidate_key"], []),
+        }
+        for row in candidate_rows
+    ]
+    manifest = {
+        "format": "sciverse-project-manifest",
+        "schema_version": _SCHEMA_VERSION,
+        "generated_at": _timestamp(),
+        "project": overview["project"],
+        "summary": {
+            "identified": overview["identified"],
+            "duplicates": overview["duplicates"],
+            "unique": overview["unique"],
+            "pending": overview["pending"],
+            "included": overview["included"],
+            "excluded": overview["excluded"],
+            "conflicts": overview["conflicts"],
+            "search_runs": overview["search_runs"],
+            "evidence_items": overview["evidence_items"],
+            "ai_tasks": overview["ai_tasks"],
+        },
+        "search_runs": runs,
+        "ai_tasks": tasks,
+        "candidates": candidates,
+    }
+    return (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+
+
 def list_ai_tasks(project_id: str, limit: int = 20) -> list[dict[str, Any]]:
     limit = max(1, min(limit, 100))
     with _connection() as connection:

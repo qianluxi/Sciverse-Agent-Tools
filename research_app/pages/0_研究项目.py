@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from math import ceil
+
 import streamlit as st
 
 from research_app import storage
@@ -80,6 +82,38 @@ if recent_runs:
         hide_index=True,
         use_container_width=True,
     )
+    run_ids = [run["id"] for run in recent_runs]
+    selected_run_id = st.selectbox(
+        "选择要恢复的检索快照",
+        run_ids,
+        format_func=lambda value: next(
+            f"{run['created_at']} · {run['snapshot_count']} 篇"
+            for run in recent_runs
+            if run["id"] == value
+        ),
+    )
+    if st.button("载入检索快照"):
+        run = storage.get_search_run(project_id, selected_run_id)
+        if run:
+            st.session_state["papers"] = run["papers"]
+            st.session_state["has_searched"] = True
+            st.session_state["search_kind"] = run["mode"]
+            st.session_state["search_params"] = run["params"]
+            st.session_state["current_search_run_id"] = run["id"]
+            st.session_state["total_count"] = run["result_count"]
+            page_size = int(run["params"].get("page_size") or len(run["papers"]) or 1)
+            st.session_state["total_pages"] = max(
+                1,
+                ceil(run["result_count"] / page_size),
+            )
+            st.session_state["selected_paper"] = None
+            st.session_state["paper_text"] = ""
+            st.session_state["content_next_offset"] = None
+            st.session_state["export_selection"] = {}
+            st.session_state["export_sources"] = {}
+            for key in ("trend_sample", "trend_source", "trend_requests", "trend_truncated"):
+                st.session_state.pop(key, None)
+            st.success("检索快照已载入；打开“文献发现”即可查看和继续操作。")
 else:
     st.caption("还没有保存到本项目的检索快照。回到文献发现页检索后会自动保存。")
 
@@ -89,6 +123,15 @@ if tasks:
     st.dataframe(tasks, hide_index=True, use_container_width=True)
 else:
     st.caption("还没有 AI 证据任务。")
+
+st.markdown("### 项目导出清单")
+st.caption("清单包含项目概况、统计、检索快照、候选来源、筛选状态和 AI 任务，便于复核数据范围。")
+st.download_button(
+    "下载项目清单 JSON",
+    data=storage.project_manifest(project_id),
+    file_name=f"sciverse-project-{project_id}.json",
+    mime="application/json",
+)
 
 st.markdown("### 开始工作")
 st.caption("使用左侧页面导航继续：文献发现与检索、去重与筛选、AI 证据与提纲。")

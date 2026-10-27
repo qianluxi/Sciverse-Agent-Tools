@@ -164,6 +164,26 @@ with queue_tab:
             )
             if candidate.get("notes"):
                 st.caption(f"备注：{candidate['notes']}")
+            sources = storage.list_candidate_sources(project_id, key)
+            if sources:
+                with st.expander(f"来源检索快照（{len(sources)} 个）"):
+                    st.dataframe(
+                        [
+                            {
+                                "发现时间": source["discovered_at"],
+                                "检索时间": source["created_at"],
+                                "方式": "条件筛选" if source["mode"] == "structured" else "语义检索",
+                                "总命中数": source["result_count"],
+                                "本页快照数": source["snapshot_count"],
+                                "条件": str(source["params"]),
+                            }
+                            for source in sources
+                        ],
+                        hide_index=True,
+                        use_container_width=True,
+                    )
+            else:
+                st.caption("没有可追溯的检索快照来源。")
             if key.startswith("conflict:"):
                 st.caption("解决身份冲突前，此候选不能保存筛选决定。")
             else:

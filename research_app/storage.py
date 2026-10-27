@@ -1320,7 +1320,12 @@ def list_screening_audit(project_id: str, limit: int = 100) -> list[dict[str, An
     return [dict(row) for row in rows]
 
 
-def _search_fingerprint(mode: str, params: dict[str, Any], papers: list[dict[str, Any]]) -> str:
+def _search_fingerprint(
+    mode: str,
+    params: dict[str, Any],
+    papers: list[dict[str, Any]],
+    total_count: int,
+) -> str:
     identities = []
     for paper in papers:
         identities.append(
@@ -1331,7 +1336,12 @@ def _search_fingerprint(mode: str, params: dict[str, Any], papers: list[dict[str
                 normalize_title(paper.get("title")),
             ]
         )
-    payload = {"mode": mode, "params": params, "papers": sorted(identities)}
+    payload = {
+        "mode": mode,
+        "params": params,
+        "papers": sorted(identities),
+        "total_count": int(total_count),
+    }
     return hashlib.sha256(
         json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
     ).hexdigest()
@@ -1351,7 +1361,7 @@ def _insert_search_run(
     snapshot = json.dumps(papers, ensure_ascii=False, sort_keys=True)
     if len(snapshot.encode("utf-8")) > _MAX_SNAPSHOT_BYTES:
         raise ValueError("检索结果快照超过 5 MiB 限制。")
-    fingerprint = _search_fingerprint(mode, params, papers)
+    fingerprint = _search_fingerprint(mode, params, papers, total_count)
     now = _timestamp()
     run_id = uuid.uuid4().hex
     cursor = connection.execute(
@@ -1503,7 +1513,7 @@ def save_evidence_items(
                 raw = json.loads(existing["raw_json"])
                 final = data if reviewed else json.loads(existing["final_json"])
             else:
-                final = data
+                final = data if reviewed else {}
             year = item.get("year")
             try:
                 year = int(year) if year is not None else None
@@ -1589,6 +1599,101 @@ def load_latest_evidence(project_id: str) -> dict[str, Any] | None:
             }
         )
     return {"task": dict(task), "items": items}
+
+
+def inspect_project_statistics(project_id: str | None = None) -> list[dict[str, Any]]:
+    with _connection() as connection:
+        if project_id:
+            projects = [dict(_screening_project(connection, project_id))]
+        else:
+            projects = [
+                dict(row)
+                for row in connection.execute(
+                    "SELECT * FROM screening_projects ORDER BY updated_at DESC, name"
+                )
+            ]
+        reports = []
+        for project in projects:
+            pid = project["id"]
+            unique_candidates = connection.execute(
+                "SELECT COUNT(*) FROM screening_candidates WHERE project_id = ?",
+                (pid,),
+            ).fetchone()[0]
+            source_links = connection.execute(
+                "SELECT COUNT(*) FROM screening_candidate_sources WHERE project_id = ?",
+                (pid,),
+            ).fetchone()[0]
+            duplicate_rows = connection.execute(
+                "SELECT COUNT(*) FROM screening_duplicates WHERE project_id = ?",
+                (pid,),
+            ).fetchone()[0]
+            duplicate_distinct = connection.execute(
+                """SELECT COUNT(*) FROM (
+                       SELECT DISTINCT candidate_key, duplicate_of, basis, title
+                       FROM screening_duplicates WHERE project_id = ?
+                   )""",
+                (pid,),
+            ).fetchone()[0]
+            snapshot_papers = connection.execute(
+                "SELECT COALESCE(SUM(snapshot_count), 0) FROM search_runs WHERE project_id = ?",
+                (pid,),
+            ).fetchone()[0]
+            estimated_duplicates = duplicate_distinct
+            estimated_identified = min(
+                snapshot_papers,
+                source_links + duplicate_distinct,
+            )
+            notes = []
+            if project["identified_count"] > snapshot_papers:
+                notes.append("识计数超过检索快照可覆盖的文献数，可能包含旧版重复导入。")
+            if project["duplicate_count"] != duplicate_distinct:
+                notes.append("重复计数与当前去重记录不一致。")
+            if not snapshot_papers and not source_links and unique_candidates:
+                notes.append("没有来源快照，无法可靠重建历史统计。")
+            can_rebuild = bool(snapshot_papers or source_links)
+            reports.append(
+                {
+                    "project_id": pid,
+                    "name": project["name"],
+                    "stored_identified": project["identified_count"],
+                    "stored_duplicates": project["duplicate_count"],
+                    "unique_candidates": unique_candidates,
+                    "source_links": source_links,
+                    "snapshot_papers": snapshot_papers,
+                    "duplicate_rows": duplicate_rows,
+                    "duplicate_distinct": duplicate_distinct,
+                    "estimated_identified": estimated_identified,
+                    "estimated_duplicates": estimated_duplicates,
+                    "can_rebuild": can_rebuild,
+                    "needs_review": (
+                        project["identified_count"] != estimated_identified
+                        or project["duplicate_count"] != estimated_duplicates
+                        or bool(notes)
+                    ),
+                    "notes": notes,
+                }
+            )
+        return reports
+
+
+def rebuild_project_statistics(project_id: str, *, apply: bool = False) -> dict[str, Any]:
+    report = inspect_project_statistics(project_id)[0]
+    if not report["can_rebuild"]:
+        raise ValueError("该项目没有可重建的来源快照或来源关联，不能自动重建统计。")
+    if apply:
+        with _connection() as connection:
+            connection.execute(
+                """UPDATE screening_projects
+                   SET identified_count = ?, duplicate_count = ?, updated_at = ?
+                   WHERE id = ?""",
+                (
+                    report["estimated_identified"],
+                    report["estimated_duplicates"],
+                    _timestamp(),
+                    project_id,
+                ),
+            )
+    return {**report, "applied": apply}
 
 
 def project_overview(project_id: str) -> dict[str, Any]:

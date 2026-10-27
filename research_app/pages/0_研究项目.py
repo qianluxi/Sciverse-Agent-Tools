@@ -53,6 +53,13 @@ metrics[1].metric("排除", overview["excluded"])
 metrics[2].metric("检索快照", overview["search_runs"])
 metrics[3].metric("证据条目", overview["evidence_items"])
 
+stat_check = storage.inspect_project_statistics(project_id)[0]
+if stat_check["needs_review"]:
+    st.warning(
+        "项目统计与当前检索快照/来源记录不一致，可能来自旧版本重复导入。"
+        "请运行 `python -m research_app.maintenance stats` 检查，"
+        "确认后用 `rebuild-stats --project-id ... --apply` 重建。"
+    )
 if overview["conflicts"]:
     st.warning("存在未解决的身份冲突，冲突候选不能直接保存筛选决定。")
 

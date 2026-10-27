@@ -49,6 +49,20 @@ def test_search_runs_are_idempotent_and_listed(monkeypatch, tmp_path):
     assert runs[0]["snapshot_count"] == 2
 
 
+def test_same_page_with_different_total_creates_new_snapshot(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    project_id = _project()
+    papers = [_paper("a", "Paper A")]
+    params = {"query": "topic", "page": 1, "page_size": 20}
+
+    first = storage.save_search_run(project_id, "structured", params, papers, 200)
+    second = storage.save_search_run(project_id, "structured", params, papers, 235)
+
+    assert first["id"] != second["id"]
+    runs = storage.list_search_runs(project_id)
+    assert {run["result_count"] for run in runs} == {200, 235}
+
+
 def test_reimport_same_run_does_not_change_project_stats(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     project_id = _project()
@@ -297,7 +311,7 @@ def test_ai_evidence_persists_raw_and_final_versions(monkeypatch, tmp_path):
                WHERE project_id = ? AND task_id = ? AND paper_id = ?""",
             (project_id, task_id, "paper:a"),
         ).fetchone()
-    assert json.loads(pending["final_json"])["findings"] == "AI original"
+    assert json.loads(pending["final_json"]) == {}
     assert json.loads(pending["reviewed_json"])["findings"] == "Human edited"
     unreviewed = storage.load_latest_evidence(project_id)
     assert unreviewed["items"][0]["data"]["findings"] == "Human edited"
@@ -332,6 +346,53 @@ def test_ai_evidence_persists_raw_and_final_versions(monkeypatch, tmp_path):
     overview = storage.project_overview(project_id)
     assert overview["ai_tasks"] == 1
     assert overview["evidence_items"] == 1
+
+
+def test_project_statistics_are_audited_and_rebuilt_from_sources(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    project_id = _project()
+    papers = [_paper("a", "Paper A"), _paper("b", "Paper B")]
+    run = storage.save_search_run(
+        project_id,
+        "structured",
+        {"query": "topic", "page": 1, "page_size": 20},
+        papers,
+        2,
+    )
+    storage.add_screening_candidates(project_id, papers, source_run_id=run["id"])
+    with storage._connection() as connection:
+        connection.execute(
+            """UPDATE screening_projects
+               SET identified_count = 99, duplicate_count = 99 WHERE id = ?""",
+            (project_id,),
+        )
+
+    report = storage.inspect_project_statistics(project_id)[0]
+    assert report["needs_review"] is True
+    assert report["can_rebuild"] is True
+    assert report["estimated_identified"] == 2
+    assert report["estimated_duplicates"] == 0
+
+    result = storage.rebuild_project_statistics(project_id, apply=True)
+
+    assert result["applied"] is True
+    stats = storage.screening_stats(project_id)
+    assert stats["identified"] == 2
+    assert stats["duplicates"] == 0
+    assert stats["unique"] == 2
+
+
+def test_project_statistics_without_sources_cannot_rebuild(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    project_id = _project()
+    storage.add_screening_candidates(project_id, [_paper("a", "Paper A")])
+
+    report = storage.inspect_project_statistics(project_id)[0]
+
+    assert report["needs_review"] is True
+    assert report["can_rebuild"] is False
+    with pytest.raises(ValueError, match="不能自动重建"):
+        storage.rebuild_project_statistics(project_id, apply=True)
 
 
 def test_delete_project_cascades_all_project_data(monkeypatch, tmp_path):

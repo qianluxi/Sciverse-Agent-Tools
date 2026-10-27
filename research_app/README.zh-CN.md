@@ -91,6 +91,20 @@ python -m research_app.maintenance repair
 
 修复会先创建 `research-workbench.sqlite3.bak-时间戳` 备份，再删除能够确定归属的错误别名和孤立映射；无法确定归属的映射（包括候选缺少该类型规范标识、只有单个未知别名的映射）会保留并输出到 `ambiguous` 清单，需要人工核对。修复不会修改候选、筛选状态、排除原因、备注或审计历史。修复后建议重新运行 `inspect`，确认 `conflicts` 和 `orphans` 为 0，并人工处理 `ambiguous`。POSIX 系统上的备份文件权限会限制为 `0600`；权限设置失败时修复会中止。
 
+旧版本可能重复导入同一检索快照，导致项目统计虚高。先检查：
+
+```powershell
+python -m research_app.maintenance stats
+```
+
+检查会结合检索快照、来源关联和去重记录给出可重建统计及差异说明。确认后可用以下命令按当前记录重建一个项目的统计；不加 `--apply` 时只预览：
+
+```powershell
+python -m research_app.maintenance rebuild-stats --project-id <项目ID> --apply
+```
+
+重建使用快照/来源/去重记录，不会猜测没有来源数据的历史项目；这类项目会在 `notes` 中标记为无法可靠重建。
+
 ## AI 证据与提纲
 
 “AI 证据与提纲”页面需要用户自备 OpenAI 兼容服务。默认 Base URL 为 OpenCode Go（`https://opencode.ai/zen/go/v1`）；填写 API Key 和模型名后，可对最多 5 篇论文提取结构化证据并生成 Markdown 提纲。也可选择“自定义 URL”连接其他服务。
@@ -113,7 +127,7 @@ OpenCode Go 推荐模型为 `glm-5.3-flash` 或其他走 `/chat/completions` 的
 powershell -ExecutionPolicy Bypass -File scripts/build_desktop.ps1
 ```
 
-构建结果位于 `dist/SciverseResearchWorkbench.exe`。双击后会启动本地服务并自动打开浏览器；不需要命令行。首次构建需要安装 PyInstaller，耗时和体积取决于当前 Python 环境。当前产物为 109,255,263 字节（约 104 MB）；本机最新构建首次启动实测约 7.6 秒，干净 Windows 机器可能更慢。onefile 首次启动需要解压，请等待浏览器自动打开。
+构建结果位于 `dist/SciverseResearchWorkbench.exe`。双击后会启动本地服务并自动打开浏览器；不需要命令行。首次构建需要安装 PyInstaller，耗时和体积取决于当前 Python 环境。当前产物为 109,263,157 字节（约 104 MB）；本机最新构建首次启动实测约 7.6 秒，干净 Windows 机器可能更慢。onefile 首次启动需要解压，请等待浏览器自动打开。
 
 AI 页面的 API Key 只在当前会话输入，不写入 exe 或本地数据库；Base URL 和模型名保存在本机 `~/.sciverse/ai-settings.json`。Sciverse Token 仍按原有方式从环境变量或凭据文件读取。
 

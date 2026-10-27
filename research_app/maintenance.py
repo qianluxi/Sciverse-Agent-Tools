@@ -7,6 +7,7 @@ from research_app.storage import (
     database_path,
     inspect_identifier_integrity,
     repair_identifier_integrity,
+    upgrade_database,
 )
 
 
@@ -28,11 +29,17 @@ def main() -> None:
         action="store_true",
         help="不生成 SQLite 备份（不建议）",
     )
+    subparsers.add_parser(
+        "upgrade",
+        help="备份数据库后升级到当前 Schema",
+    )
     args = parser.parse_args()
 
     print(f"database: {database_path()}", flush=True)
     if args.command == "inspect":
         result = inspect_identifier_integrity()
+    elif args.command == "upgrade":
+        result = upgrade_database()
     else:
         result = repair_identifier_integrity(backup=not args.no_backup)
     print(json.dumps(result, ensure_ascii=False, indent=2))

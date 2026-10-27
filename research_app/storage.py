@@ -210,6 +210,18 @@ def _connection() -> Iterator[sqlite3.Connection]:
         connection.close()
 
 
+@contextmanager
+def _readonly_connection() -> Iterator[sqlite3.Connection]:
+    path = database_path()
+    connection = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+    connection.row_factory = sqlite3.Row
+    try:
+        connection.execute("PRAGMA query_only = ON")
+        yield connection
+    finally:
+        connection.close()
+
+
 def _canonical_strong_values(
     candidate: dict[str, Any],
     identifier_type: str,
@@ -246,27 +258,59 @@ def inspect_identifier_integrity() -> dict[str, Any]:
     path = database_path()
     if not path.exists():
         return {
+            "supported": True,
+            "schema_version": None,
             "conflicts": [],
             "ambiguous": [],
             "orphans": [],
             "counts": {"conflicts": 0, "ambiguous": 0, "orphans": 0},
         }
-    with _connection() as connection:
-        candidates = {
-            (row["project_id"], row["candidate_key"]): dict(row)
-            for row in connection.execute(
-                """SELECT project_id, candidate_key, paper_id, title, doi
-                   FROM screening_candidates"""
+    with _readonly_connection() as connection:
+        version = connection.execute("PRAGMA user_version").fetchone()[0]
+        if version != _SCHEMA_VERSION:
+            message = (
+                f"数据库 Schema v{version} 不支持只读标识符检查；"
+                "请先备份，再运行 `python -m research_app.maintenance upgrade`。"
             )
-        }
-        mappings = [
-            dict(row)
-            for row in connection.execute(
-                """SELECT project_id, candidate_key, identifier_key
-                   FROM screening_candidate_identifiers
-                   ORDER BY project_id, candidate_key, identifier_key"""
+            return {
+                "supported": False,
+                "schema_version": version,
+                "message": message,
+                "conflicts": [],
+                "ambiguous": [],
+                "orphans": [],
+                "counts": {"conflicts": 0, "ambiguous": 0, "orphans": 0},
+            }
+        try:
+            candidates = {
+                (row["project_id"], row["candidate_key"]): dict(row)
+                for row in connection.execute(
+                    """SELECT project_id, candidate_key, paper_id, title, doi
+                       FROM screening_candidates"""
+                )
+            }
+            mappings = [
+                dict(row)
+                for row in connection.execute(
+                    """SELECT project_id, candidate_key, identifier_key
+                       FROM screening_candidate_identifiers
+                       ORDER BY project_id, candidate_key, identifier_key"""
+                )
+            ]
+        except sqlite3.OperationalError:
+            message = (
+                "数据库缺少标识符检查所需表；请先备份，"
+                "再运行 `python -m research_app.maintenance upgrade`。"
             )
-        ]
+            return {
+                "supported": False,
+                "schema_version": version,
+                "message": message,
+                "conflicts": [],
+                "ambiguous": [],
+                "orphans": [],
+                "counts": {"conflicts": 0, "ambiguous": 0, "orphans": 0},
+            }
 
     grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
     orphans = []
@@ -322,18 +366,20 @@ def inspect_identifier_integrity() -> dict[str, Any]:
                         "values": sorted(values),
                     }
                 )
-            elif len(values) > 1:
+            elif values:
                 ambiguous.append(
                     {
                         "project_id": project_id,
                         "candidate_key": candidate_key,
                         "type": identifier_type,
-                        "reason": "没有唯一规范标识，无法判断别名归属",
+                        "reason": "候选缺少该类型规范标识，无法判断映射归属",
                         "values": sorted(values),
                     }
                 )
 
     return {
+        "supported": True,
+        "schema_version": version,
         "conflicts": conflicts,
         "ambiguous": ambiguous,
         "orphans": orphans,
@@ -352,13 +398,57 @@ def _backup_database(path: Path) -> Path:
     while backup.exists():
         backup = path.with_name(f"{path.name}.bak-{timestamp}-{suffix}")
         suffix += 1
-    with sqlite3.connect(path) as source, sqlite3.connect(backup) as target:
+    source = sqlite3.connect(path)
+    target = sqlite3.connect(backup)
+    try:
         source.backup(target)
+    finally:
+        target.close()
+        source.close()
+    if os.name != "nt":
+        try:
+            backup.chmod(stat.S_IRUSR | stat.S_IWUSR)
+        except OSError as error:
+            try:
+                backup.unlink()
+            except OSError:
+                pass
+            raise RuntimeError(
+                "备份文件权限设置失败，已中止修复；请检查文件系统权限。"
+            ) from error
     return backup
+
+
+def upgrade_database() -> dict[str, Any]:
+    path = database_path()
+    if not path.exists():
+        raise FileNotFoundError("研究数据库不存在，无需升级。")
+    with _readonly_connection() as connection:
+        current_version = connection.execute("PRAGMA user_version").fetchone()[0]
+    if current_version == _SCHEMA_VERSION:
+        return {
+            "upgraded": False,
+            "from_version": current_version,
+            "to_version": current_version,
+            "backup_path": None,
+        }
+    if current_version > _SCHEMA_VERSION:
+        raise RuntimeError("数据库版本高于当前应用支持范围，不能自动升级。")
+    backup_path = _backup_database(path)
+    with _connection() as connection:
+        new_version = connection.execute("PRAGMA user_version").fetchone()[0]
+    return {
+        "upgraded": True,
+        "from_version": current_version,
+        "to_version": new_version,
+        "backup_path": str(backup_path),
+    }
 
 
 def repair_identifier_integrity(*, backup: bool = True) -> dict[str, Any]:
     report = inspect_identifier_integrity()
+    if not report.get("supported", True):
+        raise ValueError(report.get("message") or "当前数据库不支持标识符修复。")
     removed_aliases = 0
     removed_orphans = 0
     backup_path = None

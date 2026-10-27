@@ -75,13 +75,19 @@ python -m pytest research_app/tests/ -v
 python -m research_app.maintenance inspect
 ```
 
-检查只读，不修改数据库。确认问题后可运行修复：
+检查使用只读连接，不执行 Schema 迁移，也不修改数据库。若数据库版本较旧，`inspect` 会提示先运行升级：
+
+```powershell
+python -m research_app.maintenance upgrade
+```
+
+升级会先备份，再迁移到当前 Schema。确认问题后可运行修复：
 
 ```powershell
 python -m research_app.maintenance repair
 ```
 
-修复会先创建 `research-workbench.sqlite3.bak-时间戳` 备份，再删除能够确定归属的错误别名和孤立映射；无法确定归属的映射会保留并输出到 `ambiguous` 清单，需要人工核对。修复不会修改候选、筛选状态、排除原因、备注或审计历史。修复后建议重新运行 `inspect`，确认 `conflicts` 和 `orphans` 为 0。
+修复会先创建 `research-workbench.sqlite3.bak-时间戳` 备份，再删除能够确定归属的错误别名和孤立映射；无法确定归属的映射（包括候选缺少该类型规范标识、只有单个未知别名的映射）会保留并输出到 `ambiguous` 清单，需要人工核对。修复不会修改候选、筛选状态、排除原因、备注或审计历史。修复后建议重新运行 `inspect`，确认 `conflicts` 和 `orphans` 为 0，并人工处理 `ambiguous`。POSIX 系统上的备份文件权限会限制为 `0600`；权限设置失败时修复会中止。
 
 ## AI 证据与提纲
 
@@ -105,7 +111,7 @@ OpenCode Go 推荐模型为 `glm-5.3-flash` 或其他走 `/chat/completions` 的
 powershell -ExecutionPolicy Bypass -File scripts/build_desktop.ps1
 ```
 
-构建结果位于 `dist/SciverseResearchWorkbench.exe`。双击后会启动本地服务并自动打开浏览器；不需要命令行。首次构建需要安装 PyInstaller，耗时和体积取决于当前 Python 环境。当前产物为 109,196,630 字节（约 104 MB）；本机最新构建首次启动实测约 7.2 秒，干净 Windows 机器可能更慢。onefile 首次启动需要解压，请等待浏览器自动打开。
+构建结果位于 `dist/SciverseResearchWorkbench.exe`。双击后会启动本地服务并自动打开浏览器；不需要命令行。首次构建需要安装 PyInstaller，耗时和体积取决于当前 Python 环境。当前产物为 109,203,249 字节（约 104 MB）；本机最新构建首次启动实测约 7.6 秒，干净 Windows 机器可能更慢。onefile 首次启动需要解压，请等待浏览器自动打开。
 
 AI 页面的 API Key 只在当前会话输入，不写入 exe 或本地数据库；Base URL 和模型名保存在本机 `~/.sciverse/ai-settings.json`。Sciverse Token 仍按原有方式从环境变量或凭据文件读取。
 

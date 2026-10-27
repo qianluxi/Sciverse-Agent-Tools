@@ -70,13 +70,24 @@ for column, label, value in zip(
     column.metric(label, value)
 st.caption(f"去重后候选：{stats['unique']} 条。PRISMA 计数均由底层候选和决定记录计算。")
 
-papers = st.session_state.get("papers", [])
-if papers:
-    if st.button(f"将主页当前 {len(papers)} 条检索结果加入项目", type="primary"):
+current_papers = st.session_state.get("papers", [])
+selected_papers = list(st.session_state.get("export_selection", {}).values())
+papers_to_add = selected_papers or current_papers
+if papers_to_add:
+    if selected_papers:
+        st.caption(
+            f"将使用主页已选择的 {len(selected_papers)} 篇文献；"
+            "未选择时才会使用当前页全部结果。"
+        )
+        button_label = f"将已选择的 {len(selected_papers)} 篇文献加入项目"
+    else:
+        st.caption("主页未选择文献，将使用当前页全部检索结果。")
+        button_label = f"将当前页全部 {len(current_papers)} 条加入项目"
+    if st.button(button_label, type="primary"):
         try:
             result = storage.add_screening_candidates(
                 project_id,
-                papers,
+                papers_to_add,
                 source_run_id=st.session_state.get("current_search_run_id"),
             )
             message = (

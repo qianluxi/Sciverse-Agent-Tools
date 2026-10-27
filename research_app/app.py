@@ -601,9 +601,9 @@ if papers:
     selected_for_export = list(export_selection.values())
     export_papers = selected_for_export or papers
     if selected_for_export:
-        st.caption(f"已选择 {len(selected_for_export)} 篇文献导出")
+        st.caption(f"已选择 {len(selected_for_export)} 篇文献，用于导出或加入项目。")
     else:
-        st.caption("尚未勾选文献；导出按钮将导出当前页全部结果。")
+        st.caption("尚未选择文献；导出和加入项目将使用当前页全部结果。")
     export_columns = st.columns(4)
     with export_columns[0]:
         st.download_button(
@@ -670,7 +670,7 @@ if papers:
                 st.caption(f"unique_id（引用网络可用）：`{unique_id}`")
             else:
                 st.caption("此结果没有 unique_id；语义检索结果通常不带该字段，可改用条件筛选。")
-            st.checkbox("加入导出清单", key=export_key)
+            st.checkbox("选择用于导出/加入项目", key=export_key)
             if st.button("查看文献", key=f"select_{index}"):
                 st.session_state["selected_paper"] = paper
                 st.session_state["paper_text"] = ""

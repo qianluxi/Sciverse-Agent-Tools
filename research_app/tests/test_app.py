@@ -473,11 +473,19 @@ def test_export_selection_survives_page_changes_and_resets_for_new_search(monkey
     )
     next(widget for widget in app.selectbox if widget.label == "每页结果").set_value(10)
     next(button for button in app.button if button.label == "筛选论文").click().run(timeout=30)
-    next(widget for widget in app.checkbox if widget.label == "加入导出清单").set_value(True).run(
+    next(
+        widget
+        for widget in app.checkbox
+        if widget.label == "选择用于导出/加入项目"
+    ).set_value(True).run(
         timeout=30
     )
     next(button for button in app.button if button.label == "下一页").click().run(timeout=30)
-    next(widget for widget in app.checkbox if widget.label == "加入导出清单").set_value(True).run(
+    next(
+        widget
+        for widget in app.checkbox
+        if widget.label == "选择用于导出/加入项目"
+    ).set_value(True).run(
         timeout=30
     )
 

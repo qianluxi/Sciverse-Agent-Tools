@@ -53,3 +53,28 @@ def test_screening_page_screens_candidate_in_existing_project(monkeypatch, tmp_p
     assert stats["excluded"] == 1
     assert stats["pending"] == 0
     assert len(storage.list_screening_audit(project_id)) == 1
+
+
+def test_screening_page_adds_only_selected_papers(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    project_id = storage.create_screening_project("Review", "Q", "Include", "Exclude")
+    selected = {"title": "Selected", "unique_id": "paper:selected"}
+    other = {"title": "Other", "unique_id": "paper:other"}
+    app = AppTest.from_file(str(PAGE_PATH), default_timeout=30)
+    app.session_state["screening_project_id"] = project_id
+    app.session_state["screening_project_selector"] = project_id
+    app.session_state["current_project_id"] = project_id
+    app.session_state["papers"] = [selected, other]
+    app.session_state["export_selection"] = {"selected": selected}
+    app.run(timeout=30)
+
+    next(
+        button
+        for button in app.button
+        if button.label == "将已选择的 1 篇文献加入项目"
+    ).click().run(timeout=30)
+
+    assert not app.exception
+    assert storage.screening_stats(project_id)["pending"] == 1
+    candidates, _ = storage.list_screening_candidates(project_id)
+    assert [candidate["title"] for candidate in candidates] == ["Selected"]

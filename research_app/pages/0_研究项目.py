@@ -64,7 +64,8 @@ if recent_runs:
             {
                 "时间": run["created_at"],
                 "方式": "条件筛选" if run["mode"] == "structured" else "语义检索",
-                "结果数": run["result_count"],
+                "总命中数": run["result_count"],
+                "本页快照数": run["snapshot_count"],
                 "条件": str(run["params"]),
             }
             for run in recent_runs

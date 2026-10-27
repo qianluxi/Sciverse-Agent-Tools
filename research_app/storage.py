@@ -23,7 +23,7 @@ from research_app.screening import (
 )
 
 
-_SCHEMA_VERSION = 4
+_SCHEMA_VERSION = 5
 _BACKUP_SCHEMA_VERSION = 2
 _MAX_HISTORY_ENTRIES = 50
 _MAX_SNAPSHOT_BYTES = 5 * 1024 * 1024
@@ -250,6 +250,28 @@ def _migrate(connection: sqlite3.Connection) -> None:
         )
         version = 4
         connection.execute("PRAGMA user_version = 4")
+    if version < 5:
+        columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(search_runs)").fetchall()
+        }
+        if "snapshot_count" not in columns:
+            connection.execute(
+                "ALTER TABLE search_runs ADD COLUMN snapshot_count INTEGER NOT NULL DEFAULT 0"
+            )
+        for row in connection.execute(
+            "SELECT id, snapshot_json FROM search_runs"
+        ).fetchall():
+            try:
+                snapshot_count = len(json.loads(row["snapshot_json"]))
+            except (TypeError, json.JSONDecodeError):
+                snapshot_count = 0
+            connection.execute(
+                "UPDATE search_runs SET snapshot_count = ? WHERE id = ?",
+                (snapshot_count, row["id"]),
+            )
+        version = 5
+        connection.execute("PRAGMA user_version = 5")
 
 
 @contextmanager
@@ -954,23 +976,77 @@ def add_screening_candidates(
     papers: list[dict[str, Any]],
     *,
     source_run_id: str | None = None,
-) -> dict[str, int]:
+    source_run_ids: list[str | None] | None = None,
+) -> dict[str, Any]:
     if len(papers) > 500:
         raise ValueError("单次最多加入 500 条候选文献。")
+    source_tracking_requested = source_run_ids is not None or source_run_id is not None
+    if source_run_ids is not None:
+        if len(source_run_ids) != len(papers):
+            raise ValueError("检索来源数量与文献数量不一致。")
+        run_ids = list(source_run_ids)
+    else:
+        run_ids = [source_run_id] * len(papers)
     now = _timestamp()
     added = 0
     duplicates = 0
     conflicts = 0
+    skipped = 0
+    manual_source_created = False
     with _connection() as connection:
         _screening_project(connection, project_id)
-        if source_run_id:
+        invalid_sources = []
+        for index, run_id in enumerate(run_ids):
+            if not run_id:
+                if source_tracking_requested:
+                    invalid_sources.append(index)
+                continue
             run = connection.execute(
                 "SELECT 1 FROM search_runs WHERE id = ? AND project_id = ?",
-                (source_run_id, project_id),
+                (run_id, project_id),
             ).fetchone()
             if run is None:
-                source_run_id = None
+                invalid_sources.append(index)
+        if invalid_sources:
+            manual_papers = [papers[index] for index in invalid_sources]
+            manual = _insert_search_run(
+                connection,
+                project_id,
+                "structured",
+                {"source": "manual_selection"},
+                manual_papers,
+                len(manual_papers),
+            )
+            for index in invalid_sources:
+                run_ids[index] = manual["id"]
+            manual_source_created = True
+
+        pre_existing: list[bool] = []
         for index, paper in enumerate(papers):
+            run_id = run_ids[index]
+            if not run_id:
+                pre_existing.append(False)
+                continue
+            decision = _find_duplicate(connection, project_id, paper)
+            if decision is None:
+                pre_existing.append(False)
+                continue
+            canonical = (
+                _conflict_key(decision["matches"], decision.get("conflicts"))
+                if decision["kind"] == "conflict"
+                else decision["candidate_key"]
+            )
+            row = connection.execute(
+                """SELECT 1 FROM screening_candidate_sources
+                   WHERE project_id = ? AND candidate_key = ? AND run_id = ?""",
+                (project_id, canonical, run_id),
+            ).fetchone()
+            pre_existing.append(row is not None)
+
+        for index, paper in enumerate(papers):
+            if pre_existing[index]:
+                skipped += 1
+                continue
             key = candidate_key(paper, index)
             title = str(paper.get("title") or "（暂无标题）")[:1000]
             year = paper.get("publication_published_year")
@@ -1018,6 +1094,13 @@ def add_screening_candidates(
                         now,
                     ),
                 )
+                if run_ids[index]:
+                    connection.execute(
+                        """INSERT OR IGNORE INTO screening_candidate_sources(
+                               project_id, candidate_key, run_id, discovered_at
+                           ) VALUES (?, ?, ?, ?)""",
+                        (project_id, canonical_key, run_ids[index], now),
+                    )
                 continue
             if decision and decision["kind"] == "duplicate":
                 canonical_key = decision["candidate_key"]
@@ -1048,12 +1131,12 @@ def add_screening_candidates(
                            ) VALUES (?, ?, ?, ?, ?, ?)""",
                         (project_id, key, key, duplicate_basis(key), title, now),
                     )
-            if source_run_id:
+            if run_ids[index]:
                 connection.execute(
                     """INSERT OR IGNORE INTO screening_candidate_sources(
                            project_id, candidate_key, run_id, discovered_at
                        ) VALUES (?, ?, ?, ?)""",
-                    (project_id, canonical_key, source_run_id, now),
+                    (project_id, canonical_key, run_ids[index], now),
                 )
             for identifier in identifier_keys(paper):
                 connection.execute(
@@ -1062,21 +1145,25 @@ def add_screening_candidates(
                        ) VALUES (?, ?, ?)""",
                     (project_id, identifier, canonical_key),
                 )
-        identified = len(papers)
-        connection.execute(
-            """UPDATE screening_projects
-               SET identified_count = identified_count + ?,
-                   duplicate_count = duplicate_count + ?,
-                   updated_at = ?
-               WHERE id = ?""",
-            (identified, duplicates, now, project_id),
-        )
-    return {
-        "identified": len(papers),
+        identified = len(papers) - skipped
+        if identified or duplicates:
+            connection.execute(
+                """UPDATE screening_projects
+                   SET identified_count = identified_count + ?,
+                       duplicate_count = duplicate_count + ?,
+                       updated_at = ?
+                   WHERE id = ?""",
+                (identified, duplicates, now, project_id),
+            )
+    result = {
+        "identified": identified,
         "added": added,
         "duplicates": duplicates,
         "conflicts": conflicts,
     }
+    if manual_source_created:
+        result["manual_source_created"] = True
+    return result
 
 
 def list_screening_candidates(
@@ -1250,7 +1337,8 @@ def _search_fingerprint(mode: str, params: dict[str, Any], papers: list[dict[str
     ).hexdigest()
 
 
-def save_search_run(
+def _insert_search_run(
+    connection: sqlite3.Connection,
     project_id: str,
     mode: str,
     params: dict[str, Any],
@@ -1266,32 +1354,43 @@ def save_search_run(
     fingerprint = _search_fingerprint(mode, params, papers)
     now = _timestamp()
     run_id = uuid.uuid4().hex
+    cursor = connection.execute(
+        """INSERT OR IGNORE INTO search_runs(
+               id, project_id, mode, params_json, result_count,
+               fingerprint, snapshot_json, snapshot_count, created_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            run_id,
+            project_id,
+            mode,
+            serialized_params,
+            int(total_count),
+            fingerprint,
+            snapshot,
+            len(papers),
+            now,
+        ),
+    )
+    if cursor.rowcount:
+        return {"id": run_id, "created": True}
+    row = connection.execute(
+        """SELECT id FROM search_runs
+           WHERE project_id = ? AND fingerprint = ?""",
+        (project_id, fingerprint),
+    ).fetchone()
+    return {"id": str(row["id"]), "created": False}
+
+
+def save_search_run(
+    project_id: str,
+    mode: str,
+    params: dict[str, Any],
+    papers: list[dict[str, Any]],
+    total_count: int,
+) -> dict[str, Any]:
     with _connection() as connection:
         _screening_project(connection, project_id)
-        cursor = connection.execute(
-            """INSERT OR IGNORE INTO search_runs(
-                   id, project_id, mode, params_json, result_count,
-                   fingerprint, snapshot_json, created_at
-               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                run_id,
-                project_id,
-                mode,
-                serialized_params,
-                int(total_count),
-                fingerprint,
-                snapshot,
-                now,
-            ),
-        )
-        if cursor.rowcount:
-            return {"id": run_id, "created": True}
-        row = connection.execute(
-            """SELECT id FROM search_runs
-               WHERE project_id = ? AND fingerprint = ?""",
-            (project_id, fingerprint),
-        ).fetchone()
-    return {"id": str(row["id"]), "created": False}
+        return _insert_search_run(connection, project_id, mode, params, papers, total_count)
 
 
 def list_search_runs(project_id: str, limit: int = 20) -> list[dict[str, Any]]:
@@ -1299,7 +1398,7 @@ def list_search_runs(project_id: str, limit: int = 20) -> list[dict[str, Any]]:
     with _connection() as connection:
         _screening_project(connection, project_id)
         rows = connection.execute(
-            """SELECT id, mode, params_json, result_count, created_at
+            """SELECT id, mode, params_json, result_count, snapshot_count, created_at
                FROM search_runs WHERE project_id = ?
                ORDER BY created_at DESC, id DESC LIMIT ?""",
             (project_id, limit),
@@ -1310,6 +1409,7 @@ def list_search_runs(project_id: str, limit: int = 20) -> list[dict[str, Any]]:
             "mode": row["mode"],
             "params": json.loads(row["params_json"]),
             "result_count": row["result_count"],
+            "snapshot_count": row["snapshot_count"],
             "created_at": row["created_at"],
         }
         for row in rows
@@ -1393,6 +1493,17 @@ def save_evidence_items(
                 continue
             data = item.get("data") if isinstance(item.get("data"), dict) else {}
             raw = item.get("raw_data") if isinstance(item.get("raw_data"), dict) else data
+            reviewed = bool(item.get("reviewed"))
+            existing = connection.execute(
+                """SELECT raw_json, final_json FROM evidence_items
+                   WHERE project_id = ? AND task_id = ? AND paper_id = ?""",
+                (project_id, task_id, paper_id_value),
+            ).fetchone()
+            if existing:
+                raw = json.loads(existing["raw_json"])
+                final = data if reviewed else json.loads(existing["final_json"])
+            else:
+                final = data
             year = item.get("year")
             try:
                 year = int(year) if year is not None else None
@@ -1425,9 +1536,9 @@ def save_evidence_items(
                     year,
                     json.dumps(raw, ensure_ascii=False, sort_keys=True),
                     json.dumps(data, ensure_ascii=False, sort_keys=True),
-                    json.dumps(data, ensure_ascii=False, sort_keys=True),
+                    json.dumps(final, ensure_ascii=False, sort_keys=True),
                     json.dumps(item.get("quote_checks") or [], ensure_ascii=False),
-                    1 if item.get("reviewed") else 0,
+                    1 if reviewed else 0,
                     str(item.get("reviewer_note") or ""),
                     str(item.get("model") or ""),
                     str(item.get("prompt_version") or ""),
@@ -1464,7 +1575,9 @@ def load_latest_evidence(project_id: str) -> dict[str, Any] | None:
                 "paper_id": row["paper_id"],
                 "title": row["title"],
                 "year": row["year"],
-                "data": json.loads(row["final_json"]),
+                "data": json.loads(
+                    row["final_json"] if row["review_status"] else row["reviewed_json"]
+                ),
                 "raw_data": json.loads(row["raw_json"]),
                 "quote_checks": json.loads(row["quote_checks_json"]),
                 "reviewed": bool(row["review_status"]),
@@ -1507,7 +1620,7 @@ def project_overview(project_id: str) -> dict[str, Any]:
             (project_id,),
         ).fetchone()[0]
         latest_run = connection.execute(
-            """SELECT id, mode, params_json, result_count, created_at
+            """SELECT id, mode, params_json, result_count, snapshot_count, created_at
                FROM search_runs WHERE project_id = ?
                ORDER BY created_at DESC, id DESC LIMIT 1""",
             (project_id,),
@@ -1533,6 +1646,7 @@ def project_overview(project_id: str) -> dict[str, Any]:
                 "mode": latest_run["mode"],
                 "params": json.loads(latest_run["params_json"]),
                 "result_count": latest_run["result_count"],
+                "snapshot_count": latest_run["snapshot_count"],
                 "created_at": latest_run["created_at"],
             }
             if latest_run

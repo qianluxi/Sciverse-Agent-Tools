@@ -204,12 +204,12 @@ def test_inspect_is_read_only_for_old_schema_and_upgrade_creates_backup(monkeypa
 
     assert result["upgraded"] is True
     assert result["from_version"] == 1
-    assert result["to_version"] == 4
+    assert result["to_version"] == 5
     assert result["backup_path"]
     with sqlite3.connect(result["backup_path"]) as backup:
         assert backup.execute("PRAGMA user_version").fetchone()[0] == 1
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
     assert storage.inspect_identifier_integrity()["supported"] is True
 
 

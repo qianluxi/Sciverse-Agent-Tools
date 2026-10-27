@@ -71,12 +71,20 @@ for column, label, value in zip(
 st.caption(f"去重后候选：{stats['unique']} 条。PRISMA 计数均由底层候选和决定记录计算。")
 
 current_papers = st.session_state.get("papers", [])
-selected_papers = list(st.session_state.get("export_selection", {}).values())
-papers_to_add = selected_papers or current_papers
+selected_items = list(st.session_state.get("export_selection", {}).items())
+selected_papers = [paper for _, paper in selected_items]
+export_sources = st.session_state.get("export_sources", {})
+current_run_id = st.session_state.get("current_search_run_id")
+if selected_items:
+    papers_to_add = selected_papers
+    source_run_ids = [export_sources.get(identity) for identity, _ in selected_items]
+else:
+    papers_to_add = current_papers
+    source_run_ids = [current_run_id] * len(current_papers)
 if papers_to_add:
-    if selected_papers:
+    if selected_items:
         st.caption(
-            f"将使用主页已选择的 {len(selected_papers)} 篇文献；"
+            f"将使用主页已选择的 {len(selected_papers)} 篇文献，并保留各自页面的检索来源；"
             "未选择时才会使用当前页全部结果。"
         )
         button_label = f"将已选择的 {len(selected_papers)} 篇文献加入项目"
@@ -88,7 +96,7 @@ if papers_to_add:
             result = storage.add_screening_candidates(
                 project_id,
                 papers_to_add,
-                source_run_id=st.session_state.get("current_search_run_id"),
+                source_run_ids=source_run_ids,
             )
             message = (
                 f"已加入 {result['added']} 条候选；"
@@ -96,6 +104,8 @@ if papers_to_add:
             )
             if result.get("conflicts"):
                 message += f" 另有 {result['conflicts']} 条强标识符冲突，请人工核对。"
+            if result.get("manual_source_created"):
+                message += " 部分文献来源属于其他项目，已建立“手动选择”快照。"
             st.session_state["screening_message"] = message
             st.rerun()
         except Exception as error:

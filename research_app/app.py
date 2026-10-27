@@ -151,6 +151,7 @@ def _execute_search(
             if key.startswith("export_item_"):
                 del st.session_state[key]
         st.session_state["export_selection"] = {}
+        st.session_state["export_sources"] = {}
         for key in ("trend_sample", "trend_source", "trend_requests", "trend_truncated"):
             st.session_state.pop(key, None)
     if not preserve_selection:
@@ -158,16 +159,16 @@ def _execute_search(
             record_search(search_kind, params, total_count)
         except Exception:
             st.warning("检索已完成，但本地历史记录未能保存。")
-        project_id = st.session_state.get("current_project_id")
-        if project_id:
-            try:
-                run = save_search_run(project_id, search_kind, params, papers, total_count)
-                st.session_state["current_search_run_id"] = run["id"]
-            except Exception:
-                st.session_state.pop("current_search_run_id", None)
-                st.warning("检索已完成，但项目检索快照未能保存。")
-        else:
+    project_id = st.session_state.get("current_project_id")
+    if project_id:
+        try:
+            run = save_search_run(project_id, search_kind, params, papers, total_count)
+            st.session_state["current_search_run_id"] = run["id"]
+        except Exception:
             st.session_state.pop("current_search_run_id", None)
+            st.warning("检索已完成，但项目检索快照未能保存。")
+    else:
+        st.session_state.pop("current_search_run_id", None)
 
 
 def _run_stored_search(token: str | None, search: dict[str, Any]) -> None:
@@ -591,12 +592,17 @@ if papers:
                         _show_error(error)
 
     export_selection = st.session_state.setdefault("export_selection", {})
+    export_sources = st.session_state.setdefault("export_sources", {})
     for index, paper in enumerate(papers):
         identity = _paper_identity(paper, index)
         if st.session_state.get(f"export_item_{identity}"):
             export_selection[identity] = paper
+            current_run_id = st.session_state.get("current_search_run_id")
+            if current_run_id:
+                export_sources[identity] = current_run_id
         else:
             export_selection.pop(identity, None)
+            export_sources.pop(identity, None)
 
     selected_for_export = list(export_selection.values())
     export_papers = selected_for_export or papers

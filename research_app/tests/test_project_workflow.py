@@ -376,23 +376,69 @@ def test_project_statistics_are_audited_and_rebuilt_from_sources(monkeypatch, tm
     result = storage.rebuild_project_statistics(project_id, apply=True)
 
     assert result["applied"] is True
+    assert result["backup_path"]
     stats = storage.screening_stats(project_id)
     assert stats["identified"] == 2
     assert stats["duplicates"] == 0
     assert stats["unique"] == 2
 
 
-def test_project_statistics_without_sources_cannot_rebuild(monkeypatch, tmp_path):
+def test_legacy_project_without_import_events_cannot_rebuild(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     project_id = _project()
     storage.add_screening_candidates(project_id, [_paper("a", "Paper A")])
+    with storage._connection() as connection:
+        connection.execute(
+            "UPDATE screening_projects SET stats_tracked = 0 WHERE id = ?",
+            (project_id,),
+        )
 
     report = storage.inspect_project_statistics(project_id)[0]
 
     assert report["needs_review"] is True
     assert report["can_rebuild"] is False
-    with pytest.raises(ValueError, match="不能自动重建"):
+    with pytest.raises(ValueError, match="无法精确重建"):
         storage.rebuild_project_statistics(project_id, apply=True)
+
+
+def test_statistics_rebuild_uses_import_events_for_multi_source_duplicates(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    project_id = _project()
+    paper = _paper("a", "Paper A")
+    runs = []
+    for page in (1, 2, 3):
+        runs.append(
+            storage.save_search_run(
+                project_id,
+                "structured",
+                {"query": "topic", "page": page, "page_size": 1},
+                [paper],
+                3,
+            )
+        )
+    storage.save_search_run(
+        project_id,
+        "structured",
+        {"query": "topic", "page": 4, "page_size": 1},
+        [_paper("d", "Unused D")],
+        3,
+    )
+    for run in runs:
+        storage.add_screening_candidates(project_id, [paper], source_run_id=run["id"])
+
+    stats = storage.screening_stats(project_id)
+    assert stats["identified"] == 3
+    assert stats["duplicates"] == 2
+    report = storage.inspect_project_statistics(project_id)[0]
+    assert report["can_rebuild"] is True
+    assert report["estimated_identified"] == 3
+    assert report["estimated_duplicates"] == 2
+    assert report["needs_review"] is False
+
+    result = storage.rebuild_project_statistics(project_id, apply=True)
+    assert result["backup_path"] is None
+    assert storage.screening_stats(project_id)["identified"] == 3
+    assert storage.screening_stats(project_id)["duplicates"] == 2
 
 
 def test_delete_project_cascades_all_project_data(monkeypatch, tmp_path):
@@ -434,6 +480,7 @@ def test_delete_project_cascades_all_project_data(monkeypatch, tmp_path):
             "search_runs",
             "ai_task_runs",
             "evidence_items",
+            "project_import_events",
         ):
             count = connection.execute(
                 f"SELECT COUNT(*) FROM {table} WHERE project_id = ?",
@@ -442,11 +489,11 @@ def test_delete_project_cascades_all_project_data(monkeypatch, tmp_path):
             assert count == 0
 
 
-def test_schema_v5_tables_are_created(monkeypatch, tmp_path):
+def test_schema_v6_tables_are_created(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     _project()
     with storage._connection() as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 6
         tables = {
             row[0]
             for row in connection.execute(
@@ -458,4 +505,5 @@ def test_schema_v5_tables_are_created(monkeypatch, tmp_path):
         "screening_candidate_sources",
         "ai_task_runs",
         "evidence_items",
+        "project_import_events",
     } <= tables

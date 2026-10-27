@@ -97,13 +97,13 @@ python -m research_app.maintenance repair
 python -m research_app.maintenance stats
 ```
 
-检查会结合检索快照、来源关联和去重记录给出可重建统计及差异说明。确认后可用以下命令按当前记录重建一个项目的统计；不加 `--apply` 时只预览：
+检查会对比项目存储计数与导入事件账本。新版本会为每次实际导入记录识别、重复和冲突数量；只有具备完整导入事件的项目才允许精确重建。确认后可用以下命令重建；不加 `--apply` 时只预览：
 
 ```powershell
 python -m research_app.maintenance rebuild-stats --project-id <项目ID> --apply
 ```
 
-重建使用快照/来源/去重记录，不会猜测没有来源数据的历史项目；这类项目会在 `notes` 中标记为无法可靠重建。
+`--apply` 前会自动备份数据库，并在输出中返回备份路径。旧版本项目没有导入事件账本，会在 `notes` 中标记为无法精确重建，不会根据快照数量猜测，也不会自动写入。
 
 ## AI 证据与提纲
 
@@ -127,7 +127,7 @@ OpenCode Go 推荐模型为 `glm-5.3-flash` 或其他走 `/chat/completions` 的
 powershell -ExecutionPolicy Bypass -File scripts/build_desktop.ps1
 ```
 
-构建结果位于 `dist/SciverseResearchWorkbench.exe`。双击后会启动本地服务并自动打开浏览器；不需要命令行。首次构建需要安装 PyInstaller，耗时和体积取决于当前 Python 环境。当前产物为 109,263,157 字节（约 104 MB）；本机最新构建首次启动实测约 7.6 秒，干净 Windows 机器可能更慢。onefile 首次启动需要解压，请等待浏览器自动打开。
+构建结果位于 `dist/SciverseResearchWorkbench.exe`。双击后会启动本地服务并自动打开浏览器；不需要命令行。首次构建需要安装 PyInstaller，耗时和体积取决于当前 Python 环境。当前产物为 109,265,098 字节（约 104 MB）；本机最新构建首次启动实测约 7.6 秒，干净 Windows 机器可能更慢。onefile 首次启动需要解压，请等待浏览器自动打开。
 
 AI 页面的 API Key 只在当前会话输入，不写入 exe 或本地数据库；Base URL 和模型名保存在本机 `~/.sciverse/ai-settings.json`。Sciverse Token 仍按原有方式从环境变量或凭据文件读取。
 

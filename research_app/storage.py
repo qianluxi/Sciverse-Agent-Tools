@@ -23,7 +23,7 @@ from research_app.screening import (
 )
 
 
-_SCHEMA_VERSION = 5
+_SCHEMA_VERSION = 6
 _BACKUP_SCHEMA_VERSION = 2
 _MAX_HISTORY_ENTRIES = 50
 _MAX_SNAPSHOT_BYTES = 5 * 1024 * 1024
@@ -272,6 +272,32 @@ def _migrate(connection: sqlite3.Connection) -> None:
             )
         version = 5
         connection.execute("PRAGMA user_version = 5")
+    if version < 6:
+        project_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(screening_projects)").fetchall()
+        }
+        if "stats_tracked" not in project_columns:
+            connection.execute(
+                "ALTER TABLE screening_projects ADD COLUMN stats_tracked INTEGER NOT NULL DEFAULT 0"
+            )
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS project_import_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id TEXT NOT NULL REFERENCES screening_projects(id) ON DELETE CASCADE,
+                run_id TEXT,
+                identified_count INTEGER NOT NULL,
+                duplicate_count INTEGER NOT NULL,
+                conflict_count INTEGER NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS project_import_events_project
+                ON project_import_events(project_id, id DESC);
+            """
+        )
+        version = 6
+        connection.execute("PRAGMA user_version = 6")
 
 
 @contextmanager
@@ -764,8 +790,9 @@ def create_screening_project(
         connection.execute(
             """INSERT INTO screening_projects(
                    id, name, question, inclusion_criteria, exclusion_criteria,
-                   identified_count, duplicate_count, created_at, updated_at
-               ) VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?)""",
+                   identified_count, duplicate_count, stats_tracked,
+                   created_at, updated_at
+               ) VALUES (?, ?, ?, ?, ?, 0, 0, 1, ?, ?)""",
             (project_id, name, question, inclusion_criteria, exclusion_criteria, now, now),
         )
     return project_id
@@ -1154,6 +1181,25 @@ def add_screening_candidates(
                        updated_at = ?
                    WHERE id = ?""",
                 (identified, duplicates, now, project_id),
+            )
+            ledger_run_id = (
+                run_ids[0]
+                if run_ids and all(run_id == run_ids[0] for run_id in run_ids)
+                else None
+            )
+            connection.execute(
+                """INSERT INTO project_import_events(
+                       project_id, run_id, identified_count, duplicate_count,
+                       conflict_count, created_at
+                   ) VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    project_id,
+                    ledger_run_id,
+                    identified,
+                    duplicates,
+                    conflicts,
+                    now,
+                ),
             )
     result = {
         "identified": identified,
@@ -1615,61 +1661,40 @@ def inspect_project_statistics(project_id: str | None = None) -> list[dict[str, 
         reports = []
         for project in projects:
             pid = project["id"]
-            unique_candidates = connection.execute(
-                "SELECT COUNT(*) FROM screening_candidates WHERE project_id = ?",
+            event_row = connection.execute(
+                """SELECT COUNT(*) AS event_count,
+                          COALESCE(SUM(identified_count), 0) AS identified,
+                          COALESCE(SUM(duplicate_count), 0) AS duplicates
+                   FROM project_import_events WHERE project_id = ?""",
                 (pid,),
-            ).fetchone()[0]
-            source_links = connection.execute(
-                "SELECT COUNT(*) FROM screening_candidate_sources WHERE project_id = ?",
-                (pid,),
-            ).fetchone()[0]
-            duplicate_rows = connection.execute(
-                "SELECT COUNT(*) FROM screening_duplicates WHERE project_id = ?",
-                (pid,),
-            ).fetchone()[0]
-            duplicate_distinct = connection.execute(
-                """SELECT COUNT(*) FROM (
-                       SELECT DISTINCT candidate_key, duplicate_of, basis, title
-                       FROM screening_duplicates WHERE project_id = ?
-                   )""",
-                (pid,),
-            ).fetchone()[0]
-            snapshot_papers = connection.execute(
-                "SELECT COALESCE(SUM(snapshot_count), 0) FROM search_runs WHERE project_id = ?",
-                (pid,),
-            ).fetchone()[0]
-            estimated_duplicates = duplicate_distinct
-            estimated_identified = min(
-                snapshot_papers,
-                source_links + duplicate_distinct,
-            )
+            ).fetchone()
+            stats_tracked = bool(project["stats_tracked"])
+            event_count = event_row["event_count"]
+            estimated_identified = event_row["identified"] if stats_tracked else None
+            estimated_duplicates = event_row["duplicates"] if stats_tracked else None
+            can_rebuild = stats_tracked and (event_count > 0 or project["identified_count"] == 0)
             notes = []
-            if project["identified_count"] > snapshot_papers:
-                notes.append("识计数超过检索快照可覆盖的文献数，可能包含旧版重复导入。")
-            if project["duplicate_count"] != duplicate_distinct:
-                notes.append("重复计数与当前去重记录不一致。")
-            if not snapshot_papers and not source_links and unique_candidates:
-                notes.append("没有来源快照，无法可靠重建历史统计。")
-            can_rebuild = bool(snapshot_papers or source_links)
+            if not stats_tracked:
+                notes.append("旧版本项目没有导入事件账本，无法精确重建统计。")
+            elif not can_rebuild:
+                notes.append("项目有计数但没有导入事件，无法证明可精确重建。")
+            elif (
+                project["identified_count"] != estimated_identified
+                or project["duplicate_count"] != estimated_duplicates
+            ):
+                notes.append("项目计数与导入事件账本不一致，可从账本精确重建。")
             reports.append(
                 {
                     "project_id": pid,
                     "name": project["name"],
                     "stored_identified": project["identified_count"],
                     "stored_duplicates": project["duplicate_count"],
-                    "unique_candidates": unique_candidates,
-                    "source_links": source_links,
-                    "snapshot_papers": snapshot_papers,
-                    "duplicate_rows": duplicate_rows,
-                    "duplicate_distinct": duplicate_distinct,
+                    "stats_tracked": stats_tracked,
+                    "import_events": event_count,
                     "estimated_identified": estimated_identified,
                     "estimated_duplicates": estimated_duplicates,
                     "can_rebuild": can_rebuild,
-                    "needs_review": (
-                        project["identified_count"] != estimated_identified
-                        or project["duplicate_count"] != estimated_duplicates
-                        or bool(notes)
-                    ),
+                    "needs_review": bool(notes),
                     "notes": notes,
                 }
             )
@@ -1679,8 +1704,19 @@ def inspect_project_statistics(project_id: str | None = None) -> list[dict[str, 
 def rebuild_project_statistics(project_id: str, *, apply: bool = False) -> dict[str, Any]:
     report = inspect_project_statistics(project_id)[0]
     if not report["can_rebuild"]:
-        raise ValueError("该项目没有可重建的来源快照或来源关联，不能自动重建统计。")
-    if apply:
+        raise ValueError(
+            "该项目没有完整导入事件账本，无法精确重建统计；请保留人工核对结果。"
+        )
+    before = {
+        "identified": report["stored_identified"],
+        "duplicates": report["stored_duplicates"],
+    }
+    backup_path = None
+    if apply and before != {
+        "identified": report["estimated_identified"],
+        "duplicates": report["estimated_duplicates"],
+    }:
+        backup_path = str(_backup_database(database_path()))
         with _connection() as connection:
             connection.execute(
                 """UPDATE screening_projects
@@ -1693,7 +1729,16 @@ def rebuild_project_statistics(project_id: str, *, apply: bool = False) -> dict[
                     project_id,
                 ),
             )
-    return {**report, "applied": apply}
+    return {
+        **report,
+        "before": before,
+        "after": {
+            "identified": report["estimated_identified"],
+            "duplicates": report["estimated_duplicates"],
+        },
+        "applied": apply,
+        "backup_path": backup_path,
+    }
 
 
 def project_overview(project_id: str) -> dict[str, Any]:

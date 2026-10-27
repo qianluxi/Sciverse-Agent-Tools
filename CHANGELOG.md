@@ -1,3 +1,9 @@
+## [1.14.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.13.0...v1.14.0) (2026-10-27)
+
+### Features
+
+* complete stage 8 project context and exports ([7548974](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/7548974aa29f3a1899a4bdaaa0a3ccd9461ebd89))
+
 ## [1.13.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.12.3...v1.13.0) (2026-10-27)
 
 ### Features

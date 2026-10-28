@@ -1,3 +1,9 @@
+## [1.17.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.17.0...v1.17.1) (2026-10-28)
+
+### Bug Fixes
+
+* harden field scan state and failure reporting ([4236a52](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/4236a527aedff19a1f7c39cb5e8b19c4cfa03c58))
+
 ## [1.17.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.16.1...v1.17.0) (2026-10-28)
 
 ### Features

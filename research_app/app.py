@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import html
 import os
 from math import ceil
@@ -667,10 +668,44 @@ if papers:
     )
     translations = cached_translations(non_chinese_titles, translation_model)
     missing_titles = [title for title in non_chinese_titles if title not in translations]
-    if missing_titles:
-        if ai_key and translation_model:
+    if non_chinese_titles:
+        auto_translate = st.toggle(
+            "自动翻译当前页非中文标题",
+            value=True,
+            key="auto_translate_titles",
+        )
+        attempt_key = (
+            f"{translation_model}:{hashlib.sha256(chr(10).join(missing_titles).encode('utf-8')).hexdigest()}"
+            if missing_titles
+            else ""
+        )
+        should_auto_translate = (
+            auto_translate
+            and bool(ai_key)
+            and bool(translation_model)
+            and bool(missing_titles)
+            and st.session_state.get("translation_attempt_key") != attempt_key
+        )
+        if should_auto_translate:
+            st.session_state["translation_attempt_key"] = attempt_key
+            try:
+                client = OpenAICompatibleClient(
+                    base_url=translation_base_url,
+                    api_key=ai_key,
+                    model=translation_model,
+                )
+                with st.spinner("正在自动翻译标题…"):
+                    new_translations = translate_titles(client, missing_titles)
+                save_translations(new_translations, translation_model)
+                translations.update(new_translations)
+                missing_titles = [
+                    title for title in non_chinese_titles if title not in translations
+                ]
+            except Exception as error:
+                _show_error(error)
+        if missing_titles and ai_key and translation_model:
             if st.button(
-                f"AI 翻译当前页 {len(missing_titles)} 个非中文标题",
+                f"重新翻译当前页 {len(missing_titles)} 个非中文标题",
                 key="translate_titles",
             ):
                 try:
@@ -682,13 +717,14 @@ if papers:
                     with st.spinner("正在翻译标题…"):
                         new_translations = translate_titles(client, missing_titles)
                     save_translations(new_translations, translation_model)
+                    translations.update(new_translations)
                     st.rerun()
                 except Exception as error:
                     _show_error(error)
-        else:
+        elif not ai_key:
             st.caption(
                 "当前页有非中文标题；在“AI 证据与提纲”页配置 API Key 后，"
-                "可在此批量生成中文翻译。"
+                "会自动翻译标题。"
             )
     elif translations:
         st.caption(f"已加载 {len(translations)} 个标题的 AI 中文翻译缓存。")

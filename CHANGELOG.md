@@ -1,3 +1,9 @@
+## [1.17.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.16.1...v1.17.0) (2026-10-28)
+
+### Features
+
+* add Markdown field scan report export ([2ff5f96](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/2ff5f96d759a69c69d26587cc0589a9ee1ca3c7b))
+
 ## [1.16.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.16.0...v1.16.1) (2026-10-28)
 
 ### Bug Fixes

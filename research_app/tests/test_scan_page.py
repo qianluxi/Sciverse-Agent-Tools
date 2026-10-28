@@ -63,3 +63,8 @@ def test_scan_page_runs_and_saves_results(monkeypatch, tmp_path):
     assert saved["items"][0]["data"]["category"] == "foundational"
     assert saved["themes"][0]["theme"] == "剪力墙"
     assert any("Classic paper" in block.value for block in app.markdown)
+    downloads = app.get("download_button")
+    assert any(
+        button.label == "下载可读报告（Markdown）" for button in downloads
+    )
+    assert any(button.label == "下载原始数据（JSON）" for button in downloads)

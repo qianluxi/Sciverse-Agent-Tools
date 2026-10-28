@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import html
 import json
+from collections import Counter
+from datetime import datetime
 from typing import Any
 
 from research_app.ai import AIError, OpenAICompatibleClient, parse_json_object
@@ -17,6 +20,7 @@ CATEGORY_LABELS = {
     "review": "综述",
     "other": "其他",
 }
+CONFIDENCE_LABELS = {"high": "高", "medium": "中", "low": "低"}
 
 SCAN_SCHEMA = {
     "papers": [
@@ -213,3 +217,231 @@ def scan_documents(
         "model": getattr(client, "model", ""),
         "prompt_version": FIELD_SCAN_PROMPT_VERSION,
     }
+
+
+def _cell(value: Any) -> str:
+    text = str("" if value is None else value).strip()
+    if not text:
+        return "—"
+    text = text.replace("\\", "\\\\").replace("|", "\\|")
+    text = html.escape(text, quote=False)
+    return text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "<br>")
+
+
+def _table(headers: list[str], rows: list[list[Any]]) -> list[str]:
+    lines = [
+        "| " + " | ".join(_cell(header) for header in headers) + " |",
+        "| " + " | ".join("---" for _ in headers) + " |",
+    ]
+    lines.extend("| " + " | ".join(_cell(value) for value in row) + " |" for row in rows)
+    return lines
+
+
+def _quote_status(check: dict[str, Any]) -> str:
+    if check.get("verified") is True:
+        return "已校验"
+    if check.get("verified") is False:
+        return "未通过"
+    return "未校验"
+
+
+def _format_refs(paper_ids: Any, labels: dict[str, str]) -> str:
+    if not isinstance(paper_ids, list) or not paper_ids:
+        return "—"
+    return "、".join(labels.get(str(paper_id), str(paper_id)) for paper_id in paper_ids)
+
+
+def scan_report_markdown(
+    saved: dict[str, Any],
+    *,
+    project_name: str = "",
+    project_id: str = "",
+    generated_at: str | None = None,
+) -> str:
+    task = saved.get("task") or {}
+    items = [item for item in saved.get("items") or [] if isinstance(item, dict)]
+    themes = [item for item in saved.get("themes") or [] if isinstance(item, dict)]
+    gaps = [item for item in saved.get("gaps") or [] if isinstance(item, dict)]
+    generated = generated_at or datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+
+    def sort_key(item: dict[str, Any]) -> tuple[int, str, str]:
+        data = item.get("data") or {}
+        category = data.get("category")
+        order = list(CATEGORY_LABELS).index(category) if category in CATEGORY_LABELS else 99
+        return (order, str(item.get("year") or ""), str(item.get("title") or ""))
+
+    ordered_items = sorted(items, key=sort_key)
+    labels = {
+        str(item.get("paper_id") or ""): f"P{index}"
+        for index, item in enumerate(ordered_items, start=1)
+    }
+    valid_items = [
+        item for item in ordered_items if item.get("data") and not item.get("error")
+    ]
+    failed_items = [
+        item for item in ordered_items if not item.get("data") or item.get("error")
+    ]
+    category_counts = Counter(
+        str((item.get("data") or {}).get("category") or "other") for item in valid_items
+    )
+    reviewed_counts = Counter(
+        str((item.get("data") or {}).get("category") or "other")
+        for item in valid_items
+        if item.get("reviewed")
+    )
+
+    lines = [
+        "# AI 领域扫描报告",
+        "",
+        "## 基本信息",
+        "",
+        *_table(
+            ["项目", "内容"],
+            [
+                ["研究项目", project_name or project_id or "未指定"],
+                ["项目 ID", project_id or "—"],
+                ["扫描时间", task.get("created_at") or "—"],
+                ["模型", task.get("model") or "—"],
+                ["提示词版本", task.get("prompt_version") or "—"],
+                ["报告生成时间", generated],
+            ],
+        ),
+        "",
+        "## 分类概览",
+        "",
+    ]
+    overview_rows = [
+        [
+            CATEGORY_LABELS[category],
+            category_counts.get(category, 0),
+            reviewed_counts.get(category, 0),
+        ]
+        for category in CATEGORY_LABELS
+    ]
+    overview_rows.append(["合计", len(valid_items), sum(reviewed_counts.values())])
+    if failed_items:
+        overview_rows.append(["解析失败", len(failed_items), 0])
+    lines.extend(_table(["分类", "文献数", "已核对"], overview_rows))
+    lines.extend(["", "## 文献分类与核心概括", ""])
+    if valid_items:
+        paper_rows = []
+        for item in valid_items:
+            data = item.get("data") or {}
+            category = str(data.get("category") or "other")
+            confidence = str(data.get("confidence") or "").casefold()
+            paper_rows.append(
+                [
+                    labels.get(str(item.get("paper_id") or ""), "—"),
+                    item.get("year") or "—",
+                    item.get("title") or "（无标题）",
+                    CATEGORY_LABELS.get(category, category),
+                    data.get("core_summary") or "未提及",
+                    data.get("rationale") or "未提及",
+                    CONFIDENCE_LABELS.get(confidence, confidence or "—"),
+                    "是" if item.get("reviewed") else "否",
+                    item.get("reviewer_note") or "—",
+                ]
+            )
+        lines.extend(
+            _table(
+                ["序号", "年份", "标题", "分类", "核心概括", "分类理由", "置信度", "已核对", "备注"],
+                paper_rows,
+            )
+        )
+    else:
+        lines.append("暂无成功分析的文献。")
+
+    lines.extend(["", "## 原文依据", ""])
+    evidence_rows = []
+    for item in valid_items:
+        data = item.get("data") or {}
+        quotes = data.get("evidence_quotes") or []
+        checks = item.get("quote_checks") or []
+        label = labels.get(str(item.get("paper_id") or ""), "—")
+        if not quotes:
+            evidence_rows.append([label, item.get("title") or "（无标题）", "未提供原文依据", "—", "—"])
+            continue
+        for index, quote in enumerate(quotes):
+            if not isinstance(quote, dict):
+                quote = {"quote": str(quote)}
+            check = (
+                checks[index]
+                if index < len(checks) and isinstance(checks[index], dict)
+                else {}
+            )
+            evidence_rows.append(
+                [
+                    label,
+                    item.get("title") or "（无标题）",
+                    quote.get("quote") or "—",
+                    quote.get("section") or "—",
+                    _quote_status(check),
+                ]
+            )
+    if evidence_rows:
+        lines.extend(_table(["序号", "标题", "原文依据", "位置", "校验"], evidence_rows))
+    else:
+        lines.append("暂无原文依据。")
+
+    lines.extend(["", "## 研究主题", ""])
+    if themes:
+        lines.extend(
+            _table(
+                ["主题", "概述", "关联文献"],
+                [
+                    [
+                        theme.get("theme") or "未命名主题",
+                        theme.get("summary") or "—",
+                        _format_refs(theme.get("paper_ids"), labels),
+                    ]
+                    for theme in themes
+                ],
+            )
+        )
+    else:
+        lines.append("暂无研究主题汇总。")
+
+    lines.extend(["", "## 研究空白与痛点", ""])
+    if gaps:
+        lines.extend(
+            _table(
+                ["研究空白/痛点", "依据", "关联文献"],
+                [
+                    [
+                        gap.get("gap") or "未命名空白",
+                        gap.get("evidence") or "—",
+                        _format_refs(gap.get("paper_ids"), labels),
+                    ]
+                    for gap in gaps
+                ],
+            )
+        )
+    else:
+        lines.append("暂无研究空白汇总。")
+
+    if failed_items:
+        lines.extend(["", "## 处理失败的文献", ""])
+        lines.extend(
+            _table(
+                ["序号", "标题", "错误"],
+                [
+                    [
+                        labels.get(str(item.get("paper_id") or ""), "—"),
+                        item.get("title") or "（无标题）",
+                        item.get("error") or "无分析结果",
+                    ]
+                    for item in failed_items
+                ],
+            )
+        )
+
+    lines.extend(
+        [
+            "",
+            "---",
+            "",
+            "本报告由 AI 辅助生成，需人工核对；AI 结果不自动改变文献筛选状态。",
+            "",
+        ]
+    )
+    return "\n".join(lines)

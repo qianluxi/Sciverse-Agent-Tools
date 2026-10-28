@@ -1,4 +1,4 @@
-from research_app.field_scan import scan_documents
+from research_app.field_scan import scan_documents, scan_report_markdown
 
 
 class FakeClient:
@@ -68,3 +68,75 @@ def test_scan_documents_isolates_batch_error():
     assert result["themes"] == []
     assert result["gaps"] == []
     assert result["aggregation_error"] is None
+
+
+def test_scan_report_markdown_renders_tables_and_escapes_cells():
+    saved = {
+        "task": {
+            "created_at": "2026-10-28 09:00:00",
+            "model": "test-model",
+            "prompt_version": "field-scan-v1",
+        },
+        "items": [
+            {
+                "paper_id": "paper:a",
+                "title": "Steel | plate wall",
+                "year": 2024,
+                "data": {
+                    "category": "recent_progress",
+                    "core_summary": "Line one\nLine two <script>",
+                    "rationale": "Recent tests",
+                    "confidence": "high",
+                    "evidence_quotes": [
+                        {"quote": "Cyclic tests | validated", "section": "abstract"}
+                    ],
+                },
+                "quote_checks": [{"verified": True}],
+                "reviewed": True,
+                "reviewer_note": "Keep",
+                "error": None,
+            },
+            {
+                "paper_id": "paper:b",
+                "title": "Broken paper",
+                "year": 2020,
+                "data": None,
+                "quote_checks": [],
+                "reviewed": False,
+                "reviewer_note": "",
+                "error": "Model returned invalid JSON",
+            },
+        ],
+        "themes": [
+            {
+                "theme": "Shear walls",
+                "summary": "Theme summary",
+                "paper_ids": ["paper:a"],
+            }
+        ],
+        "gaps": [
+            {
+                "gap": "Long-term data",
+                "evidence": "Limited follow-up",
+                "paper_ids": ["paper:a", "paper:b"],
+            }
+        ],
+    }
+
+    report = scan_report_markdown(
+        saved,
+        project_name="Wall project",
+        project_id="project:1",
+        generated_at="2026-10-28 10:00:00",
+    )
+
+    assert report.startswith("# AI 领域扫描报告")
+    assert "| 近年新进展 | 1 | 1 |" in report
+    assert "Steel \\| plate wall" in report
+    assert "Line one<br>Line two &lt;script&gt;" in report
+    assert "Cyclic tests \\| validated" in report
+    assert "| Shear walls | Theme summary | P1 |" in report
+    assert "| Long-term data | Limited follow-up | P1、P2 |" in report
+    assert "## 处理失败的文献" in report
+    assert "Model returned invalid JSON" in report
+    assert "| P1 | 2024 |" in report

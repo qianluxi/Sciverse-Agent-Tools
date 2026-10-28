@@ -13,6 +13,7 @@ from research_app.field_scan import (
     CATEGORY_LABELS,
     FIELD_SCAN_PROMPT_VERSION,
     scan_documents,
+    scan_report_markdown,
 )
 from research_app.project_ui import project_selector
 
@@ -58,6 +59,15 @@ with st.sidebar:
 if not project_id:
     st.info("请先在“研究项目”页创建或选择一个项目。")
     st.stop()
+
+project_name = next(
+    (
+        project["name"]
+        for project in storage.list_screening_projects()
+        if project["id"] == project_id
+    ),
+    project_id,
+)
 
 base_url = st.session_state["ai_base_url"]
 ai_key = st.session_state["ai_key_session"]
@@ -276,15 +286,34 @@ if saved["gaps"]:
 else:
     st.caption("未生成空白汇总。")
 
-export_payload = {
+report_saved = {
     "task": saved["task"],
-    "items": saved["items"],
+    "items": reviewed_items,
     "themes": saved["themes"],
     "gaps": saved["gaps"],
 }
-st.download_button(
-    "下载领域扫描 JSON",
-    data=(json.dumps(export_payload, ensure_ascii=False, indent=2) + "\n").encode("utf-8"),
-    file_name="sciverse-field-scan.json",
-    mime="application/json",
+markdown_report = scan_report_markdown(
+    report_saved,
+    project_name=project_name,
+    project_id=project_id,
 )
+st.markdown("### 导出报告")
+st.caption("Markdown 报告按表格整理分类概览、文献概括、原文依据、主题和研究空白。")
+download_columns = st.columns(2)
+with download_columns[0]:
+    st.download_button(
+        "下载可读报告（Markdown）",
+        data=markdown_report.encode("utf-8"),
+        file_name="sciverse-field-scan.md",
+        mime="text/markdown",
+        type="primary",
+    )
+with download_columns[1]:
+    st.download_button(
+        "下载原始数据（JSON）",
+        data=(json.dumps(report_saved, ensure_ascii=False, indent=2) + "\n").encode(
+            "utf-8"
+        ),
+        file_name="sciverse-field-scan.json",
+        mime="application/json",
+    )

@@ -1,3 +1,9 @@
+## [1.18.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.17.1...v1.18.0) (2026-10-28)
+
+### Features
+
+* add AI screening suggestions and human review ([78503c8](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/78503c81a5d6b4dd19c8b64c47e1da1215953feb))
+
 ## [1.17.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.17.0...v1.17.1) (2026-10-28)
 
 ### Bug Fixes

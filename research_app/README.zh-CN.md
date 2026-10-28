@@ -131,6 +131,8 @@ OpenCode Go 推荐模型为 `glm-5.3-flash` 或其他走 `/chat/completions` 的
 - 结果保存为项目 AI 任务，和证据版本一样区分 AI 原始输出、人工校订和最终采用
 - 人工可修改分类、概括和备注；扫描结果不会自动修改筛选状态，也不会自动排除文献
 - 可下载按表格排版的 Markdown 报告，包含分类概览、文献概括、原文依据、主题、研究空白和人工备注；同时保留原始 JSON 下载
+- 编辑状态按项目、扫描任务和论文隔离，切换项目不会复用上一项目的表单内容
+- 全部逐篇分析失败时任务标记为失败；部分失败或主题汇总失败会显示原因，并保留成功的逐篇结果
 
 ## Windows 便携版 exe
 
@@ -140,7 +142,7 @@ OpenCode Go 推荐模型为 `glm-5.3-flash` 或其他走 `/chat/completions` 的
 powershell -ExecutionPolicy Bypass -File scripts/build_desktop.ps1
 ```
 
-构建结果位于 `dist/SciverseResearchWorkbench.exe`。双击后会启动本地服务并自动打开浏览器；不需要命令行。首次构建需要安装 PyInstaller，耗时和体积取决于当前 Python 环境。当前产物为 109,375,180 字节（约 104 MB）；本机最新构建首次启动实测约 7.6 秒，干净 Windows 机器可能更慢。onefile 首次启动需要解压，请等待浏览器自动打开。
+构建结果位于 `dist/SciverseResearchWorkbench.exe`。双击后会启动本地服务并自动打开浏览器；不需要命令行。首次构建需要安装 PyInstaller，耗时和体积取决于当前 Python 环境。当前产物为 109,386,035 字节（约 104 MB）；本机最新构建首次启动实测约 7.6 秒，干净 Windows 机器可能更慢。onefile 首次启动需要解压，请等待浏览器自动打开。
 
 AI 页面的 API Key 只在当前会话输入，不写入 exe 或本地数据库；Base URL 和模型名保存在本机 `~/.sciverse/ai-settings.json`。Sciverse Token 仍按原有方式从环境变量或凭据文件读取。
 

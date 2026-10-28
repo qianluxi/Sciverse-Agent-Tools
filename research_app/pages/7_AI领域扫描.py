@@ -157,12 +157,29 @@ if scan_clicked:
         )
         with st.spinner("正在分析领域分类、核心概括和空白…"):
             result = scan_documents(client, documents)
-        storage.finish_ai_task(task_id, status="completed")
+        result_items = result.get("items") or []
+        failed_items = [
+            item for item in result_items if item.get("error") or not item.get("data")
+        ]
+        if not result_items:
+            task_status = "failed"
+            task_error = "扫描未返回任何文献分析结果。"
+        elif len(failed_items) == len(result_items):
+            first_error = next(
+                (item.get("error") for item in failed_items if item.get("error")),
+                "未返回分析结果",
+            )
+            task_status = "failed"
+            task_error = f"全部 {len(result_items)} 篇文献分析失败：{first_error}"
+        else:
+            task_status = "completed"
+            task_error = None
         storage.save_scan_report(
             project_id,
             task_id,
             result["themes"],
             result["gaps"],
+            result.get("aggregation_error"),
         )
         storage.save_evidence_items(
             project_id,
@@ -174,9 +191,10 @@ if scan_clicked:
                     "model": model,
                     "prompt_version": FIELD_SCAN_PROMPT_VERSION,
                 }
-                for item in result["items"]
+                for item in result_items
             ],
         )
+        storage.finish_ai_task(task_id, status=task_status, error=task_error)
         st.session_state["scan_active_task_id"] = task_id
         st.rerun()
     except Exception as error:
@@ -198,13 +216,31 @@ st.caption(
 if saved["task"].get("error"):
     st.error(saved["task"]["error"])
 
+failed_scan_items = [
+    item for item in saved["items"] if item.get("error") or not item.get("data")
+]
+if failed_scan_items and len(failed_scan_items) < len(saved["items"]):
+    first_error = next(
+        (item.get("error") for item in failed_scan_items if item.get("error")),
+        "未返回分析结果",
+    )
+    st.warning(
+        f"部分文献分析失败：{len(failed_scan_items)}/{len(saved['items'])}。"
+        f"首个错误：{first_error}"
+    )
+aggregation_error = saved.get("aggregation_error")
+if aggregation_error:
+    st.warning(f"主题与空白汇总失败，逐篇结果已保留：{aggregation_error}")
+
+task_key = saved["task"]["id"]
 reviewed_items = []
 for item in saved["items"]:
+    field_key = f"{project_id}_{task_key}_{item['paper_id']}"
     data = item.get("data") or {}
     with st.container(border=True):
         st.markdown(f"#### {item['title'] or '（无标题）'}")
-        if item.get("error"):
-            st.error(item["error"])
+        if item.get("error") or not item.get("data"):
+            st.error(item.get("error") or "未返回分析结果。")
             reviewed_items.append(item)
             continue
         category_keys = list(CATEGORY_LABELS)
@@ -216,19 +252,19 @@ for item in saved["items"]:
             category_keys,
             index=category_keys.index(current_category),
             format_func=lambda value: CATEGORY_LABELS[value],
-            key=f"scan_category_{item['paper_id']}",
+            key=f"scan_category_{field_key}",
         )
         summary = st.text_area(
             "核心概括",
             value=str(data.get("core_summary") or ""),
             height=90,
-            key=f"scan_summary_{item['paper_id']}",
+            key=f"scan_summary_{field_key}",
         )
         rationale = st.text_area(
             "分类理由",
             value=str(data.get("rationale") or ""),
             height=70,
-            key=f"scan_rationale_{item['paper_id']}",
+            key=f"scan_rationale_{field_key}",
         )
         quotes = data.get("evidence_quotes") or []
         if quotes:
@@ -238,13 +274,13 @@ for item in saved["items"]:
         reviewed = st.checkbox(
             "我已核对这篇文献的扫描结果",
             value=bool(item.get("reviewed")),
-            key=f"scan_reviewed_{item['paper_id']}",
+            key=f"scan_reviewed_{field_key}",
         )
         note = st.text_area(
             "核对备注",
             value=str(item.get("reviewer_note") or ""),
             height=70,
-            key=f"scan_note_{item['paper_id']}",
+            key=f"scan_note_{field_key}",
         )
         edited_item = {
             **item,
@@ -273,7 +309,7 @@ if saved["themes"]:
         if theme.get("paper_ids"):
             st.caption("来源：" + "、".join(str(value) for value in theme["paper_ids"]))
 else:
-    st.caption("未生成主题汇总。")
+    st.caption("主题汇总失败，未生成主题。" if aggregation_error else "未生成主题汇总。")
 
 st.markdown("### 领域空白与痛点")
 if saved["gaps"]:
@@ -284,13 +320,14 @@ if saved["gaps"]:
         if gap.get("paper_ids"):
             st.caption("相关论文：" + "、".join(str(value) for value in gap["paper_ids"]))
 else:
-    st.caption("未生成空白汇总。")
+    st.caption("空白汇总失败，未生成结果。" if aggregation_error else "未生成空白汇总。")
 
 report_saved = {
     "task": saved["task"],
     "items": reviewed_items,
     "themes": saved["themes"],
     "gaps": saved["gaps"],
+    "aggregation_error": aggregation_error,
 }
 markdown_report = scan_report_markdown(
     report_saved,

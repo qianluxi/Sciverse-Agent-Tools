@@ -65,6 +65,41 @@ def _quote_list(raw: Any) -> list[dict[str, str]]:
     return quotes[:3]
 
 
+def _quote_sources(section: str, title: str, text: str) -> list[str]:
+    section_key = section.casefold()
+    title_markers = ("标题", "题名", "title")
+    text_markers = ("摘要", "abstract", "文本", "text", "正文")
+    is_title = any(marker in section_key for marker in title_markers)
+    is_text = any(marker in section_key for marker in text_markers)
+    if is_title and not is_text:
+        return [title] if title else []
+    if is_text and not is_title:
+        return [text] if text else []
+    return [source for source in (title, text) if source]
+
+
+def _verify_scan_quotes(
+    data: dict[str, Any],
+    title: str,
+    text: str,
+) -> list[dict[str, Any]]:
+    checks = []
+    for quote in data.get("evidence_quotes") or []:
+        quote_data = {"evidence_quotes": [quote]}
+        sources = _quote_sources(str(quote.get("section") or ""), title, text)
+        verified = any(
+            verify_quotes(quote_data, source)[0]["verified"] for source in sources
+        )
+        checks.append(
+            {
+                "quote": str(quote.get("quote") or ""),
+                "section": str(quote.get("section") or ""),
+                "verified": verified,
+            }
+        )
+    return checks
+
+
 def _normalize_item(raw: dict[str, Any], document: dict[str, Any]) -> dict[str, Any]:
     category = str(raw.get("category") or "other").strip().casefold()
     if category not in CATEGORY_LABELS:
@@ -82,7 +117,11 @@ def _normalize_item(raw: dict[str, Any], document: dict[str, Any]) -> dict[str, 
         "title": str(document.get("title") or ""),
         "year": document.get("year"),
         "data": data,
-        "quote_checks": verify_quotes(data, str(document.get("text") or "")),
+        "quote_checks": _verify_scan_quotes(
+            data,
+            str(document.get("title") or ""),
+            str(document.get("text") or ""),
+        ),
         "error": None,
     }
 
@@ -223,9 +262,12 @@ def _cell(value: Any) -> str:
     text = str("" if value is None else value).strip()
     if not text:
         return "—"
-    text = text.replace("\\", "\\\\").replace("|", "\\|")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = text.replace("\\", "\\\\")
+    for character in ("`", "*", "_", "[", "]", "#", "!", "~", "|"):
+        text = text.replace(character, "\\" + character)
     text = html.escape(text, quote=False)
-    return text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "<br>")
+    return text.replace("\n", "<br>")
 
 
 def _table(headers: list[str], rows: list[list[Any]]) -> list[str]:
@@ -241,7 +283,7 @@ def _quote_status(check: dict[str, Any]) -> str:
     if check.get("verified") is True:
         return "已校验"
     if check.get("verified") is False:
-        return "未通过"
+        return "未匹配，需人工核对"
     return "未校验"
 
 
@@ -263,6 +305,7 @@ def scan_report_markdown(
     themes = [item for item in saved.get("themes") or [] if isinstance(item, dict)]
     gaps = [item for item in saved.get("gaps") or [] if isinstance(item, dict)]
     generated = generated_at or datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+    aggregation_error = saved.get("aggregation_error")
 
     def sort_key(item: dict[str, Any]) -> tuple[int, str, str]:
         data = item.get("data") or {}
@@ -301,8 +344,10 @@ def scan_report_markdown(
                 ["研究项目", project_name or project_id or "未指定"],
                 ["项目 ID", project_id or "—"],
                 ["扫描时间", task.get("created_at") or "—"],
+                ["任务状态", task.get("status") or "—"],
                 ["模型", task.get("model") or "—"],
                 ["提示词版本", task.get("prompt_version") or "—"],
+                ["汇总状态", f"失败：{aggregation_error}" if aggregation_error else "正常"],
                 ["报告生成时间", generated],
             ],
         ),

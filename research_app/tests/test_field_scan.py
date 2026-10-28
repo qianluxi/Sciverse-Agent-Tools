@@ -59,6 +59,35 @@ def test_scan_documents_classifies_summarizes_and_finds_gaps():
     assert result["aggregation_error"] is None
 
 
+def test_scan_documents_verifies_quotes_against_the_referenced_section():
+    documents = [
+        {
+            "paper_id": "paper:title",
+            "title": "Unique title phrase for shear walls",
+            "year": 2024,
+            "text": "The abstract contains a different sentence.",
+        }
+    ]
+    client = FakeClient(
+        [
+            '{"papers":[{"paper_id":"paper:title","category":"recent_progress",'
+            '"core_summary":"标题研究。","rationale":"标题命中。","confidence":"high",'
+            '"evidence_quotes":['
+            '{"quote":"Unique title phrase","section":"标题"},'
+            '{"quote":"Unique title phrase","section":"摘要"},'
+            '{"quote":"Unique title phrase","section":""}]}]}',
+            '{"themes":[],"gaps":[]}',
+        ]
+    )
+
+    result = scan_documents(client, documents)
+
+    checks = result["items"][0]["quote_checks"]
+    assert checks[0]["verified"] is True
+    assert checks[1]["verified"] is False
+    assert checks[2]["verified"] is True
+
+
 def test_scan_documents_isolates_batch_error():
     client = FakeClient(["not json"])
 
@@ -74,9 +103,11 @@ def test_scan_report_markdown_renders_tables_and_escapes_cells():
     saved = {
         "task": {
             "created_at": "2026-10-28 09:00:00",
+            "status": "completed",
             "model": "test-model",
             "prompt_version": "field-scan-v1",
         },
+        "aggregation_error": "summary failed",
         "items": [
             {
                 "paper_id": "paper:a",
@@ -131,6 +162,8 @@ def test_scan_report_markdown_renders_tables_and_escapes_cells():
     )
 
     assert report.startswith("# AI 领域扫描报告")
+    assert "| 任务状态 | completed |" in report
+    assert "| 汇总状态 | 失败：summary failed |" in report
     assert "| 近年新进展 | 1 | 1 |" in report
     assert "Steel \\| plate wall" in report
     assert "Line one<br>Line two &lt;script&gt;" in report
@@ -140,3 +173,40 @@ def test_scan_report_markdown_renders_tables_and_escapes_cells():
     assert "## 处理失败的文献" in report
     assert "Model returned invalid JSON" in report
     assert "| P1 | 2024 |" in report
+
+
+def test_scan_report_markdown_escapes_markdown_syntax():
+    saved = {
+        "task": {
+            "created_at": "2026-10-28 09:00:00",
+            "model": "test-model",
+            "prompt_version": "field-scan-v1",
+        },
+        "items": [
+            {
+                "paper_id": "paper:a",
+                "title": "[link](https://example.com) ![img](x) `code`",
+                "year": 2024,
+                "data": {
+                    "category": "method",
+                    "core_summary": "_italic_",
+                    "rationale": "plain",
+                    "confidence": "medium",
+                    "evidence_quotes": [],
+                },
+                "quote_checks": [],
+                "reviewed": False,
+                "reviewer_note": "",
+                "error": None,
+            }
+        ],
+        "themes": [],
+        "gaps": [],
+    }
+
+    report = scan_report_markdown(saved, generated_at="2026-10-28 10:00:00")
+
+    assert "\\[link\\](https://example.com)" in report
+    assert "\\!\\[img\\](x)" in report
+    assert "\\`code\\`" in report
+    assert "\\_italic\\_" in report

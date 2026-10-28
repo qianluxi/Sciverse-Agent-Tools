@@ -23,7 +23,7 @@ from research_app.screening import (
 )
 
 
-_SCHEMA_VERSION = 7
+_SCHEMA_VERSION = 8
 _BACKUP_SCHEMA_VERSION = 2
 _MAX_HISTORY_ENTRIES = 50
 _MAX_SNAPSHOT_BYTES = 5 * 1024 * 1024
@@ -313,6 +313,19 @@ def _migrate(connection: sqlite3.Connection) -> None:
         )
         version = 7
         connection.execute("PRAGMA user_version = 7")
+    if version < 8:
+        report_columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(ai_scan_reports)"
+            ).fetchall()
+        }
+        if "aggregation_error" not in report_columns:
+            connection.execute(
+                "ALTER TABLE ai_scan_reports ADD COLUMN aggregation_error TEXT"
+            )
+        version = 8
+        connection.execute("PRAGMA user_version = 8")
 
 
 @contextmanager
@@ -1875,6 +1888,7 @@ def save_scan_report(
     task_id: str,
     themes: list[dict[str, Any]],
     gaps: list[dict[str, Any]],
+    aggregation_error: str | None = None,
 ) -> None:
     now = _timestamp()
     with _connection() as connection:
@@ -1887,17 +1901,20 @@ def save_scan_report(
             raise ValueError("AI 扫描任务不存在。")
         connection.execute(
             """INSERT INTO ai_scan_reports(
-                   project_id, task_id, themes_json, gaps_json, created_at, updated_at
-               ) VALUES (?, ?, ?, ?, ?, ?)
+                   project_id, task_id, themes_json, gaps_json, aggregation_error,
+                   created_at, updated_at
+               ) VALUES (?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(task_id) DO UPDATE SET
                    themes_json = excluded.themes_json,
                    gaps_json = excluded.gaps_json,
+                   aggregation_error = excluded.aggregation_error,
                    updated_at = excluded.updated_at""",
             (
                 project_id,
                 task_id,
                 json.dumps(themes, ensure_ascii=False),
                 json.dumps(gaps, ensure_ascii=False),
+                aggregation_error,
                 now,
                 now,
             ),
@@ -1949,6 +1966,7 @@ def load_latest_scan(project_id: str) -> dict[str, Any] | None:
         "items": items,
         "themes": json.loads(report["themes_json"]) if report else [],
         "gaps": json.loads(report["gaps_json"]) if report else [],
+        "aggregation_error": report["aggregation_error"] if report else None,
     }
 
 

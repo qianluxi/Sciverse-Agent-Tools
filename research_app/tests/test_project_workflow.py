@@ -296,6 +296,7 @@ def test_field_scan_results_and_report_persist(monkeypatch, tmp_path):
         task_id,
         [{"theme": "剪力墙", "summary": "主题", "paper_ids": ["paper:a"]}],
         [{"gap": "缺少长期数据", "evidence": "样本有限", "paper_ids": ["paper:a"]}],
+        aggregation_error="summary failed",
     )
 
     saved = storage.load_latest_scan(project_id)
@@ -305,6 +306,7 @@ def test_field_scan_results_and_report_persist(monkeypatch, tmp_path):
     assert saved["items"][0]["reviewed"] is True
     assert saved["themes"][0]["theme"] == "剪力墙"
     assert saved["gaps"][0]["gap"] == "缺少长期数据"
+    assert saved["aggregation_error"] == "summary failed"
 
 
 def test_ai_evidence_persists_raw_and_final_versions(monkeypatch, tmp_path):
@@ -606,16 +608,20 @@ def test_delete_project_cascades_all_project_data(monkeypatch, tmp_path):
             assert count == 0
 
 
-def test_schema_v7_tables_are_created(monkeypatch, tmp_path):
+def test_schema_v8_tables_are_created(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     _project()
     with storage._connection() as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 8
         tables = {
             row[0]
             for row in connection.execute(
                 "SELECT name FROM sqlite_master WHERE type = 'table'"
             )
+        }
+        report_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(ai_scan_reports)")
         }
     assert {
         "search_runs",
@@ -625,3 +631,4 @@ def test_schema_v7_tables_are_created(monkeypatch, tmp_path):
         "project_import_events",
         "ai_scan_reports",
     } <= tables
+    assert "aggregation_error" in report_columns

@@ -23,7 +23,7 @@ from research_app.screening import (
 )
 
 
-_SCHEMA_VERSION = 6
+_SCHEMA_VERSION = 7
 _BACKUP_SCHEMA_VERSION = 2
 _MAX_HISTORY_ENTRIES = 50
 _MAX_SNAPSHOT_BYTES = 5 * 1024 * 1024
@@ -298,6 +298,21 @@ def _migrate(connection: sqlite3.Connection) -> None:
         )
         version = 6
         connection.execute("PRAGMA user_version = 6")
+    if version < 7:
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS ai_scan_reports (
+                project_id TEXT NOT NULL REFERENCES screening_projects(id) ON DELETE CASCADE,
+                task_id TEXT PRIMARY KEY REFERENCES ai_task_runs(id) ON DELETE CASCADE,
+                themes_json TEXT NOT NULL DEFAULT '[]',
+                gaps_json TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            """
+        )
+        version = 7
+        connection.execute("PRAGMA user_version = 7")
 
 
 @contextmanager
@@ -1852,6 +1867,88 @@ def rebuild_project_statistics(project_id: str, *, apply: bool = False) -> dict[
         },
         "applied": apply,
         "backup_path": backup_path,
+    }
+
+
+def save_scan_report(
+    project_id: str,
+    task_id: str,
+    themes: list[dict[str, Any]],
+    gaps: list[dict[str, Any]],
+) -> None:
+    now = _timestamp()
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        task = connection.execute(
+            "SELECT 1 FROM ai_task_runs WHERE id = ? AND project_id = ?",
+            (task_id, project_id),
+        ).fetchone()
+        if task is None:
+            raise ValueError("AI 扫描任务不存在。")
+        connection.execute(
+            """INSERT INTO ai_scan_reports(
+                   project_id, task_id, themes_json, gaps_json, created_at, updated_at
+               ) VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(task_id) DO UPDATE SET
+                   themes_json = excluded.themes_json,
+                   gaps_json = excluded.gaps_json,
+                   updated_at = excluded.updated_at""",
+            (
+                project_id,
+                task_id,
+                json.dumps(themes, ensure_ascii=False),
+                json.dumps(gaps, ensure_ascii=False),
+                now,
+                now,
+            ),
+        )
+
+
+def load_latest_scan(project_id: str) -> dict[str, Any] | None:
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        task = connection.execute(
+            """SELECT * FROM ai_task_runs
+               WHERE project_id = ? AND kind = 'field_scan'
+               ORDER BY created_at DESC, id DESC LIMIT 1""",
+            (project_id,),
+        ).fetchone()
+        if task is None:
+            return None
+        rows = connection.execute(
+            """SELECT * FROM evidence_items
+               WHERE project_id = ? AND task_id = ?
+               ORDER BY title, paper_id""",
+            (project_id, task["id"]),
+        ).fetchall()
+        report = connection.execute(
+            "SELECT * FROM ai_scan_reports WHERE task_id = ?",
+            (task["id"],),
+        ).fetchone()
+    items = []
+    for row in rows:
+        items.append(
+            {
+                "paper_id": row["paper_id"],
+                "title": row["title"],
+                "year": row["year"],
+                "data": json.loads(
+                    row["final_json"] if row["review_status"] else row["reviewed_json"]
+                ),
+                "raw_data": json.loads(row["raw_json"]),
+                "quote_checks": json.loads(row["quote_checks_json"]),
+                "reviewed": bool(row["review_status"]),
+                "reviewer_note": row["reviewer_note"],
+                "model": row["model"],
+                "prompt_version": row["prompt_version"],
+                "error": row["error"],
+            }
+        )
+    return {
+        "task": dict(task),
+        "items": items,
+        "themes": json.loads(report["themes_json"]) if report else [],
+        "gaps": json.loads(report["gaps_json"]) if report else [],
     }
 
 

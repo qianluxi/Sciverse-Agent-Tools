@@ -259,6 +259,54 @@ def test_conflict_candidate_keeps_source_run(monkeypatch, tmp_path):
     assert source["run_id"] == run["id"]
 
 
+def test_field_scan_results_and_report_persist(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    project_id = _project()
+    task_id = storage.create_ai_task(
+        project_id,
+        kind="field_scan",
+        model="test-model",
+        prompt_version="field-scan-v1",
+        input_hash="scan-hash",
+    )
+    storage.save_evidence_items(
+        project_id,
+        task_id,
+        [
+            {
+                "paper_id": "paper:a",
+                "title": "Classic paper",
+                "year": 2002,
+                "data": {
+                    "category": "foundational",
+                    "core_summary": "经典研究。",
+                    "rationale": "早期工作。",
+                    "confidence": "high",
+                    "evidence_quotes": [],
+                },
+                "reviewed": True,
+                "reviewer_note": "checked",
+                "model": "test-model",
+                "prompt_version": "field-scan-v1",
+            }
+        ],
+    )
+    storage.save_scan_report(
+        project_id,
+        task_id,
+        [{"theme": "剪力墙", "summary": "主题", "paper_ids": ["paper:a"]}],
+        [{"gap": "缺少长期数据", "evidence": "样本有限", "paper_ids": ["paper:a"]}],
+    )
+
+    saved = storage.load_latest_scan(project_id)
+
+    assert saved is not None
+    assert saved["items"][0]["data"]["category"] == "foundational"
+    assert saved["items"][0]["reviewed"] is True
+    assert saved["themes"][0]["theme"] == "剪力墙"
+    assert saved["gaps"][0]["gap"] == "缺少长期数据"
+
+
 def test_ai_evidence_persists_raw_and_final_versions(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     project_id = _project()
@@ -549,6 +597,7 @@ def test_delete_project_cascades_all_project_data(monkeypatch, tmp_path):
             "ai_task_runs",
             "evidence_items",
             "project_import_events",
+            "ai_scan_reports",
         ):
             count = connection.execute(
                 f"SELECT COUNT(*) FROM {table} WHERE project_id = ?",
@@ -557,11 +606,11 @@ def test_delete_project_cascades_all_project_data(monkeypatch, tmp_path):
             assert count == 0
 
 
-def test_schema_v6_tables_are_created(monkeypatch, tmp_path):
+def test_schema_v7_tables_are_created(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     _project()
     with storage._connection() as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 7
         tables = {
             row[0]
             for row in connection.execute(
@@ -574,4 +623,5 @@ def test_schema_v6_tables_are_created(monkeypatch, tmp_path):
         "ai_task_runs",
         "evidence_items",
         "project_import_events",
+        "ai_scan_reports",
     } <= tables

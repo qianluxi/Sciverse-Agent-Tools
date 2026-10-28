@@ -48,6 +48,7 @@ python3 -m streamlit run research_app/app.py
 9. 左侧“趋势分析”：可选择当前会话结果或项目最近检索快照，统计年份、期刊、作者、学科、关键词、高被引和增长关键词；条件筛选可扩展到最多 5 页，页面显示样本量、请求次数、缺失率和截断风险，并导出统计 ZIP 或 PNG。切换项目或数据源会清除旧扩展样本；分析结果属于本页独立分析，不自动写入项目。若重复记录存在强标识符冲突，会保留为独立样本并提示人工核对。
 10. 左侧“图表证据板”：可选择当前会话结果或项目最近检索快照，从最多 5 篇有全文记录的论文中提取图表（每篇最多 4 张），为每张图添加备注，并导出证据清单 CSV 或图片 ZIP。图表提取结果属于本页独立分析，不自动写入项目；是否能读以实际读取结果为准，`is_content_accessible=false` 的论文也可以尝试，单个失败不会阻塞其他结果。
 11. 左侧“AI 证据与提纲”：从最近使用的 Base URL 中选择或填写自定义 OpenAI 兼容服务，配置 API Key 和模型名；从最多 5 篇论文中提取研究问题、方法、样本、发现、局限和引文，自动比对引句，逐篇人工核对/备注后导出证据表 CSV/Markdown，再生成带来源标注的 Markdown 综述提纲。API Key 只在当前会话使用。
+12. 左侧“AI 领域扫描”：从当前搜索结果或项目最近检索快照选择最多 20 篇论文，按奠基/经典、近年进展、方法、应用、综述等类别分类，生成每篇 2–3 句核心概括、原文依据、领域主题和空白/痛点；结果保存为项目 AI 任务，可人工编辑、核对和导出 JSON。扫描结果不会自动改变筛选决定。
 
 ## 运行离线测试
 
@@ -120,6 +121,16 @@ python -m research_app.maintenance rebuild-stats --project-id <项目ID> --apply
 
 OpenCode Go 推荐模型为 `glm-5.3-flash` 或其他走 `/chat/completions` 的非推理模型 ID（不要加 `opencode-go/` 前缀）。客户端会自动发送稳定的 `x-opencode-session` 会话头和专用 User-Agent。若反复出现 `finish_reason=length` 和空内容，说明推理过程耗尽了输出预算，应换用非推理模型。
 
+## AI 领域扫描
+
+“AI 领域扫描”使用同一套 OpenAI 兼容配置，从当前会话或项目检索快照中选择最多 20 篇带摘要的论文：
+
+- 逐篇分类为奠基/经典、近年进展、方法、应用、综述或其他
+- 生成 2–3 句核心概括、分类理由、原文依据和置信度
+- 汇总领域主题、研究空白和痛点，并尽量绑定论文 ID
+- 结果保存为项目 AI 任务，和证据版本一样区分 AI 原始输出、人工校订和最终采用
+- 人工可修改分类、概括和备注；扫描结果不会自动修改筛选状态，也不会自动排除文献
+
 ## Windows 便携版 exe
 
 需要构建便携版时，在仓库根目录运行：
@@ -128,7 +139,7 @@ OpenCode Go 推荐模型为 `glm-5.3-flash` 或其他走 `/chat/completions` 的
 powershell -ExecutionPolicy Bypass -File scripts/build_desktop.ps1
 ```
 
-构建结果位于 `dist/SciverseResearchWorkbench.exe`。双击后会启动本地服务并自动打开浏览器；不需要命令行。首次构建需要安装 PyInstaller，耗时和体积取决于当前 Python 环境。当前产物为 109,291,295 字节（约 104 MB）；本机最新构建首次启动实测约 7.6 秒，干净 Windows 机器可能更慢。onefile 首次启动需要解压，请等待浏览器自动打开。
+构建结果位于 `dist/SciverseResearchWorkbench.exe`。双击后会启动本地服务并自动打开浏览器；不需要命令行。首次构建需要安装 PyInstaller，耗时和体积取决于当前 Python 环境。当前产物为 109,314,428 字节（约 104 MB）；本机最新构建首次启动实测约 7.6 秒，干净 Windows 机器可能更慢。onefile 首次启动需要解压，请等待浏览器自动打开。
 
 AI 页面的 API Key 只在当前会话输入，不写入 exe 或本地数据库；Base URL 和模型名保存在本机 `~/.sciverse/ai-settings.json`。Sciverse Token 仍按原有方式从环境变量或凭据文件读取。
 

@@ -1,3 +1,9 @@
+## [1.16.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.15.0...v1.16.0) (2026-10-28)
+
+### Features
+
+* add AI field scan for project research ([26a741b](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/26a741bfd0e6af42777fbb7f99b0071f4eebb61e))
+
 ## [1.15.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.14.1...v1.15.0) (2026-10-28)
 
 ### Features

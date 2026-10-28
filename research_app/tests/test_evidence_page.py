@@ -4,6 +4,7 @@ from pathlib import Path
 from streamlit.testing.v1 import AppTest
 
 import research_app.service as service
+import research_app.storage as storage
 import sciverse.credentials
 
 
@@ -52,3 +53,34 @@ def test_evidence_page_extracts_figures_offline(monkeypatch):
     assert app.session_state["evidence_requests"] == 3
     download_labels = {button.label for button in app.get("download_button")}
     assert {"下载证据清单 CSV", "下载图表 ZIP"} <= download_labels
+
+
+def test_evidence_source_switch_clears_old_results(monkeypatch, tmp_path):
+    monkeypatch.setattr(storage, "database_path", lambda: tmp_path / "workbench.sqlite3")
+    monkeypatch.setattr(sciverse.credentials, "resolve_token", lambda *_args: "test-token")
+    project_id = storage.create_screening_project("Evidence project", "Q", "I", "E")
+    storage.save_search_run(
+        project_id,
+        "structured",
+        {"query": "project", "page": 1, "page_size": 20},
+        [{"title": "Project paper", "doc_id": "doc-project"}],
+        1,
+    )
+    app = AppTest.from_file(str(PAGE_PATH), default_timeout=30)
+    app.session_state["current_project_id"] = project_id
+    app.session_state["figure_project_selector"] = project_id
+    app.session_state["papers"] = [
+        {"title": "Session paper", "doc_id": "doc-session"}
+    ]
+    app.run(timeout=30)
+    app.session_state["evidence_items"] = [{"file_name": "old.png", "image": b"x"}]
+    app.session_state["evidence_errors"] = ["old error"]
+    app.session_state["evidence_requests"] = 3
+    next(radio for radio in app.radio if radio.label == "数据来源").set_value(
+        "项目最近检索快照"
+    ).run(timeout=30)
+
+    assert not app.exception
+    assert "evidence_items" not in app.session_state
+    assert "evidence_errors" not in app.session_state
+    assert "evidence_requests" not in app.session_state

@@ -44,7 +44,14 @@ data_source = source_options[0]
 if len(source_options) > 1:
     data_source = st.radio("分析数据源", source_options, horizontal=True)
 
-source_key = f"{project_id}:{data_source}"
+if data_source == "项目最近检索快照" and project_run:
+    source_key = f"{project_id}:project:{project_run['id']}"
+else:
+    source_key = (
+        f"{project_id}:session:"
+        f"{st.session_state.get('current_search_run_id') or 'no-run'}:"
+        f"{st.session_state.get('search_params', {})}"
+    )
 if st.session_state.get("trend_source_key") != source_key:
     st.session_state["trend_source_key"] = source_key
     for key in ("trend_sample", "trend_source", "trend_requests", "trend_truncated"):
@@ -122,7 +129,12 @@ if extend_clicked and token and search_kind == "structured":
             else:
                 truncated = True
         st.session_state["trend_sample"] = all_papers
-        st.session_state["trend_source"] = f"当前检索结果 + 扩展 {requests_made} 页"
+        base_label = (
+            "项目最近检索快照"
+            if data_source == "项目最近检索快照"
+            else "当前会话检索结果"
+        )
+        st.session_state["trend_source"] = f"{base_label} + 扩展 {requests_made} 页"
         st.session_state["trend_requests"] = requests_made
         st.session_state["trend_truncated"] = truncated
         st.rerun()

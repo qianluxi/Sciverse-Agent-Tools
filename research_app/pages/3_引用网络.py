@@ -152,10 +152,17 @@ if len(source_options) > 1:
     data_source = st.radio("数据来源", source_options, horizontal=True)
 if data_source == "项目最近检索快照" and project_run:
     papers = project_run["papers"]
+    source_key = f"{project_id}:project:{project_run['id']}"
     st.caption("当前使用项目检索快照；引用网络结果属于本页独立分析，不自动写入项目。")
 else:
     papers = session_papers
+    session_run_id = st.session_state.get("current_search_run_id") or "no-run"
+    session_params = st.session_state.get("search_params", {})
+    source_key = f"{project_id}:session:{session_run_id}:{session_params}"
     st.caption("当前使用会话检索结果；引用网络结果属于本页独立分析，不自动写入项目。")
+if st.session_state.get("network_source_key") != source_key:
+    st.session_state["network_source_key"] = source_key
+    _reset_network()
 paper_options = [paper for paper in papers if paper.get("unique_id")]
 center_mode = st.radio("中心来源", ["当前检索结果", "手动输入"], horizontal=True)
 center_paper: dict[str, Any] | None = None

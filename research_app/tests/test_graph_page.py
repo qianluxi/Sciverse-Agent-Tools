@@ -3,6 +3,7 @@ from pathlib import Path
 from streamlit.testing.v1 import AppTest
 
 import research_app.service as service
+import research_app.storage as storage
 import sciverse.credentials
 
 
@@ -79,3 +80,40 @@ def test_graph_page_loads_and_exports_network(monkeypatch):
     assert "Journal A" in str(app.dataframe[0].value)
     assert "2022" in str(app.dataframe[0].value)
     assert any(metric.value == "3" for metric in app.metric if metric.label == "元数据请求次数")
+
+
+def test_graph_source_switch_clears_saved_network(monkeypatch, tmp_path):
+    monkeypatch.setattr(storage, "database_path", lambda: tmp_path / "workbench.sqlite3")
+    monkeypatch.setattr(sciverse.credentials, "resolve_token", lambda *_args: "test-token")
+    project_id = storage.create_screening_project("Graph project", "Q", "I", "E")
+    storage.save_search_run(
+        project_id,
+        "structured",
+        {"query": "project", "page": 1, "page_size": 20},
+        [{"title": "Project center", "unique_id": "paper:project"}],
+        1,
+    )
+
+    def fake_call_api(token, action, **kwargs):
+        return {"items": []}
+
+    monkeypatch.setattr(service, "call_api", fake_call_api)
+    app = AppTest.from_file(str(PAGE_PATH), default_timeout=30)
+    app.session_state["current_project_id"] = project_id
+    app.session_state["graph_project_selector"] = project_id
+    app.session_state["papers"] = [
+        {"title": "Session center", "unique_id": "paper:session"}
+    ]
+    app.run(timeout=30)
+    next(button for button in app.button if button.label == "加载一层引用网络").click().run(
+        timeout=30
+    )
+    assert "network_nodes" in app.session_state
+
+    next(radio for radio in app.radio if radio.label == "数据来源").set_value(
+        "项目最近检索快照"
+    ).run(timeout=30)
+
+    assert not app.exception
+    assert "network_nodes" not in app.session_state
+    assert ":project:" in app.session_state["network_source_key"]

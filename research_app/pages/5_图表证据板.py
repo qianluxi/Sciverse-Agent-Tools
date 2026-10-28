@@ -53,7 +53,14 @@ papers = (
     if data_source == "项目最近检索快照" and project_run
     else session_papers
 )
-source_key = f"{project_id}:{data_source}"
+if data_source == "项目最近检索快照" and project_run:
+    source_key = f"{project_id}:project:{project_run['id']}"
+else:
+    source_key = (
+        f"{project_id}:session:"
+        f"{st.session_state.get('current_search_run_id') or 'no-run'}:"
+        f"{st.session_state.get('search_params', {})}"
+    )
 if st.session_state.get("figure_source_key") != source_key:
     st.session_state["figure_source_key"] = source_key
     for key in ("evidence_items", "evidence_errors", "evidence_requests"):

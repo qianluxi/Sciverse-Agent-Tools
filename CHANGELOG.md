@@ -1,3 +1,9 @@
+## [1.15.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.14.1...v1.15.0) (2026-10-28)
+
+### Features
+
+* add AI title translation and project snapshot sources ([61d857f](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/61d857fb3047eba314a77b8fde0ea13db5687eaf))
+
 ## [1.14.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.14.0...v1.14.1) (2026-10-28)
 
 ### Bug Fixes

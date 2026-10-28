@@ -1,3 +1,9 @@
+## [1.14.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.14.0...v1.14.1) (2026-10-28)
+
+### Bug Fixes
+
+* reset analysis state on project source changes ([ea43aeb](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/ea43aeb4bdefc08938e2814e48518075f0f69209))
+
 ## [1.14.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.13.0...v1.14.0) (2026-10-27)
 
 ### Features

@@ -309,6 +309,86 @@ def test_field_scan_results_and_report_persist(monkeypatch, tmp_path):
     assert saved["aggregation_error"] == "summary failed"
 
 
+def test_ai_screening_suggestions_and_human_review_are_audited(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    project_id = _project()
+    storage.add_screening_candidates(
+        project_id,
+        [
+            {
+                "title": "Eligible study",
+                "unique_id": "paper:a",
+                "abstract": "Randomized trial of the intervention.",
+            }
+        ],
+    )
+    task_id = storage.create_ai_task(
+        project_id,
+        kind="screening",
+        model="test-model",
+        prompt_version="screening-v1",
+        input_hash="screening-hash",
+    )
+    storage.save_screening_suggestions(
+        project_id,
+        task_id,
+        [
+            {
+                "candidate_key": "uid:paper:a",
+                "paper_id": "paper:a",
+                "title": "Eligible study",
+                "year": 2024,
+                "suggestion": "include",
+                "criteria": ["研究类型符合"],
+                "rationale": "Randomized trial",
+                "confidence": "high",
+                "evidence_quotes": [
+                    {"quote": "Randomized trial", "section": "摘要"}
+                ],
+                "quote_checks": [
+                    {"quote": "Randomized trial", "section": "摘要", "verified": True}
+                ],
+            }
+        ],
+    )
+
+    loaded = storage.load_latest_screening_suggestions(project_id)
+    assert loaded is not None
+    assert loaded["task"]["kind"] == "screening"
+    assert loaded["suggestions"][0]["criteria"] == ["研究类型符合"]
+    assert loaded["suggestions"][0]["review_status"] == "pending"
+    candidates = storage.list_all_screening_candidates(project_id)
+    assert candidates[0]["abstract"] == "Randomized trial of the intervention."
+
+    storage.set_screening_decision(
+        project_id,
+        "uid:paper:a",
+        "included",
+        ai_task_id=task_id,
+        ai_action="accepted",
+    )
+    storage.review_screening_suggestion(
+        project_id,
+        task_id,
+        "uid:paper:a",
+        "accepted",
+        review_decision="included",
+        note="checked",
+    )
+
+    loaded = storage.load_latest_screening_suggestions(project_id)
+    assert loaded["suggestions"][0]["review_status"] == "accepted"
+    assert loaded["suggestions"][0]["review_decision"] == "included"
+    assert loaded["suggestions"][0]["review_note"] == "checked"
+    audit = storage.list_screening_audit(project_id)
+    assert audit[0]["new_status"] == "included"
+    assert audit[0]["ai_task_id"] == task_id
+    assert audit[0]["ai_action"] == "accepted"
+    manifest = json.loads(storage.project_manifest(project_id))
+    assert manifest["summary"]["ai_screening_suggestions_exported"] == 1
+    assert manifest["ai_screening_suggestions"][0]["review_status"] == "accepted"
+
+
 def test_ai_evidence_persists_raw_and_final_versions(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     project_id = _project()
@@ -600,6 +680,7 @@ def test_delete_project_cascades_all_project_data(monkeypatch, tmp_path):
             "evidence_items",
             "project_import_events",
             "ai_scan_reports",
+            "ai_screening_suggestions",
         ):
             count = connection.execute(
                 f"SELECT COUNT(*) FROM {table} WHERE project_id = ?",
@@ -608,11 +689,11 @@ def test_delete_project_cascades_all_project_data(monkeypatch, tmp_path):
             assert count == 0
 
 
-def test_schema_v8_tables_are_created(monkeypatch, tmp_path):
+def test_schema_v9_tables_are_created(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     _project()
     with storage._connection() as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 8
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 9
         tables = {
             row[0]
             for row in connection.execute(
@@ -623,6 +704,14 @@ def test_schema_v8_tables_are_created(monkeypatch, tmp_path):
             row["name"]
             for row in connection.execute("PRAGMA table_info(ai_scan_reports)")
         }
+        candidate_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(screening_candidates)")
+        }
+        audit_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(screening_audit)")
+        }
     assert {
         "search_runs",
         "screening_candidate_sources",
@@ -630,5 +719,8 @@ def test_schema_v8_tables_are_created(monkeypatch, tmp_path):
         "evidence_items",
         "project_import_events",
         "ai_scan_reports",
+        "ai_screening_suggestions",
     } <= tables
     assert "aggregation_error" in report_columns
+    assert "abstract" in candidate_columns
+    assert {"ai_task_id", "ai_action"} <= audit_columns

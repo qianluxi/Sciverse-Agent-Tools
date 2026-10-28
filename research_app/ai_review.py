@@ -94,6 +94,42 @@ def verify_quotes(data: dict[str, Any], source_text: str) -> list[dict[str, Any]
     return checks
 
 
+def quote_sources(section: str, title: str, text: str) -> list[str]:
+    section_key = section.casefold()
+    title_markers = ("标题", "题名", "title")
+    text_markers = ("摘要", "abstract", "文本", "text", "正文")
+    is_title = any(marker in section_key for marker in title_markers)
+    is_text = any(marker in section_key for marker in text_markers)
+    if is_title and not is_text:
+        return [title] if title else []
+    if is_text and not is_title:
+        return [text] if text else []
+    return [source for source in (title, text) if source]
+
+
+def verify_quotes_with_sections(
+    data: dict[str, Any],
+    title: str,
+    text: str,
+) -> list[dict[str, Any]]:
+    checks = []
+    for quote in data.get("evidence_quotes") or []:
+        quote_data = {"evidence_quotes": [quote]}
+        section = _text(quote.get("section")) if isinstance(quote, dict) else ""
+        sources = quote_sources(section, title, text)
+        verified = any(
+            verify_quotes(quote_data, source)[0]["verified"] for source in sources
+        )
+        checks.append(
+            {
+                "quote": _text(quote.get("quote")) if isinstance(quote, dict) else "",
+                "section": section,
+                "verified": verified,
+            }
+        )
+    return checks
+
+
 def quote_status(check: dict[str, Any]) -> str:
     if not check:
         return "未提供自动校验"

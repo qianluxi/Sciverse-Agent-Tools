@@ -254,6 +254,11 @@ with audit_tab:
                     "新原因": item["new_reason"] or "",
                     "原备注": item["old_notes"] or "",
                     "新备注": item["new_notes"] or "",
+                    "AI 处理": {
+                        "accepted": "采用建议",
+                        "modified": "人工改判",
+                    }.get(item.get("ai_action"), ""),
+                    "AI 任务": item.get("ai_task_id") or "",
                 }
                 for item in audit
             ],

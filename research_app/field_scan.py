@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from research_app.ai import AIError, OpenAICompatibleClient, parse_json_object
-from research_app.ai_review import verify_quotes
+from research_app.ai_review import verify_quotes_with_sections
 
 
 FIELD_SCAN_PROMPT_VERSION = "field-scan-v1"
@@ -65,41 +65,6 @@ def _quote_list(raw: Any) -> list[dict[str, str]]:
     return quotes[:3]
 
 
-def _quote_sources(section: str, title: str, text: str) -> list[str]:
-    section_key = section.casefold()
-    title_markers = ("标题", "题名", "title")
-    text_markers = ("摘要", "abstract", "文本", "text", "正文")
-    is_title = any(marker in section_key for marker in title_markers)
-    is_text = any(marker in section_key for marker in text_markers)
-    if is_title and not is_text:
-        return [title] if title else []
-    if is_text and not is_title:
-        return [text] if text else []
-    return [source for source in (title, text) if source]
-
-
-def _verify_scan_quotes(
-    data: dict[str, Any],
-    title: str,
-    text: str,
-) -> list[dict[str, Any]]:
-    checks = []
-    for quote in data.get("evidence_quotes") or []:
-        quote_data = {"evidence_quotes": [quote]}
-        sources = _quote_sources(str(quote.get("section") or ""), title, text)
-        verified = any(
-            verify_quotes(quote_data, source)[0]["verified"] for source in sources
-        )
-        checks.append(
-            {
-                "quote": str(quote.get("quote") or ""),
-                "section": str(quote.get("section") or ""),
-                "verified": verified,
-            }
-        )
-    return checks
-
-
 def _normalize_item(raw: dict[str, Any], document: dict[str, Any]) -> dict[str, Any]:
     category = str(raw.get("category") or "other").strip().casefold()
     if category not in CATEGORY_LABELS:
@@ -117,7 +82,7 @@ def _normalize_item(raw: dict[str, Any], document: dict[str, Any]) -> dict[str, 
         "title": str(document.get("title") or ""),
         "year": document.get("year"),
         "data": data,
-        "quote_checks": _verify_scan_quotes(
+        "quote_checks": verify_quotes_with_sections(
             data,
             str(document.get("title") or ""),
             str(document.get("text") or ""),

@@ -24,6 +24,7 @@ from research_app.screening import (
     identifier_keys,
     paper_id,
 )
+from research_app.screening_eval import review_summary
 
 
 st.set_page_config(page_title="AI 筛选建议 · Sciverse", page_icon="S", layout="wide")
@@ -247,6 +248,14 @@ metrics[0].metric("建议纳入", counts["include"])
 metrics[1].metric("建议排除", counts["exclude"])
 metrics[2].metric("需人工判断", counts["uncertain"])
 metrics[3].metric("待人工处理", counts["pending"])
+review = review_summary(suggestions)
+if review["reviewed"]:
+    st.caption(
+        f"已处理 {review['reviewed']} 条："
+        f"采用率 {review['accepted_rate']:.1%}，"
+        f"改判率 {review['modified_rate']:.1%}，"
+        f"拒绝率 {review['rejected_rate']:.1%}。"
+    )
 
 review_labels = {
     "pending": "待处理",

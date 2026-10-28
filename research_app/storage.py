@@ -2068,7 +2068,8 @@ def save_screening_suggestions(
         _screening_project(connection, project_id)
         task = connection.execute(
             """SELECT 1 FROM ai_task_runs
-               WHERE id = ? AND project_id = ? AND kind = 'screening'""",
+               WHERE id = ? AND project_id = ?
+                 AND kind IN ('screening', 'screening_benchmark')""",
             (task_id, project_id),
         ).fetchone()
         if task is None:
@@ -2140,14 +2141,20 @@ def save_screening_suggestions(
     return saved
 
 
-def load_latest_screening_suggestions(project_id: str) -> dict[str, Any] | None:
+def load_latest_screening_suggestions(
+    project_id: str,
+    *,
+    kind: str = "screening",
+) -> dict[str, Any] | None:
+    if kind not in {"screening", "screening_benchmark"}:
+        raise ValueError("AI 筛选任务类型无效。")
     with _connection() as connection:
         _screening_project(connection, project_id)
         task = connection.execute(
             """SELECT * FROM ai_task_runs
-               WHERE project_id = ? AND kind = 'screening'
+               WHERE project_id = ? AND kind = ?
                ORDER BY created_at DESC, id DESC LIMIT 1""",
-            (project_id,),
+            (project_id, kind),
         ).fetchone()
         if task is None:
             return None

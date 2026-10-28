@@ -23,6 +23,7 @@ $hiddenImports = @(
     "research_app.exports",
     "research_app.graph",
     "research_app.screening",
+    "research_app.screening_eval",
     "research_app.search",
     "research_app.service",
     "research_app.storage",

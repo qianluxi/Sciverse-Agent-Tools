@@ -1,3 +1,9 @@
+## [1.16.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.16.0...v1.16.1) (2026-10-28)
+
+### Bug Fixes
+
+* auto-translate search titles when AI key is available ([63bf435](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/63bf43561869cd5defdedc750061eb2a2671196e))
+
 ## [1.16.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.15.0...v1.16.0) (2026-10-28)
 
 ### Features

@@ -1,3 +1,9 @@
+## [1.19.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.18.0...v1.19.0) (2026-10-28)
+
+### Features
+
+* add screening benchmark evaluation ([cd9e4aa](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/cd9e4aa8655b6e185bd274b5c6f48f545e8d6b28))
+
 ## [1.18.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.17.1...v1.18.0) (2026-10-28)
 
 ### Features

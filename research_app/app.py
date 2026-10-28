@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import os
 from math import ceil
 import re
 from typing import Any
@@ -8,6 +9,14 @@ from typing import Any
 import streamlit as st
 from sciverse.credentials import resolve_token
 
+from research_app.ai import OpenAICompatibleClient
+from research_app.ai_settings import default_profile
+from research_app.ai_translation import (
+    cached_translations,
+    needs_translation,
+    save_translations,
+    translate_titles,
+)
 from research_app.errors import describe_error
 from research_app.project_ui import project_selector
 from research_app.exports import (
@@ -648,6 +657,42 @@ if papers:
             use_container_width=True,
         )
 
+    profile = default_profile()
+    translation_model = st.session_state.get("ai_model") or profile["model"]
+    translation_base_url = st.session_state.get("ai_base_url") or profile["base_url"]
+    ai_key = st.session_state.get("ai_key_session") or os.environ.get("OPENAI_API_KEY", "")
+    page_titles = [str(paper.get("title") or "") for paper in papers]
+    non_chinese_titles = list(
+        dict.fromkeys(title for title in page_titles if needs_translation(title))
+    )
+    translations = cached_translations(non_chinese_titles, translation_model)
+    missing_titles = [title for title in non_chinese_titles if title not in translations]
+    if missing_titles:
+        if ai_key and translation_model:
+            if st.button(
+                f"AI 翻译当前页 {len(missing_titles)} 个非中文标题",
+                key="translate_titles",
+            ):
+                try:
+                    client = OpenAICompatibleClient(
+                        base_url=translation_base_url,
+                        api_key=ai_key,
+                        model=translation_model,
+                    )
+                    with st.spinner("正在翻译标题…"):
+                        new_translations = translate_titles(client, missing_titles)
+                    save_translations(new_translations, translation_model)
+                    st.rerun()
+                except Exception as error:
+                    _show_error(error)
+        else:
+            st.caption(
+                "当前页有非中文标题；在“AI 证据与提纲”页配置 API Key 后，"
+                "可在此批量生成中文翻译。"
+            )
+    elif translations:
+        st.caption(f"已加载 {len(translations)} 个标题的 AI 中文翻译缓存。")
+
     for index, paper in enumerate(papers):
         title = paper.get("title") or "（暂无标题）"
         authors = format_authors(paper)
@@ -659,6 +704,9 @@ if papers:
             title_col, score_col = st.columns([5, 1])
             with title_col:
                 st.markdown(f"### {title}")
+                translated = translations.get(title)
+                if translated:
+                    st.caption(f"中文（AI 翻译）：{translated}")
             with score_col:
                 if (
                     st.session_state.get("search_kind") == "semantic"

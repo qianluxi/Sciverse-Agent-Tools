@@ -4,6 +4,7 @@ from pathlib import Path
 from streamlit.testing.v1 import AppTest
 
 import sciverse.credentials
+import research_app.ai_translation as ai_translation
 import research_app.service as service
 import research_app.storage as storage
 
@@ -144,6 +145,31 @@ def test_structured_search_saves_project_snapshot(monkeypatch, tmp_path):
     assert len(runs) == 1
     assert runs[0]["result_count"] == 1
     assert app.session_state["current_search_run_id"] == runs[0]["id"]
+
+
+def test_cached_title_translation_is_shown(monkeypatch, tmp_path):
+    _isolate_storage(monkeypatch, tmp_path)
+    monkeypatch.setenv(
+        "SCIVERSE_TRANSLATION_CACHE",
+        str(tmp_path / "title-translations.json"),
+    )
+    monkeypatch.setattr(sciverse.credentials, "resolve_token", lambda *_args: None)
+    ai_translation.save_translations(
+        {"Steel plate shear wall": "钢板剪力墙"},
+        "test-model",
+    )
+    app = AppTest.from_file(str(APP_PATH), default_timeout=30).run(timeout=30)
+    app.session_state["papers"] = [
+        {"title": "Steel plate shear wall", "unique_id": "paper:translated"}
+    ]
+    app.session_state["search_kind"] = "structured"
+    app.session_state["search_params"] = {"query": "wall"}
+    app.session_state["ai_model"] = "test-model"
+    app.session_state["has_searched"] = True
+    app.run(timeout=30)
+
+    assert not app.exception
+    assert any("钢板剪力墙" in caption.value for caption in app.caption)
 
 
 def test_new_search_clears_old_trend_sample(monkeypatch, tmp_path):

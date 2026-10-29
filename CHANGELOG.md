@@ -1,3 +1,9 @@
+## [1.19.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.19.0...v1.19.1) (2026-10-29)
+
+### Bug Fixes
+
+* clarify capped search totals and add screening bulk prefill ([718fe86](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/718fe8623a3300fe144201181696a88e88a9c573))
+
 ## [1.19.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.18.0...v1.19.0) (2026-10-28)
 
 ### Features

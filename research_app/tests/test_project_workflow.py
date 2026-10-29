@@ -389,6 +389,64 @@ def test_ai_screening_suggestions_and_human_review_are_audited(monkeypatch, tmp_
     assert manifest["ai_screening_suggestions"][0]["review_status"] == "accepted"
 
 
+def test_apply_screening_review_rolls_back_all_writes_on_event_failure(
+    monkeypatch, tmp_path
+):
+    _isolate(monkeypatch, tmp_path)
+    project_id = _project()
+    storage.add_screening_candidates(
+        project_id,
+        [{"title": "Paper A", "unique_id": "paper:a"}],
+    )
+    task_id = storage.create_ai_task(
+        project_id,
+        kind="screening",
+        model="test-model",
+        prompt_version="screening-v2",
+        input_hash="atomic-hash",
+    )
+    storage.save_screening_suggestions(
+        project_id,
+        task_id,
+        [
+            {
+                "candidate_key": "uid:paper:a",
+                "paper_id": "paper:a",
+                "title": "Paper A",
+                "suggestion": "include",
+                "criteria": [],
+                "rationale": "test",
+                "confidence": "high",
+                "evidence_quotes": [],
+                "quote_checks": [],
+                "invalid_criteria": [],
+            }
+        ],
+    )
+    with storage._connection() as connection:
+        connection.execute(
+            """CREATE TRIGGER fail_review_event
+               BEFORE INSERT ON ai_screening_review_events
+               BEGIN SELECT RAISE(ABORT, 'forced event failure'); END"""
+        )
+
+    with pytest.raises(sqlite3.IntegrityError):
+        storage.apply_screening_review(
+            project_id,
+            task_id,
+            "uid:paper:a",
+            "included",
+            note="should roll back",
+        )
+
+    candidates = storage.list_all_screening_candidates(project_id)
+    assert candidates[0]["status"] == "pending"
+    saved = storage.load_latest_screening_suggestions(project_id)
+    assert saved["suggestions"][0]["review_status"] == "pending"
+    assert storage.list_screening_audit(project_id) == []
+    assert storage.list_screening_review_events(project_id) == []
+
+
 def test_screening_snapshot_freezes_gold_and_review_events_are_append_only(
     monkeypatch, tmp_path
 ):

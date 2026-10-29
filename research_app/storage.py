@@ -2301,6 +2301,146 @@ def review_screening_suggestion(
             raise ValueError("AI 筛选建议不存在。")
 
 
+def apply_screening_review(
+    project_id: str,
+    task_id: str,
+    candidate_key_value: str,
+    final_status: str,
+    *,
+    reason: str | None = None,
+    note: str = "",
+) -> dict[str, Any]:
+    if final_status not in {"pending", "included", "excluded"}:
+        raise ValueError("筛选状态无效。")
+    if final_status == "excluded":
+        if reason not in EXCLUSION_REASONS:
+            raise ValueError("排除时必须选择标准排除原因。")
+    else:
+        reason = None
+    note = str(note or "").strip()
+    if len(note) > 2000:
+        raise ValueError("备注不能超过 2000 个字符。")
+    if candidate_key_value.startswith("conflict:"):
+        raise ValueError("身份冲突尚未解决，不能保存筛选决定。")
+    now = _timestamp()
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        task = connection.execute(
+            """SELECT 1 FROM ai_task_runs
+               WHERE id = ? AND project_id = ?
+                 AND kind IN ('screening', 'screening_benchmark')""",
+            (task_id, project_id),
+        ).fetchone()
+        if task is None:
+            raise ValueError("AI 筛选任务不存在。")
+        suggestion = connection.execute(
+            """SELECT suggestion FROM ai_screening_suggestions
+               WHERE project_id = ? AND task_id = ? AND candidate_key = ?""",
+            (project_id, task_id, candidate_key_value),
+        ).fetchone()
+        if suggestion is None:
+            raise ValueError("AI 筛选建议不存在。")
+        candidate = connection.execute(
+            """SELECT status, exclusion_reason, notes
+               FROM screening_candidates
+               WHERE project_id = ? AND candidate_key = ?""",
+            (project_id, candidate_key_value),
+        ).fetchone()
+        if candidate is None:
+            raise ValueError("候选文献不存在。")
+
+        expected = {
+            "include": "included",
+            "exclude": "excluded",
+        }.get(str(suggestion["suggestion"]))
+        status_before = candidate["status"]
+        if final_status == "pending":
+            review_status = "rejected"
+            review_decision = None
+            status_after = status_before
+        else:
+            review_status = "accepted" if final_status == expected else "modified"
+            review_decision = final_status
+            status_after = final_status
+            if (
+                status_before != final_status
+                or (candidate["exclusion_reason"] or None) != reason
+                or candidate["notes"] != note
+            ):
+                connection.execute(
+                    """UPDATE screening_candidates
+                       SET status = ?, exclusion_reason = ?, notes = ?, updated_at = ?
+                       WHERE project_id = ? AND candidate_key = ?""",
+                    (final_status, reason, note, now, project_id, candidate_key_value),
+                )
+                connection.execute(
+                    """INSERT INTO screening_audit(
+                           project_id, candidate_key, old_status, new_status,
+                           old_reason, new_reason, old_notes, new_notes, changed_at,
+                           ai_task_id, ai_action
+                       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        project_id,
+                        candidate_key_value,
+                        status_before,
+                        final_status,
+                        candidate["exclusion_reason"],
+                        reason,
+                        candidate["notes"],
+                        note,
+                        now,
+                        task_id,
+                        review_status,
+                    ),
+                )
+                connection.execute(
+                    "UPDATE screening_projects SET updated_at = ? WHERE id = ?",
+                    (now, project_id),
+                )
+
+        connection.execute(
+            """UPDATE ai_screening_suggestions
+               SET review_status = ?, review_decision = ?, review_note = ?,
+                   reviewed_at = ?, updated_at = ?
+               WHERE project_id = ? AND task_id = ? AND candidate_key = ?""",
+            (
+                review_status,
+                review_decision,
+                note,
+                now,
+                now,
+                project_id,
+                task_id,
+                candidate_key_value,
+            ),
+        )
+        connection.execute(
+            """INSERT INTO ai_screening_review_events(
+                   project_id, task_id, candidate_key, ai_suggestion,
+                   review_status, review_decision, status_before, status_after,
+                   note, created_at
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                project_id,
+                task_id,
+                candidate_key_value,
+                str(suggestion["suggestion"]),
+                review_status,
+                review_decision,
+                status_before,
+                status_after,
+                note,
+                now,
+            ),
+        )
+    return {
+        "review_status": review_status,
+        "review_decision": review_decision,
+        "status_before": status_before,
+        "status_after": status_after,
+    }
+
+
 def create_screening_snapshot(
     project_id: str,
     task_id: str,

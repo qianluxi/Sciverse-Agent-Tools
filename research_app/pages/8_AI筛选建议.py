@@ -299,45 +299,15 @@ def note_key(candidate_key_value):
     return f"ai_screening_note_{task_id}_{candidate_key_value}"
 
 
-def save_human_decision(item, candidate, decision, reason, note):
-    expected = {
-        "include": "included",
-        "exclude": "excluded",
-    }.get(item.get("suggestion"))
-    if decision == "pending":
-        review_status = "rejected"
-        review_decision = None
-    else:
-        review_status = "accepted" if decision == expected else "modified"
-        review_decision = decision
-        if decision == "excluded" and reason not in EXCLUSION_REASONS:
-            reason = "其他"
-        storage.set_screening_decision(
-            project_id,
-            item["candidate_key"],
-            decision,
-            reason=reason if decision == "excluded" else None,
-            notes=note,
-            ai_task_id=task_id,
-            ai_action=review_status,
-        )
-    storage.review_screening_suggestion(
+def save_human_decision(item, decision, reason, note):
+    if decision == "excluded" and reason not in EXCLUSION_REASONS:
+        reason = "其他"
+    storage.apply_screening_review(
         project_id,
         task_id,
         item["candidate_key"],
-        review_status,
-        review_decision=review_decision,
-        note=note,
-    )
-    storage.append_screening_review_event(
-        project_id,
-        task_id,
-        item["candidate_key"],
-        ai_suggestion=item.get("suggestion"),
-        review_status=review_status,
-        review_decision=review_decision,
-        status_before=candidate.get("status"),
-        status_after=decision if decision != "pending" else candidate.get("status"),
+        decision,
+        reason=reason if decision == "excluded" else None,
         note=note,
     )
 
@@ -392,7 +362,6 @@ with save_all_col:
             try:
                 save_human_decision(
                     item,
-                    candidate,
                     decision,
                     st.session_state.get(reason_key(item["candidate_key"])),
                     st.session_state.get(note_key(item["candidate_key"]), ""),
@@ -507,7 +476,6 @@ for item, candidate in reviewable_items:
             try:
                 save_human_decision(
                     item,
-                    candidate,
                     st.session_state.get(decision_key(key), candidate["status"]),
                     st.session_state.get(reason_key(key)),
                     st.session_state.get(note_key(key), ""),

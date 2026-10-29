@@ -1,3 +1,9 @@
+## [1.19.2](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.19.1...v1.19.2) (2026-10-29)
+
+### Bug Fixes
+
+* harden screening matching snapshots and audit events ([beb2005](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/beb20054f319a75d5499388eee0d6229e49fdd81))
+
 ## [1.19.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.19.0...v1.19.1) (2026-10-29)
 
 ### Bug Fixes

@@ -1,3 +1,9 @@
+## [1.19.3](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.19.2...v1.19.3) (2026-10-29)
+
+### Bug Fixes
+
+* make AI review audit atomic ([d641e38](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/d641e38ef3e5f6e33ec2e9ba1513b640a769b04b))
+
 ## [1.19.2](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.19.1...v1.19.2) (2026-10-29)
 
 ### Bug Fixes

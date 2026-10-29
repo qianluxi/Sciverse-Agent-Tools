@@ -1,10 +1,22 @@
 import pytest
 
-from research_app.search import parse_catalog_value, split_filter_values
+from research_app.search import (
+    format_total_count,
+    parse_catalog_value,
+    split_filter_values,
+    total_count_is_capped,
+)
 
 
 def test_split_filter_values_accepts_common_separators():
     assert split_filter_values("Nature, Science； PNAS") == ["Nature", "Science", "PNAS"]
+
+
+def test_total_count_marks_api_cap_instead_of_reporting_exact_value():
+    assert total_count_is_capped(9999) is False
+    assert total_count_is_capped(10000) is True
+    assert format_total_count(1234) == "1,234"
+    assert format_total_count(10000) == "10,000（上限）"
 
 
 @pytest.mark.parametrize(

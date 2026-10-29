@@ -111,6 +111,36 @@ def test_structured_search_reads_text_and_figure_offline(monkeypatch, tmp_path):
     assert read_count == 2
 
 
+def test_capped_total_count_is_not_presented_as_exact(monkeypatch, tmp_path):
+    _isolate_storage(monkeypatch, tmp_path)
+    monkeypatch.delenv("SCIVERSE_API_TOKEN", raising=False)
+    monkeypatch.setattr(sciverse.credentials, "resolve_token", lambda *_args: None)
+
+    def fake_call_api(token, action, **kwargs):
+        return {
+            "results": [{"title": "Capped paper", "unique_id": "paper:capped"}],
+            "total_count": 10000,
+            "page": 1,
+            "page_size": 20,
+            "total_pages": 500,
+        }
+
+    monkeypatch.setattr(service, "call_api", fake_call_api)
+    app = AppTest.from_file(str(APP_PATH), default_timeout=30).run(timeout=30)
+    app.radio[0].set_value("条件筛选").run(timeout=30)
+    next(widget for widget in app.text_input if widget.label == "API Token").set_value(
+        "sv-offline-test"
+    )
+    next(widget for widget in app.text_input if widget.label == "关键词或题名（可选）").set_value(
+        "broad topic"
+    )
+    next(button for button in app.button if button.label == "筛选论文").click().run(timeout=30)
+
+    assert not app.exception
+    assert any("检索结果达到接口上限" in header.value for header in app.subheader)
+    assert any("接口最多返回 10,000 条" in caption.value for caption in app.caption)
+
+
 def test_structured_search_saves_project_snapshot(monkeypatch, tmp_path):
     _isolate_storage(monkeypatch, tmp_path)
     monkeypatch.delenv("SCIVERSE_API_TOKEN", raising=False)

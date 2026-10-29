@@ -27,7 +27,12 @@ from research_app.exports import (
     export_ris,
     format_authors,
 )
-from research_app.search import parse_catalog_value, split_filter_values
+from research_app.search import (
+    format_total_count,
+    parse_catalog_value,
+    split_filter_values,
+    total_count_is_capped,
+)
 from research_app.service import call_api, enrich_semantic_hits
 from research_app.storage import (
     delete_saved_search,
@@ -246,7 +251,9 @@ with st.sidebar:
         with st.expander("最近检索"):
             for item in recent_searches:
                 query = item["params"].get("query") or "结构化筛选"
-                label = f"{query[:36]} · {item['result_count']} 条"
+                label = (
+                    f"{query[:36]} · {format_total_count(item['result_count'])} 条"
+                )
                 if st.button(label, key=f"run_recent_{item['id']}"):
                     _run_stored_search(token, item)
     with st.expander("已保存检索的备份"):
@@ -538,7 +545,15 @@ if papers:
     st.divider()
     st.markdown('<div class="section-label">02 / 检索结果</div>', unsafe_allow_html=True)
     total_count = st.session_state.get("total_count", len(papers))
-    st.subheader(f"找到 {total_count} 条相关文献")
+    total_count_capped = total_count_is_capped(total_count)
+    if total_count_capped:
+        st.subheader("检索结果达到接口上限")
+        st.caption(
+            "接口最多返回 10,000 条，无法据此确认实际命中总数；"
+            "列表和分页按接口返回范围展示。"
+        )
+    else:
+        st.subheader(f"找到 {format_total_count(total_count)} 条相关文献")
     st.caption("选择一篇文献可查看摘要、标识信息和可访问的原文片段。")
     enrichment = st.session_state.get("semantic_enrichment")
     if st.session_state.get("search_kind") == "semantic" and enrichment:

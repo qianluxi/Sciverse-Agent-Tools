@@ -3,6 +3,20 @@ from __future__ import annotations
 import re
 
 
+SEARCH_TOTAL_COUNT_LIMIT = 10000
+
+
+def total_count_is_capped(total_count: int | None) -> bool:
+    return int(total_count or 0) >= SEARCH_TOTAL_COUNT_LIMIT
+
+
+def format_total_count(total_count: int | None) -> str:
+    count = max(0, int(total_count or 0))
+    if total_count_is_capped(count):
+        return f"{count:,}（上限）"
+    return f"{count:,}"
+
+
 def split_filter_values(value: str) -> list[str]:
     return [part.strip() for part in re.split(r"[,，;；]", value) if part.strip()]
 

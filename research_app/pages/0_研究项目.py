@@ -6,6 +6,7 @@ import streamlit as st
 
 from research_app import storage
 from research_app.project_ui import project_selector
+from research_app.search import format_total_count, total_count_is_capped
 
 
 st.set_page_config(page_title="研究项目 · Sciverse", page_icon="S", layout="wide")
@@ -73,7 +74,7 @@ if recent_runs:
             {
                 "时间": run["created_at"],
                 "方式": "条件筛选" if run["mode"] == "structured" else "语义检索",
-                "总命中数": run["result_count"],
+                "总命中数": format_total_count(run["result_count"]),
                 "本页快照数": run["snapshot_count"],
                 "条件": str(run["params"]),
             }
@@ -82,6 +83,8 @@ if recent_runs:
         hide_index=True,
         use_container_width=True,
     )
+    if any(total_count_is_capped(run["result_count"]) for run in recent_runs):
+        st.caption("总命中数标注“（上限）”时，表示达到接口返回上限，不能据此确认实际总数。")
     run_ids = [run["id"] for run in recent_runs]
     selected_run_id = st.selectbox(
         "选择要恢复的检索快照",

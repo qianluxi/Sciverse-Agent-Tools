@@ -264,24 +264,128 @@ review_labels = {
     "rejected": "已拒绝",
 }
 status_options = ["pending", "included", "excluded"]
-for item in suggestions:
-    key = item["candidate_key"]
-    candidate = next(
-        (value for value in all_candidates if value["candidate_key"] == key),
-        None,
+task_id = saved["task"]["id"]
+
+
+def decision_key(candidate_key_value):
+    return f"ai_screening_decision_{task_id}_{candidate_key_value}"
+
+
+def reason_key(candidate_key_value):
+    return f"ai_screening_reason_{task_id}_{candidate_key_value}"
+
+
+def note_key(candidate_key_value):
+    return f"ai_screening_note_{task_id}_{candidate_key_value}"
+
+
+def save_human_decision(item, candidate, decision, reason, note):
+    expected = {
+        "include": "included",
+        "exclude": "excluded",
+    }.get(item.get("suggestion"))
+    if decision == "pending":
+        review_status = "rejected"
+        review_decision = None
+    else:
+        review_status = "accepted" if decision == expected else "modified"
+        review_decision = decision
+        if decision == "excluded" and reason not in EXCLUSION_REASONS:
+            reason = "其他"
+        storage.set_screening_decision(
+            project_id,
+            item["candidate_key"],
+            decision,
+            reason=reason if decision == "excluded" else None,
+            notes=note,
+            ai_task_id=task_id,
+            ai_action=review_status,
+        )
+    storage.review_screening_suggestion(
+        project_id,
+        task_id,
+        item["candidate_key"],
+        review_status,
+        review_decision=review_decision,
+        note=note,
     )
+
+
+reviewable_items = []
+candidate_by_key = {
+    candidate["candidate_key"]: candidate for candidate in all_candidates
+}
+for item in suggestions:
+    candidate = candidate_by_key.get(item["candidate_key"])
+    if candidate and not item.get("error"):
+        reviewable_items.append((item, candidate))
+
+prefill_col, save_all_col = st.columns(2)
+with prefill_col:
+    if st.button("全部按 AI 建议预填", use_container_width=True):
+        for item, candidate in reviewable_items:
+            expected = {
+                "include": "included",
+                "exclude": "excluded",
+            }.get(item.get("suggestion"))
+            if not expected:
+                continue
+            st.session_state[decision_key(item["candidate_key"])] = expected
+            if expected == "excluded":
+                current_reason = candidate.get("exclusion_reason")
+                st.session_state[reason_key(item["candidate_key"])] = (
+                    current_reason if current_reason in EXCLUSION_REASONS else "其他"
+                )
+        st.rerun()
+with save_all_col:
+    pending_decisions = [
+        st.session_state.get(decision_key(item["candidate_key"]))
+        for item, _ in reviewable_items
+    ]
+    can_save_all = any(value and value != "pending" for value in pending_decisions)
+    if st.button(
+        "保存全部当前决定",
+        type="primary",
+        use_container_width=True,
+        disabled=not can_save_all,
+    ):
+        saved_count = 0
+        errors = []
+        for item, candidate in reviewable_items:
+            decision = st.session_state.get(
+                decision_key(item["candidate_key"]),
+                candidate["status"],
+            )
+            if decision == "pending":
+                continue
+            try:
+                save_human_decision(
+                    item,
+                    candidate,
+                    decision,
+                    st.session_state.get(reason_key(item["candidate_key"])),
+                    st.session_state.get(note_key(item["candidate_key"]), ""),
+                )
+                saved_count += 1
+            except Exception as error:
+                errors.append(f"{item.get('title') or item['candidate_key']}：{error}")
+        if errors:
+            st.error("部分决定保存失败：" + "；".join(errors))
+        else:
+            st.session_state["ai_screening_message"] = f"已保存 {saved_count} 条人工决定。"
+            st.rerun()
+st.caption(
+    "先预填或手动选择，再点“保存全部当前决定”。"
+    "选择“待定”的条目不会被批量保存，仍保持待处理。"
+)
+
+for item, candidate in reviewable_items:
+    key = item["candidate_key"]
     with st.container(border=True):
         st.markdown(f"#### {item.get('title') or '（无标题）'}")
-        if candidate:
-            st.caption(
-                f"当前项目状态：{STATUS_LABELS.get(candidate['status'], candidate['status'])}"
-            )
-        else:
-            st.error("该候选已不在项目中，无法保存人工决定。")
-            continue
-        if item.get("error"):
-            st.error(item["error"])
-            continue
+        st.caption(
+            f"当前项目状态：{STATUS_LABELS.get(candidate['status'], candidate['status'])}"
+        )
         suggestion = item.get("suggestion") or "uncertain"
         confidence = CONFIDENCE_LABELS.get(
             str(item.get("confidence") or ""), str(item.get("confidence") or "")
@@ -309,72 +413,73 @@ for item in suggestions:
             st.caption(f"上次处理备注：{item['review_note']}")
         st.caption("选择“待定”并保存表示拒绝该建议，候选状态不会改变。")
 
-        with st.form(f"ai_screening_review_{saved['task']['id']}_{key}"):
-            current_index = (
-                status_options.index(candidate["status"])
-                if candidate["status"] in status_options
-                else 0
-            )
-            decision = st.radio(
-                "人工最终决定",
-                status_options,
-                index=current_index,
-                format_func=lambda value: STATUS_LABELS.get(value, value),
-                horizontal=True,
-                key=f"ai_screening_decision_{saved['task']['id']}_{key}",
-            )
-            reason_index = (
-                EXCLUSION_REASONS.index(candidate["exclusion_reason"])
-                if candidate.get("exclusion_reason") in EXCLUSION_REASONS
-                else 0
-            )
-            reason = st.selectbox(
-                "排除原因（仅排除时使用）",
-                EXCLUSION_REASONS,
-                index=reason_index,
-                key=f"ai_screening_reason_{saved['task']['id']}_{key}",
-            )
-            note = st.text_area(
-                "人工备注",
-                value=item.get("review_note") or "",
-                height=70,
-                key=f"ai_screening_note_{saved['task']['id']}_{key}",
-            )
-            if st.form_submit_button("保存人工决定"):
-                try:
-                    expected = {
-                        "include": "included",
-                        "exclude": "excluded",
-                    }.get(suggestion)
-                    if decision == "pending":
-                        review_status = "rejected"
-                        review_decision = None
-                    else:
-                        review_status = (
-                            "accepted" if decision == expected else "modified"
-                        )
-                        review_decision = decision
-                        storage.set_screening_decision(
-                            project_id,
-                            key,
-                            decision,
-                            reason=reason if decision == "excluded" else None,
-                            notes=note,
-                            ai_task_id=saved["task"]["id"],
-                            ai_action=review_status,
-                        )
-                    storage.review_screening_suggestion(
-                        project_id,
-                        saved["task"]["id"],
-                        key,
-                        review_status,
-                        review_decision=review_decision,
-                        note=note,
+        expected = {
+            "include": "included",
+            "exclude": "excluded",
+        }.get(suggestion)
+        if expected:
+            if st.button(
+                "采纳此 AI 建议",
+                key=f"ai_screening_adopt_{task_id}_{key}",
+            ):
+                st.session_state[decision_key(key)] = expected
+                if expected == "excluded":
+                    current_reason = candidate.get("exclusion_reason")
+                    st.session_state[reason_key(key)] = (
+                        current_reason
+                        if current_reason in EXCLUSION_REASONS
+                        else "其他"
                     )
-                    st.session_state["ai_screening_message"] = "人工决定已保存。"
-                    st.rerun()
-                except Exception as error:
-                    st.error(str(error))
+                st.rerun()
+        else:
+            st.caption("AI 未给出明确纳入或排除建议，请人工选择。")
+
+        current_index = (
+            status_options.index(candidate["status"])
+            if candidate["status"] in status_options
+            else 0
+        )
+        st.radio(
+            "人工最终决定",
+            status_options,
+            index=current_index,
+            format_func=lambda value: STATUS_LABELS.get(value, value),
+            horizontal=True,
+            key=decision_key(key),
+        )
+        reason_index = (
+            EXCLUSION_REASONS.index(candidate["exclusion_reason"])
+            if candidate.get("exclusion_reason") in EXCLUSION_REASONS
+            else 0
+        )
+        st.selectbox(
+            "排除原因（仅排除时使用）",
+            EXCLUSION_REASONS,
+            index=reason_index,
+            key=reason_key(key),
+        )
+        st.text_area(
+            "人工备注",
+            value=item.get("review_note") or "",
+            height=70,
+            key=note_key(key),
+        )
+        if st.button(
+            "保存本篇决定",
+            key=f"ai_screening_save_{task_id}_{key}",
+        ):
+            try:
+                save_human_decision(
+                    item,
+                    candidate,
+                    st.session_state.get(decision_key(key), candidate["status"]),
+                    st.session_state.get(reason_key(key)),
+                    st.session_state.get(note_key(key), ""),
+                )
+                st.session_state["ai_screening_message"] = "人工决定已保存。"
+                st.rerun()
+            except Exception as error:
+                st.error(str(error))
 
 st.markdown("### 建议与人工决定审计")
 audit_rows = [

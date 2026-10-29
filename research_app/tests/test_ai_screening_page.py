@@ -84,10 +84,15 @@ def test_ai_screening_page_requires_human_decision(monkeypatch, tmp_path):
     assert storage.list_all_screening_candidates(project_id)[0]["status"] == "pending"
 
     next(
+        button for button in app.button if button.label == "采纳此 AI 建议"
+    ).click().run(timeout=30)
+    assert storage.list_all_screening_candidates(project_id)[0]["status"] == "pending"
+    assert next(
         radio for radio in app.radio if radio.label == "人工最终决定"
-    ).set_value("included")
+    ).value == "included"
+
     next(
-        button for button in app.button if button.label == "保存人工决定"
+        button for button in app.button if button.label == "保存全部当前决定"
     ).click().run(timeout=30)
 
     assert not app.exception
@@ -96,6 +101,34 @@ def test_ai_screening_page_requires_human_decision(monkeypatch, tmp_path):
     assert saved["suggestions"][0]["review_status"] == "accepted"
     audit = storage.list_screening_audit(project_id)
     assert audit[0]["ai_action"] == "accepted"
+
+
+def test_ai_screening_page_bulk_prefills_before_saving(monkeypatch, tmp_path):
+    project_id = _setup(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        ai_screening,
+        "suggest_screening",
+        lambda client, criteria, candidates: _fake_suggestion(candidates[0]["candidate_key"]),
+    )
+    app = _app(project_id)
+    app.multiselect[0].set_value(["uid:paper:a"]).run(timeout=30)
+    next(
+        button for button in app.button if button.label == "生成 AI 筛选建议"
+    ).click().run(timeout=30)
+    next(
+        button for button in app.button if button.label == "全部按 AI 建议预填"
+    ).click().run(timeout=30)
+
+    assert not app.exception
+    assert next(
+        radio for radio in app.radio if radio.label == "人工最终决定"
+    ).value == "included"
+    assert storage.list_all_screening_candidates(project_id)[0]["status"] == "pending"
+
+    next(
+        button for button in app.button if button.label == "保存全部当前决定"
+    ).click().run(timeout=30)
+    assert storage.list_all_screening_candidates(project_id)[0]["status"] == "included"
 
 
 def test_ai_screening_page_rejects_without_changing_status(monkeypatch, tmp_path):
@@ -111,7 +144,7 @@ def test_ai_screening_page_rejects_without_changing_status(monkeypatch, tmp_path
         button for button in app.button if button.label == "生成 AI 筛选建议"
     ).click().run(timeout=30)
     next(
-        button for button in app.button if button.label == "保存人工决定"
+        button for button in app.button if button.label == "保存本篇决定"
     ).click().run(timeout=30)
 
     assert not app.exception

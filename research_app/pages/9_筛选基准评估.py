@@ -17,6 +17,7 @@ from research_app.ai_screening import (
 from research_app.ai_settings import default_profile
 from research_app.project_ui import project_selector
 from research_app.screening import candidate_key, identifier_keys, paper_id
+from research_app.screening_criteria import build_project_criteria
 from research_app.screening_eval import evaluate_screening_suggestions
 
 
@@ -152,20 +153,31 @@ if not ai_key:
     st.caption("请先在侧栏配置 AI API Key。")
 
 if generate_clicked:
-    documents = [
-        {
-            "candidate_key": key,
-            "paper_id": candidate_map[key].get("paper_id") or key,
-            "title": candidate_map[key].get("title") or "",
-            "year": candidate_map[key].get("year"),
-            "abstract": str(candidate_map[key].get("benchmark_abstract") or "")[:4000],
-        }
-        for key in selected_keys
-    ]
-    criteria = {
-        "question": project["question"],
-        "inclusion": project["inclusion_criteria"],
-        "exclusion": project["exclusion_criteria"],
+    documents = []
+    for key in selected_keys:
+        candidate = candidate_map[key]
+        abstract = str(candidate.get("benchmark_abstract") or "")[:4000]
+        source_runs = [
+            source["run_id"]
+            for source in storage.list_candidate_sources(project_id, key)
+            if source.get("run_id")
+        ]
+        documents.append(
+            {
+                "candidate_key": key,
+                "paper_id": candidate.get("paper_id") or key,
+                "title": candidate.get("title") or "",
+                "year": candidate.get("year"),
+                "abstract": abstract,
+                "abstract_hash": hashlib.sha256(
+                    abstract.encode("utf-8")
+                ).hexdigest(),
+                "source_run_ids": source_runs,
+            }
+        )
+    criteria = build_project_criteria(project)
+    gold_for_generation = {
+        key: candidate_map[key]["status"] for key in selected_keys
     }
     input_hash = hashlib.sha256(
         json.dumps(
@@ -182,6 +194,14 @@ if generate_clicked:
         input_hash=input_hash,
     )
     try:
+        storage.create_screening_snapshot(
+            project_id,
+            task_id,
+            kind=BENCHMARK_KIND,
+            criteria=criteria,
+            items=documents,
+            gold=gold_for_generation,
+        )
         client = OpenAICompatibleClient(
             base_url=base_url,
             api_key=ai_key,
@@ -206,6 +226,11 @@ if generate_clicked:
             task_status = "completed"
             task_error = None
         storage.save_screening_suggestions(project_id, task_id, result_items)
+        evaluation = evaluate_screening_suggestions(
+            result_items,
+            gold_for_generation,
+        )
+        storage.save_screening_snapshot_evaluation(task_id, evaluation)
         storage.finish_ai_task(task_id, status=task_status, error=task_error)
         st.rerun()
     except Exception as error:
@@ -227,19 +252,31 @@ st.caption(
 if saved["task"].get("error"):
     st.error(saved["task"]["error"])
 
-selected_gold = {
-    key: candidate_map[key]["status"]
-    for key in selected_keys
-    if key in candidate_map
-}
+snapshot = storage.load_screening_snapshot(project_id, saved["task"]["id"])
+if not snapshot:
+    st.warning("该评估任务来自旧版本，没有冻结金标准快照；请重新生成基准评估。")
+    st.stop()
+snapshot_gold = snapshot.get("gold") or {}
 suggestions_for_selection = [
-    item for item in saved["suggestions"] if item["candidate_key"] in selected_gold
+    item
+    for item in saved["suggestions"]
+    if item["candidate_key"] in snapshot_gold
 ]
 if not suggestions_for_selection:
-    st.info("当前选择没有对应的基准建议，请重新生成。")
+    st.info("冻结快照没有对应的基准建议，请重新生成。")
     st.stop()
 
-evaluation = evaluate_screening_suggestions(suggestions_for_selection, selected_gold)
+evaluation = snapshot.get("evaluation")
+if not evaluation:
+    evaluation = evaluate_screening_suggestions(
+        suggestions_for_selection,
+        snapshot_gold,
+    )
+    storage.save_screening_snapshot_evaluation(saved["task"]["id"], evaluation)
+st.caption(
+    f"冻结基准集：{snapshot['dataset_version']} · "
+    f"哈希：{snapshot['dataset_hash'][:12]} · 样本：{len(snapshot_gold)}"
+)
 counts = evaluation["counts"]
 metrics = evaluation["metrics"]
 st.markdown("### 质量指标")
@@ -295,7 +332,9 @@ st.dataframe(
     [
         {
             "文献": item.get("title") or "",
-            "金标准": "纳入" if selected_gold.get(item["candidate_key"]) == "included" else "排除",
+            "金标准": "纳入"
+            if snapshot_gold.get(item["candidate_key"]) == "included"
+            else "排除",
             "AI 建议": SUGGESTION_LABELS.get(item.get("suggestion"), item.get("suggestion")),
             "置信度": CONFIDENCE_LABELS.get(
                 str(item.get("confidence") or ""), str(item.get("confidence") or "")
@@ -315,7 +354,8 @@ st.download_button(
         json.dumps(
             {
                 "task": saved["task"],
-                "gold": selected_gold,
+                "snapshot": snapshot,
+                "gold": snapshot_gold,
                 "suggestions": suggestions_for_selection,
                 "evaluation": evaluation,
             },

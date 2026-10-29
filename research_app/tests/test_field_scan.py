@@ -88,6 +88,26 @@ def test_scan_documents_verifies_quotes_against_the_referenced_section():
     assert checks[2]["verified"] is True
 
 
+def test_scan_documents_does_not_assign_unknown_ids_by_position():
+    client = FakeClient(
+        [
+            '{"papers":['
+            '{"paper_id":"paper:a","category":"foundational","core_summary":"ok",'
+            '"rationale":"ok","confidence":"high","evidence_quotes":[]},'
+            '{"paper_id":"paper:c","category":"recent_progress","core_summary":"wrong",'
+            '"rationale":"wrong","confidence":"high","evidence_quotes":[]}]}',
+            '{"themes":[],"gaps":[]}',
+        ]
+    )
+
+    result = scan_documents(client, _documents())
+
+    assert result["items"][0]["data"]["category"] == "foundational"
+    assert result["items"][1]["data"] is None
+    assert result["items"][1]["error"] == "AI 未返回该文档的分类结果。"
+    assert "paper:c" not in [item["paper_id"] for item in result["items"]]
+
+
 def test_scan_documents_isolates_batch_error():
     client = FakeClient(["not json"])
 
@@ -210,3 +230,21 @@ def test_scan_report_markdown_escapes_markdown_syntax():
     assert "\\!\\[img\\](x)" in report
     assert "\\`code\\`" in report
     assert "\\_italic\\_" in report
+
+
+def test_scan_documents_rejects_duplicate_ids():
+    client = FakeClient(
+        [
+            '{"papers":['
+            '{"paper_id":"paper:a","category":"foundational","core_summary":"ok",'
+            '"rationale":"ok","confidence":"high","evidence_quotes":[]},'
+            '{"paper_id":"paper:a","category":"recent_progress","core_summary":"wrong",'
+            '"rationale":"wrong","confidence":"high","evidence_quotes":[]}]}'
+        ]
+    )
+
+    result = scan_documents(client, _documents())
+
+    assert result["items"][0]["data"] is None
+    assert "重复" in result["items"][0]["error"]
+    assert result["items"][1]["error"] == "AI 未返回该文档的分类结果。"

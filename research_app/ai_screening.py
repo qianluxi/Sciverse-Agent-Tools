@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from research_app.ai import AIError, OpenAICompatibleClient, parse_json_object
 from research_app.ai_review import verify_quotes_with_sections
+from research_app.screening_criteria import criteria_map, criteria_prompt_text
 
 
-SCREENING_PROMPT_VERSION = "screening-v1"
+SCREENING_PROMPT_VERSION = "screening-v2"
 BATCH_SIZE = 8
 SUGGESTION_LABELS = {
     "include": "建议纳入",
@@ -20,7 +22,7 @@ SUGGESTION_SCHEMA = {
         {
             "candidate_key": "候选键",
             "suggestion": "include/exclude/uncertain",
-            "criteria": ["命中的纳入或排除标准"],
+            "criterion_ids": ["命中的标准编号，如 I1 或 E1"],
             "rationale": "判断理由",
             "confidence": "high/medium/low",
             "evidence_quotes": [{"quote": "标题或摘要原文", "section": "标题/摘要"}],
@@ -32,8 +34,7 @@ SUGGESTION_SCHEMA = {
 def _criteria_text(criteria: dict[str, Any]) -> str:
     return (
         f"研究问题：{str(criteria.get('question') or '未提供').strip()}\n"
-        f"纳入标准：{str(criteria.get('inclusion') or '未提供').strip()}\n"
-        f"排除标准：{str(criteria.get('exclusion') or '未提供').strip()}"
+        f"编号标准：\n{criteria_prompt_text(criteria)}"
     )
 
 
@@ -68,17 +69,17 @@ def _normalize_suggestion(value: Any) -> str:
     return mapping.get(suggestion, "uncertain")
 
 
-def _criteria_list(raw: Any) -> list[str]:
+def _criterion_ids(raw: Any) -> list[str]:
     if isinstance(raw, str):
-        raw = [raw]
+        raw = re.split(r"[,，;；、\s]+", raw)
     if not isinstance(raw, list):
         return []
     values = []
     for item in raw:
-        text = str(item or "").strip()
-        if text and text not in values:
-            values.append(text)
-    return values[:4]
+        value = str(item or "").strip().upper()
+        if value and value not in values:
+            values.append(value)
+    return values[:6]
 
 
 def _quote_list(raw: Any) -> list[dict[str, str]]:
@@ -100,13 +101,24 @@ def _quote_list(raw: Any) -> list[dict[str, str]]:
 def _normalize_item(
     raw: dict[str, Any],
     candidate: dict[str, Any],
+    standards: dict[str, dict[str, str]],
 ) -> dict[str, Any]:
     confidence = str(raw.get("confidence") or "low").strip().casefold()
     if confidence not in CONFIDENCE_LABELS:
         confidence = "low"
+    valid_ids = []
+    invalid_ids = []
+    for criterion_id in _criterion_ids(raw.get("criterion_ids")):
+        if criterion_id in standards:
+            valid_ids.append(criterion_id)
+        else:
+            invalid_ids.append(criterion_id)
     data = {
         "suggestion": _normalize_suggestion(raw.get("suggestion")),
-        "criteria": _criteria_list(raw.get("criteria")),
+        "criteria": [
+            f"{criterion_id}: {standards[criterion_id].get('text') or ''}"
+            for criterion_id in valid_ids
+        ],
         "rationale": str(raw.get("rationale") or "未提供判断理由").strip(),
         "confidence": confidence,
         "evidence_quotes": _quote_list(raw.get("evidence_quotes")),
@@ -117,12 +129,30 @@ def _normalize_item(
         "title": str(candidate.get("title") or ""),
         "year": candidate.get("year"),
         **data,
+        "invalid_criteria": invalid_ids,
         "quote_checks": verify_quotes_with_sections(
             data,
             str(candidate.get("title") or ""),
             str(candidate.get("abstract") or ""),
         ),
         "error": None,
+    }
+
+
+def _error_item(candidate: dict[str, Any], error: str) -> dict[str, Any]:
+    return {
+        "candidate_key": str(candidate.get("candidate_key") or ""),
+        "paper_id": str(candidate.get("paper_id") or ""),
+        "title": str(candidate.get("title") or ""),
+        "year": candidate.get("year"),
+        "suggestion": "uncertain",
+        "criteria": [],
+        "invalid_criteria": [],
+        "rationale": "",
+        "confidence": "low",
+        "evidence_quotes": [],
+        "quote_checks": [],
+        "error": error,
     }
 
 
@@ -147,8 +177,9 @@ def _suggest_batch(
                 f"{_criteria_text(criteria)}\n\n"
                 "请逐个候选判断，suggestion 只能是 include、exclude 或 uncertain。"
                 "摘要缺失或信息不足时必须使用 uncertain，并降低 confidence。"
-                "criteria 填写命中的纳入/排除标准；evidence_quotes 最多 3 条，"
-                "必须逐字来自标题或摘要，section 标注“标题”或“摘要”。"
+                "criterion_ids 只能填写上方编号标准中实际命中的 ID，不得创造新 ID；"
+                "evidence_quotes 最多 3 条，必须逐字来自标题或摘要，"
+                "section 标注“标题”或“摘要”。"
                 "每个候选都必须返回，candidate_key 必须与输入一致。\n"
                 f"结构：{json.dumps(SUGGESTION_SCHEMA, ensure_ascii=False)}\n\n"
                 f"{_documents_message(candidates)}"
@@ -160,34 +191,25 @@ def _suggest_batch(
     items = payload.get("papers")
     if not isinstance(items, list):
         raise AIError("AI 筛选响应缺少 papers。")
-    by_key = {
-        str(item.get("candidate_key")): item
-        for item in items
-        if isinstance(item, dict) and item.get("candidate_key")
-    }
+    standards = criteria_map(criteria)
+    by_key: dict[str, list[dict[str, Any]]] = {}
+    for item in items:
+        if isinstance(item, dict) and item.get("candidate_key"):
+            by_key.setdefault(str(item["candidate_key"]), []).append(item)
     results = []
-    for index, candidate in enumerate(candidates):
-        raw_item = by_key.get(str(candidate.get("candidate_key") or ""))
-        if raw_item is None and index < len(items) and isinstance(items[index], dict):
-            raw_item = items[index]
-        if raw_item is None:
+    for candidate in candidates:
+        candidate_key_value = str(candidate.get("candidate_key") or "")
+        matches = by_key.get(candidate_key_value, [])
+        if not matches:
             results.append(
-                {
-                    "candidate_key": str(candidate.get("candidate_key") or ""),
-                    "paper_id": str(candidate.get("paper_id") or ""),
-                    "title": str(candidate.get("title") or ""),
-                    "year": candidate.get("year"),
-                    "suggestion": "uncertain",
-                    "criteria": [],
-                    "rationale": "",
-                    "confidence": "low",
-                    "evidence_quotes": [],
-                    "quote_checks": [],
-                    "error": "AI 未返回该候选的筛选建议。",
-                }
+                _error_item(candidate, "AI 未返回该候选的筛选建议。")
+            )
+        elif len(matches) > 1:
+            results.append(
+                _error_item(candidate, "AI 返回了重复的候选标识，需人工判断。")
             )
         else:
-            results.append(_normalize_item(raw_item, candidate))
+            results.append(_normalize_item(matches[0], candidate, standards))
     return results
 
 
@@ -203,21 +225,7 @@ def suggest_screening(
             results.extend(_suggest_batch(client, criteria, batch))
         except AIError as error:
             for candidate in batch:
-                results.append(
-                    {
-                        "candidate_key": str(candidate.get("candidate_key") or ""),
-                        "paper_id": str(candidate.get("paper_id") or ""),
-                        "title": str(candidate.get("title") or ""),
-                        "year": candidate.get("year"),
-                        "suggestion": "uncertain",
-                        "criteria": [],
-                        "rationale": "",
-                        "confidence": "low",
-                        "evidence_quotes": [],
-                        "quote_checks": [],
-                        "error": str(error),
-                    }
-                )
+                results.append(_error_item(candidate, str(error)))
     return {
         "items": results,
         "model": getattr(client, "model", ""),

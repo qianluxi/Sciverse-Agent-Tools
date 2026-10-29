@@ -101,6 +101,10 @@ def test_ai_screening_page_requires_human_decision(monkeypatch, tmp_path):
     assert saved["suggestions"][0]["review_status"] == "accepted"
     audit = storage.list_screening_audit(project_id)
     assert audit[0]["ai_action"] == "accepted"
+    events = storage.list_screening_review_events(project_id)
+    assert events[0]["review_status"] == "accepted"
+    assert events[0]["status_before"] == "pending"
+    assert events[0]["status_after"] == "included"
 
 
 def test_ai_screening_page_bulk_prefills_before_saving(monkeypatch, tmp_path):

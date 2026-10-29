@@ -389,6 +389,74 @@ def test_ai_screening_suggestions_and_human_review_are_audited(monkeypatch, tmp_
     assert manifest["ai_screening_suggestions"][0]["review_status"] == "accepted"
 
 
+def test_screening_snapshot_freezes_gold_and_review_events_are_append_only(
+    monkeypatch, tmp_path
+):
+    _isolate(monkeypatch, tmp_path)
+    project_id = _project()
+    storage.add_screening_candidates(
+        project_id,
+        [{"title": "Paper A", "unique_id": "paper:a"}],
+    )
+    task_id = storage.create_ai_task(
+        project_id,
+        kind="screening_benchmark",
+        model="test-model",
+        prompt_version="screening-v2",
+        input_hash="snapshot-hash",
+    )
+    snapshot = storage.create_screening_snapshot(
+        project_id,
+        task_id,
+        kind="screening_benchmark",
+        criteria={"question": "Q", "items": []},
+        items=[{"candidate_key": "uid:paper:a", "title": "Paper A"}],
+        gold={"uid:paper:a": "included"},
+    )
+    storage.set_screening_decision(
+        project_id,
+        "uid:paper:a",
+        "excluded",
+        reason="其他",
+    )
+
+    loaded = storage.load_screening_snapshot(project_id, task_id)
+    assert loaded["gold"] == {"uid:paper:a": "included"}
+    assert loaded["dataset_hash"] == snapshot["dataset_hash"]
+
+    evaluation = {"total": 1, "metrics": {"include_recall": 1.0}}
+    storage.save_screening_snapshot_evaluation(task_id, evaluation)
+    assert (
+        storage.load_screening_snapshot(project_id, task_id)["evaluation"]
+        == evaluation
+    )
+
+    storage.append_screening_review_event(
+        project_id,
+        task_id,
+        "uid:paper:a",
+        ai_suggestion="include",
+        review_status="accepted",
+        review_decision="included",
+        status_before="pending",
+        status_after="included",
+        note="first",
+    )
+    storage.append_screening_review_event(
+        project_id,
+        task_id,
+        "uid:paper:a",
+        ai_suggestion="include",
+        review_status="rejected",
+        review_decision=None,
+        status_before="included",
+        status_after="included",
+        note="second",
+    )
+    events = storage.list_screening_review_events(project_id, task_id=task_id)
+    assert [event["note"] for event in events] == ["second", "first"]
+
+
 def test_ai_evidence_persists_raw_and_final_versions(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     project_id = _project()
@@ -681,6 +749,8 @@ def test_delete_project_cascades_all_project_data(monkeypatch, tmp_path):
             "project_import_events",
             "ai_scan_reports",
             "ai_screening_suggestions",
+            "ai_screening_snapshots",
+            "ai_screening_review_events",
         ):
             count = connection.execute(
                 f"SELECT COUNT(*) FROM {table} WHERE project_id = ?",
@@ -689,11 +759,11 @@ def test_delete_project_cascades_all_project_data(monkeypatch, tmp_path):
             assert count == 0
 
 
-def test_schema_v9_tables_are_created(monkeypatch, tmp_path):
+def test_schema_v10_tables_are_created(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     _project()
     with storage._connection() as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 9
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 10
         tables = {
             row[0]
             for row in connection.execute(
@@ -712,6 +782,12 @@ def test_schema_v9_tables_are_created(monkeypatch, tmp_path):
             row["name"]
             for row in connection.execute("PRAGMA table_info(screening_audit)")
         }
+        suggestion_columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(ai_screening_suggestions)"
+            )
+        }
     assert {
         "search_runs",
         "screening_candidate_sources",
@@ -720,7 +796,10 @@ def test_schema_v9_tables_are_created(monkeypatch, tmp_path):
         "project_import_events",
         "ai_scan_reports",
         "ai_screening_suggestions",
+        "ai_screening_snapshots",
+        "ai_screening_review_events",
     } <= tables
     assert "aggregation_error" in report_columns
     assert "abstract" in candidate_columns
     assert {"ai_task_id", "ai_action"} <= audit_columns
+    assert "invalid_criteria_json" in suggestion_columns

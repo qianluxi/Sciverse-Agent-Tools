@@ -23,7 +23,7 @@ from research_app.screening import (
 )
 
 
-_SCHEMA_VERSION = 9
+_SCHEMA_VERSION = 10
 _BACKUP_SCHEMA_VERSION = 2
 _MAX_HISTORY_ENTRIES = 50
 _MAX_SNAPSHOT_BYTES = 5 * 1024 * 1024
@@ -377,6 +377,55 @@ def _migrate(connection: sqlite3.Connection) -> None:
         )
         version = 9
         connection.execute("PRAGMA user_version = 9")
+    if version < 10:
+        suggestion_columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(ai_screening_suggestions)"
+            ).fetchall()
+        }
+        if "invalid_criteria_json" not in suggestion_columns:
+            connection.execute(
+                """ALTER TABLE ai_screening_suggestions
+                   ADD COLUMN invalid_criteria_json TEXT NOT NULL DEFAULT '[]'"""
+            )
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS ai_screening_snapshots (
+                task_id TEXT PRIMARY KEY REFERENCES ai_task_runs(id) ON DELETE CASCADE,
+                project_id TEXT NOT NULL REFERENCES screening_projects(id) ON DELETE CASCADE,
+                kind TEXT NOT NULL
+                    CHECK (kind IN ('screening', 'screening_benchmark')),
+                criteria_json TEXT NOT NULL,
+                items_json TEXT NOT NULL,
+                gold_json TEXT,
+                dataset_hash TEXT NOT NULL,
+                dataset_version TEXT NOT NULL,
+                evaluation_json TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ai_screening_snapshots_project
+                ON ai_screening_snapshots(project_id, kind, created_at DESC);
+            CREATE TABLE IF NOT EXISTS ai_screening_review_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id TEXT NOT NULL REFERENCES screening_projects(id) ON DELETE CASCADE,
+                task_id TEXT NOT NULL,
+                candidate_key TEXT NOT NULL,
+                ai_suggestion TEXT,
+                review_status TEXT NOT NULL,
+                review_decision TEXT,
+                status_before TEXT,
+                status_after TEXT,
+                note TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ai_screening_review_events_project
+                ON ai_screening_review_events(project_id, task_id, id DESC);
+            """
+        )
+        version = 10
+        connection.execute("PRAGMA user_version = 10")
 
 
 @contextmanager
@@ -1651,6 +1700,16 @@ def project_manifest(project_id: str) -> bytes:
                WHERE project_id = ? ORDER BY created_at, candidate_key""",
             (project_id,),
         ).fetchall()
+        snapshot_rows = connection.execute(
+            """SELECT * FROM ai_screening_snapshots
+               WHERE project_id = ? ORDER BY created_at, task_id""",
+            (project_id,),
+        ).fetchall()
+        review_event_rows = connection.execute(
+            """SELECT * FROM ai_screening_review_events
+               WHERE project_id = ? ORDER BY id""",
+            (project_id,),
+        ).fetchall()
     sources_by_candidate: dict[str, list[dict[str, Any]]] = {}
     for row in source_rows:
         sources_by_candidate.setdefault(row["candidate_key"], []).append(
@@ -1667,9 +1726,25 @@ def project_manifest(project_id: str) -> bytes:
     for row in suggestion_rows:
         item = dict(row)
         item["criteria"] = json.loads(item.pop("criteria_json"))
+        item["invalid_criteria"] = json.loads(
+            item.pop("invalid_criteria_json", "[]")
+        )
         item["evidence_quotes"] = json.loads(item.pop("evidence_quotes_json"))
         item["quote_checks"] = json.loads(item.pop("quote_checks_json"))
         screening_suggestions.append(item)
+    screening_snapshots = []
+    for row in snapshot_rows:
+        item = dict(row)
+        item["criteria"] = json.loads(item.pop("criteria_json"))
+        item["items"] = json.loads(item.pop("items_json"))
+        gold_json = item.pop("gold_json")
+        item["gold"] = json.loads(gold_json) if gold_json else None
+        evaluation_json = item.pop("evaluation_json")
+        item["evaluation"] = (
+            json.loads(evaluation_json) if evaluation_json else None
+        )
+        screening_snapshots.append(item)
+    review_events = [dict(row) for row in review_event_rows]
     manifest = {
         "format": "sciverse-project-manifest",
         "schema_version": _SCHEMA_VERSION,
@@ -1690,12 +1765,16 @@ def project_manifest(project_id: str) -> bytes:
             "ai_tasks_exported": len(tasks),
             "candidates_exported": len(candidates),
             "ai_screening_suggestions_exported": len(screening_suggestions),
+            "ai_screening_snapshots_exported": len(screening_snapshots),
+            "ai_screening_review_events_exported": len(review_events),
             "complete": True,
         },
         "search_runs": runs,
         "ai_tasks": tasks,
         "candidates": candidates,
         "ai_screening_suggestions": screening_suggestions,
+        "ai_screening_snapshots": screening_snapshots,
+        "ai_screening_review_events": review_events,
     }
     return (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
 
@@ -2101,24 +2180,26 @@ def save_screening_suggestions(
             connection.execute(
                 """INSERT INTO ai_screening_suggestions(
                        project_id, task_id, candidate_key, paper_id, title, year,
-                       suggestion, criteria_json, rationale, confidence,
-                       evidence_quotes_json, quote_checks_json, error,
-                       review_status, review_decision, review_note, reviewed_at,
-                       created_at, updated_at
-                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                             'pending', NULL, '', NULL, ?, ?)
-                   ON CONFLICT(task_id, candidate_key) DO UPDATE SET
-                       paper_id = excluded.paper_id,
-                       title = excluded.title,
-                       year = excluded.year,
-                       suggestion = excluded.suggestion,
-                       criteria_json = excluded.criteria_json,
-                       rationale = excluded.rationale,
-                       confidence = excluded.confidence,
-                       evidence_quotes_json = excluded.evidence_quotes_json,
-                       quote_checks_json = excluded.quote_checks_json,
-                       error = excluded.error,
-                       updated_at = excluded.updated_at""",
+                         suggestion, criteria_json, rationale, confidence,
+                         evidence_quotes_json, quote_checks_json, error,
+                         invalid_criteria_json,
+                         review_status, review_decision, review_note, reviewed_at,
+                         created_at, updated_at
+                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                               'pending', NULL, '', NULL, ?, ?)
+                     ON CONFLICT(task_id, candidate_key) DO UPDATE SET
+                         paper_id = excluded.paper_id,
+                         title = excluded.title,
+                         year = excluded.year,
+                         suggestion = excluded.suggestion,
+                         criteria_json = excluded.criteria_json,
+                         rationale = excluded.rationale,
+                         confidence = excluded.confidence,
+                         evidence_quotes_json = excluded.evidence_quotes_json,
+                         quote_checks_json = excluded.quote_checks_json,
+                         error = excluded.error,
+                         invalid_criteria_json = excluded.invalid_criteria_json,
+                         updated_at = excluded.updated_at""",
                 (
                     project_id,
                     task_id,
@@ -2131,11 +2212,15 @@ def save_screening_suggestions(
                     str(item.get("rationale") or ""),
                     str(item.get("confidence") or "low"),
                     json.dumps(item.get("evidence_quotes") or [], ensure_ascii=False),
-                    json.dumps(item.get("quote_checks") or [], ensure_ascii=False),
-                    item.get("error"),
-                    now,
-                    now,
-                ),
+                      json.dumps(item.get("quote_checks") or [], ensure_ascii=False),
+                      item.get("error"),
+                      json.dumps(
+                          item.get("invalid_criteria") or [],
+                          ensure_ascii=False,
+                      ),
+                      now,
+                      now,
+                  ),
             )
             saved += 1
     return saved
@@ -2168,6 +2253,9 @@ def load_latest_screening_suggestions(
     for row in rows:
         item = dict(row)
         item["criteria"] = json.loads(item.pop("criteria_json"))
+        item["invalid_criteria"] = json.loads(
+            item.pop("invalid_criteria_json", "[]")
+        )
         item["evidence_quotes"] = json.loads(item.pop("evidence_quotes_json"))
         item["quote_checks"] = json.loads(item.pop("quote_checks_json"))
         suggestions.append(item)
@@ -2211,6 +2299,216 @@ def review_screening_suggestion(
         )
         if cursor.rowcount == 0:
             raise ValueError("AI 筛选建议不存在。")
+
+
+def create_screening_snapshot(
+    project_id: str,
+    task_id: str,
+    *,
+    kind: str,
+    criteria: dict[str, Any],
+    items: list[dict[str, Any]],
+    gold: dict[str, str] | None = None,
+    dataset_version: str = "",
+) -> dict[str, Any]:
+    if kind not in {"screening", "screening_benchmark"}:
+        raise ValueError("AI 筛选任务类型无效。")
+    if kind == "screening_benchmark" and not isinstance(gold, dict):
+        raise ValueError("基准评估必须冻结金标准。")
+    if kind != "screening_benchmark":
+        gold = None
+    payload = {
+        "kind": kind,
+        "criteria": criteria,
+        "items": items,
+        "gold": gold,
+    }
+    dataset_hash = hashlib.sha256(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    if not dataset_version:
+        dataset_version = f"{kind}-{dataset_hash[:12]}"
+    now = _timestamp()
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        task = connection.execute(
+            "SELECT 1 FROM ai_task_runs WHERE id = ? AND project_id = ? AND kind = ?",
+            (task_id, project_id, kind),
+        ).fetchone()
+        if task is None:
+            raise ValueError("AI 筛选任务不存在或类型不匹配。")
+        connection.execute(
+            """INSERT INTO ai_screening_snapshots(
+                   task_id, project_id, kind, criteria_json, items_json, gold_json,
+                   dataset_hash, dataset_version, evaluation_json, created_at, updated_at
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)""",
+            (
+                task_id,
+                project_id,
+                kind,
+                json.dumps(criteria, ensure_ascii=False),
+                json.dumps(items, ensure_ascii=False),
+                json.dumps(gold, ensure_ascii=False) if gold is not None else None,
+                dataset_hash,
+                dataset_version,
+                now,
+                now,
+            ),
+        )
+    return {
+        "task_id": task_id,
+        "kind": kind,
+        "criteria": criteria,
+        "items": items,
+        "gold": gold,
+        "dataset_hash": dataset_hash,
+        "dataset_version": dataset_version,
+        "evaluation": None,
+    }
+
+
+def load_screening_snapshot(project_id: str, task_id: str) -> dict[str, Any] | None:
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        row = connection.execute(
+            """SELECT * FROM ai_screening_snapshots
+               WHERE project_id = ? AND task_id = ?""",
+            (project_id, task_id),
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "task_id": row["task_id"],
+        "kind": row["kind"],
+        "criteria": json.loads(row["criteria_json"]),
+        "items": json.loads(row["items_json"]),
+        "gold": json.loads(row["gold_json"]) if row["gold_json"] else None,
+        "dataset_hash": row["dataset_hash"],
+        "dataset_version": row["dataset_version"],
+        "evaluation": (
+            json.loads(row["evaluation_json"]) if row["evaluation_json"] else None
+        ),
+    }
+
+
+def load_latest_screening_snapshot(
+    project_id: str,
+    *,
+    kind: str,
+) -> dict[str, Any] | None:
+    if kind not in {"screening", "screening_benchmark"}:
+        raise ValueError("AI 筛选任务类型无效。")
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        row = connection.execute(
+            """SELECT * FROM ai_screening_snapshots
+               WHERE project_id = ? AND kind = ?
+               ORDER BY created_at DESC, task_id DESC LIMIT 1""",
+            (project_id, kind),
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "task_id": row["task_id"],
+        "kind": row["kind"],
+        "criteria": json.loads(row["criteria_json"]),
+        "items": json.loads(row["items_json"]),
+        "gold": json.loads(row["gold_json"]) if row["gold_json"] else None,
+        "dataset_hash": row["dataset_hash"],
+        "dataset_version": row["dataset_version"],
+        "evaluation": (
+            json.loads(row["evaluation_json"]) if row["evaluation_json"] else None
+        ),
+    }
+
+
+def save_screening_snapshot_evaluation(
+    task_id: str,
+    evaluation: dict[str, Any],
+) -> None:
+    with _connection() as connection:
+        cursor = connection.execute(
+            """UPDATE ai_screening_snapshots
+               SET evaluation_json = ?, updated_at = ?
+               WHERE task_id = ?""",
+            (
+                json.dumps(evaluation, ensure_ascii=False),
+                _timestamp(),
+                task_id,
+            ),
+        )
+        if cursor.rowcount == 0:
+            raise ValueError("筛选快照不存在。")
+
+
+def append_screening_review_event(
+    project_id: str,
+    task_id: str,
+    candidate_key_value: str,
+    *,
+    ai_suggestion: str | None,
+    review_status: str,
+    review_decision: str | None,
+    status_before: str | None,
+    status_after: str | None,
+    note: str = "",
+) -> int:
+    if review_status not in {"pending", "accepted", "modified", "rejected"}:
+        raise ValueError("AI 建议处理状态无效。")
+    note = str(note or "").strip()
+    if len(note) > 2000:
+        raise ValueError("备注不能超过 2000 个字符。")
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        cursor = connection.execute(
+            """INSERT INTO ai_screening_review_events(
+                   project_id, task_id, candidate_key, ai_suggestion,
+                   review_status, review_decision, status_before, status_after,
+                   note, created_at
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                project_id,
+                task_id,
+                candidate_key_value,
+                ai_suggestion,
+                review_status,
+                review_decision,
+                status_before,
+                status_after,
+                note,
+                _timestamp(),
+            ),
+        )
+        return int(cursor.lastrowid)
+
+
+def list_screening_review_events(
+    project_id: str,
+    *,
+    task_id: str | None = None,
+    limit: int = 1000,
+) -> list[dict[str, Any]]:
+    limit = max(1, min(limit, 5000))
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        if task_id:
+            rows = connection.execute(
+                """SELECT * FROM ai_screening_review_events
+                   WHERE project_id = ? AND task_id = ?
+                   ORDER BY id DESC LIMIT ?""",
+                (project_id, task_id, limit),
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                """SELECT * FROM ai_screening_review_events
+                   WHERE project_id = ? ORDER BY id DESC LIMIT ?""",
+                (project_id, limit),
+            ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def project_overview(project_id: str) -> dict[str, Any]:

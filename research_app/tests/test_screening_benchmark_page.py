@@ -104,3 +104,26 @@ def test_benchmark_page_evaluates_against_fixed_gold_without_changing_status(
         for metric in app.metric
     )
     assert any("金标准纳入" in str(frame.value) for frame in app.dataframe)
+    snapshot = storage.load_screening_snapshot(project_id, saved["task"]["id"])
+    assert snapshot["gold"]["uid:paper:a"] == "included"
+    assert snapshot["evaluation"]["metrics"]["include_recall"] == 1.0
+
+    storage.set_screening_decision(
+        project_id,
+        "uid:paper:a",
+        "excluded",
+        reason="其他",
+    )
+    app.run(timeout=30)
+
+    assert not app.exception
+    assert any(
+        metric.label == "纳入召回率" and metric.value == "100.0%"
+        for metric in app.metric
+    )
+    assert (
+        storage.load_screening_snapshot(project_id, saved["task"]["id"])["gold"][
+            "uid:paper:a"
+        ]
+        == "included"
+    )

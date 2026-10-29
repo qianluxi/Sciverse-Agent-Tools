@@ -17,6 +17,7 @@ from research_app.ai_screening import (
 )
 from research_app.ai_settings import default_profile
 from research_app.project_ui import project_selector
+from research_app.screening_criteria import build_project_criteria
 from research_app.screening import (
     EXCLUSION_REASONS,
     STATUS_LABELS,
@@ -155,20 +156,26 @@ if generate_clicked:
     documents = []
     for key in selected_keys:
         candidate = candidate_map[key]
+        abstract = str(candidate.get("resolved_abstract") or "")[:4000]
+        source_runs = [
+            source["run_id"]
+            for source in storage.list_candidate_sources(project_id, key)
+            if source.get("run_id")
+        ]
         documents.append(
             {
                 "candidate_key": key,
                 "paper_id": candidate.get("paper_id") or key,
                 "title": candidate.get("title") or "",
                 "year": candidate.get("year"),
-                "abstract": str(candidate.get("resolved_abstract") or "")[:4000],
+                "abstract": abstract,
+                "abstract_hash": hashlib.sha256(
+                    abstract.encode("utf-8")
+                ).hexdigest(),
+                "source_run_ids": source_runs,
             }
         )
-    criteria = {
-        "question": project["question"],
-        "inclusion": project["inclusion_criteria"],
-        "exclusion": project["exclusion_criteria"],
-    }
+    criteria = build_project_criteria(project)
     input_hash = hashlib.sha256(
         json.dumps(
             {"criteria": criteria, "candidates": documents},
@@ -184,6 +191,13 @@ if generate_clicked:
         input_hash=input_hash,
     )
     try:
+        storage.create_screening_snapshot(
+            project_id,
+            task_id,
+            kind="screening",
+            criteria=criteria,
+            items=documents,
+        )
         client = OpenAICompatibleClient(
             base_url=base_url,
             api_key=ai_key,
@@ -227,6 +241,12 @@ st.caption(
     f"最近任务：{saved['task']['created_at']} · 模型：{saved['task']['model']} · "
     f"提示词：{saved['task']['prompt_version']}"
 )
+snapshot = storage.load_screening_snapshot(project_id, saved["task"]["id"])
+if snapshot:
+    st.caption(
+        f"输入快照：{snapshot['dataset_version']} · "
+        f"哈希：{snapshot['dataset_hash'][:12]}"
+    )
 if saved["task"].get("error"):
     st.error(saved["task"]["error"])
 suggestions = saved["suggestions"]
@@ -307,6 +327,17 @@ def save_human_decision(item, candidate, decision, reason, note):
         item["candidate_key"],
         review_status,
         review_decision=review_decision,
+        note=note,
+    )
+    storage.append_screening_review_event(
+        project_id,
+        task_id,
+        item["candidate_key"],
+        ai_suggestion=item.get("suggestion"),
+        review_status=review_status,
+        review_decision=review_decision,
+        status_before=candidate.get("status"),
+        status_after=decision if decision != "pending" else candidate.get("status"),
         note=note,
     )
 
@@ -396,6 +427,11 @@ for item, candidate in reviewable_items:
         )
         if item.get("criteria"):
             st.caption("命中标准：" + "；".join(str(value) for value in item["criteria"]))
+        if item.get("invalid_criteria"):
+            st.warning(
+                "模型引用了不存在的标准编号："
+                + "、".join(str(value) for value in item["invalid_criteria"])
+            )
         if item.get("rationale"):
             st.write(item["rationale"])
         quotes = item.get("evidence_quotes") or []
@@ -500,11 +536,53 @@ audit_rows = [
 ]
 st.dataframe(audit_rows, hide_index=True, use_container_width=True)
 
+review_events = storage.list_screening_review_events(
+    project_id,
+    task_id=task_id,
+)
+st.markdown("### 复核事件历史")
+if review_events:
+    title_by_key = {item["candidate_key"]: item.get("title") for item in suggestions}
+    st.dataframe(
+        [
+            {
+                "时间": event["created_at"],
+                "文献": title_by_key.get(event["candidate_key"])
+                or event["candidate_key"],
+                "AI 建议": SUGGESTION_LABELS.get(
+                    event.get("ai_suggestion"), event.get("ai_suggestion") or ""
+                ),
+                "处理": review_labels.get(event.get("review_status"), ""),
+                "决定": STATUS_LABELS.get(
+                    event.get("review_decision") or "",
+                    event.get("review_decision") or "",
+                ),
+                "操作前状态": STATUS_LABELS.get(
+                    event.get("status_before") or "", event.get("status_before") or ""
+                ),
+                "操作后状态": STATUS_LABELS.get(
+                    event.get("status_after") or "", event.get("status_after") or ""
+                ),
+                "备注": event.get("note") or "",
+            }
+            for event in review_events
+        ],
+        hide_index=True,
+        use_container_width=True,
+    )
+else:
+    st.caption("尚无复核事件。")
+
 st.download_button(
     "下载 AI 筛选建议 JSON",
     data=(
         json.dumps(
-            {"task": saved["task"], "suggestions": suggestions},
+            {
+                "task": saved["task"],
+                "snapshot": snapshot,
+                "suggestions": suggestions,
+                "review_events": review_events,
+            },
             ensure_ascii=False,
             indent=2,
         )

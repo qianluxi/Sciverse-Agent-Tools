@@ -91,6 +91,17 @@ def _normalize_item(raw: dict[str, Any], document: dict[str, Any]) -> dict[str, 
     }
 
 
+def _scan_error_item(document: dict[str, Any], error: str) -> dict[str, Any]:
+    return {
+        "paper_id": str(document.get("paper_id") or ""),
+        "title": str(document.get("title") or ""),
+        "year": document.get("year"),
+        "data": None,
+        "quote_checks": [],
+        "error": error,
+    }
+
+
 def _scan_batch(
     client: OpenAICompatibleClient,
     documents: list[dict[str, Any]],
@@ -120,29 +131,24 @@ def _scan_batch(
     items = payload.get("papers")
     if not isinstance(items, list):
         raise AIError("领域扫描响应缺少 papers。")
-    by_id = {
-        str(item.get("paper_id")): item
-        for item in items
-        if isinstance(item, dict) and item.get("paper_id")
-    }
+    by_id: dict[str, list[dict[str, Any]]] = {}
+    for item in items:
+        if isinstance(item, dict) and item.get("paper_id"):
+            by_id.setdefault(str(item["paper_id"]), []).append(item)
     results = []
-    for index, document in enumerate(documents):
-        raw_item = by_id.get(str(document.get("paper_id")))
-        if raw_item is None and index < len(items) and isinstance(items[index], dict):
-            raw_item = items[index]
-        if raw_item is None:
+    for document in documents:
+        paper_id_value = str(document.get("paper_id") or "")
+        matches = by_id.get(paper_id_value, [])
+        if not matches:
             results.append(
-                {
-                    "paper_id": str(document.get("paper_id") or ""),
-                    "title": str(document.get("title") or ""),
-                    "year": document.get("year"),
-                    "data": None,
-                    "quote_checks": [],
-                    "error": "AI 未返回该论文的分析结果。",
-                }
+                _scan_error_item(document, "AI 未返回该文档的分类结果。")
+            )
+        elif len(matches) > 1:
+            results.append(
+                _scan_error_item(document, "AI 返回了重复的论文标识，需人工核对。")
             )
         else:
-            results.append(_normalize_item(raw_item, document))
+            results.append(_normalize_item(matches[0], document))
     return results
 
 
@@ -202,16 +208,7 @@ def scan_documents(
             results.extend(_scan_batch(client, batch))
         except AIError as error:
             for document in batch:
-                results.append(
-                    {
-                        "paper_id": str(document.get("paper_id") or ""),
-                        "title": str(document.get("title") or ""),
-                        "year": document.get("year"),
-                        "data": None,
-                        "quote_checks": [],
-                        "error": str(error),
-                    }
-                )
+                results.append(_scan_error_item(document, str(error)))
     themes, gaps, aggregation_error = _aggregate(client, results)
     return {
         "items": results,

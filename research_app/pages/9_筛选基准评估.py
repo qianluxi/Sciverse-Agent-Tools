@@ -257,6 +257,66 @@ if not snapshot:
     st.warning("该评估任务来自旧版本，没有冻结金标准快照；请重新生成基准评估。")
     st.stop()
 snapshot_gold = snapshot.get("gold") or {}
+failed_suggestions = [
+    item for item in saved["suggestions"] if item.get("error")
+]
+if failed_suggestions:
+    if ai_key and base_url and model:
+        if st.button(f"重试失败条目（{len(failed_suggestions)}）"):
+            snapshot_items = {
+                item["candidate_key"]: item for item in snapshot.get("items") or []
+            }
+            documents = []
+            for item in failed_suggestions:
+                source = snapshot_items.get(item["candidate_key"])
+                if not source:
+                    continue
+                documents.append(
+                    {
+                        "candidate_key": item["candidate_key"],
+                        "paper_id": source.get("paper_id")
+                        or item["candidate_key"],
+                        "title": source.get("title") or "",
+                        "year": source.get("year"),
+                        "abstract": source.get("abstract") or "",
+                    }
+                )
+            try:
+                client = OpenAICompatibleClient(
+                    base_url=base_url,
+                    api_key=ai_key,
+                    model=model,
+                )
+                with st.spinner("正在重试失败条目…"):
+                    result = suggest_screening(client, snapshot["criteria"], documents)
+                storage.save_screening_suggestions(
+                    project_id,
+                    saved["task"]["id"],
+                    result["items"],
+                )
+                refreshed = storage.load_latest_screening_suggestions(
+                    project_id,
+                    kind=BENCHMARK_KIND,
+                )
+                updated_suggestions = (
+                    refreshed["suggestions"]
+                    if refreshed
+                    else saved["suggestions"]
+                )
+                evaluation = evaluate_screening_suggestions(
+                    updated_suggestions,
+                    snapshot_gold,
+                )
+                storage.save_screening_snapshot_evaluation(
+                    saved["task"]["id"],
+                    evaluation,
+                )
+                st.rerun()
+            except Exception as error:
+                st.error(str(error))
+    else:
+        st.caption("请在侧栏配置 API Key 后重试失败条目。")
+
 suggestions_for_selection = [
     item
     for item in saved["suggestions"]

@@ -12,6 +12,7 @@ from research_app.ai import AIError, OpenAICompatibleClient, parse_json_object
 
 
 TRANSLATION_PROMPT_VERSION = "title-translation-v1"
+ABSTRACT_TRANSLATION_PROMPT_VERSION = "abstract-translation-v1"
 MAX_TITLES_PER_REQUEST = 20
 _CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
 _MAX_CACHE_ENTRIES = 5000
@@ -145,4 +146,109 @@ def translate_titles(
             translation = parsed.get(str(index))
             if translation:
                 translations[title] = translation
+    return translations
+
+
+def abstract_cache_path() -> Path:
+    override = os.environ.get("SCIVERSE_ABSTRACT_TRANSLATION_CACHE")
+    if override:
+        return Path(override)
+    return Path.home() / ".sciverse" / "abstract-translations.json"
+
+
+def _abstract_cache_key(abstract: str, model: str) -> str:
+    normalized = " ".join(abstract.split()).casefold()
+    payload = (
+        f"{normalized}\0{model}\0{ABSTRACT_TRANSLATION_PROMPT_VERSION}\0abstract"
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _load_abstract_cache() -> dict[str, dict[str, str]]:
+    path = abstract_cache_path()
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    entries = data.get("entries") if isinstance(data, dict) else None
+    if not isinstance(entries, dict):
+        return {}
+    return {
+        key: value
+        for key, value in entries.items()
+        if isinstance(value, dict) and isinstance(value.get("translation"), str)
+    }
+
+
+def cached_abstract_translations(
+    abstracts: list[str],
+    model: str,
+) -> dict[str, str]:
+    cache = _load_abstract_cache()
+    result = {}
+    for abstract in abstracts:
+        entry = cache.get(_abstract_cache_key(abstract, model))
+        if entry:
+            result[abstract] = entry["translation"]
+    return result
+
+
+def save_abstract_translations(
+    translations: dict[str, str],
+    model: str,
+) -> None:
+    if not translations:
+        return
+    cache = _load_abstract_cache()
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    for abstract, translation in translations.items():
+        cache[_abstract_cache_key(abstract, model)] = {
+            "source_abstract": abstract,
+            "translation": translation,
+            "model": model,
+            "prompt_version": ABSTRACT_TRANSLATION_PROMPT_VERSION,
+            "updated_at": now,
+        }
+    if len(cache) > _MAX_CACHE_ENTRIES:
+        cache = dict(list(cache.items())[-_MAX_CACHE_ENTRIES:])
+    path = abstract_cache_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"entries": cache}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
+
+
+def _abstract_messages(abstract: str) -> list[dict[str, str]]:
+    return [
+        {
+            "role": "system",
+            "content": (
+                "你是学术摘要翻译助手。把英文摘要准确翻译成简体中文，"
+                "保留数值、单位、专业术语和逻辑关系；不要总结、解释或补充原文没有的信息。"
+                "只输出 JSON：{\"translation\":\"中文译文\"}。"
+            ),
+        },
+        {"role": "user", "content": abstract},
+    ]
+
+
+def translate_abstracts(
+    client: OpenAICompatibleClient,
+    abstracts: list[str],
+) -> dict[str, str]:
+    translations = {}
+    for abstract in abstracts:
+        raw = client.chat(_abstract_messages(abstract), max_tokens=4096)
+        payload = parse_json_object(raw)
+        translation = payload.get("translation")
+        if not isinstance(translation, str) or not translation.strip():
+            raise AIError("摘要翻译响应缺少 translation。")
+        translations[abstract] = translation.strip()
     return translations

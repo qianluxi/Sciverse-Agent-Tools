@@ -1361,11 +1361,17 @@ def list_screening_candidates(
     status: str | None = None,
     page: int = 1,
     page_size: int = 10,
+    order_by: str = "updated_at",
 ) -> tuple[list[dict[str, Any]], int]:
     if status is not None and status not in {"pending", "included", "excluded"}:
         raise ValueError("筛选状态无效。")
+    if order_by not in {"updated_at", "title"}:
+        raise ValueError("筛选排序无效。")
     page = max(1, int(page))
     page_size = max(1, min(int(page_size), 100))
+    order_clause = (
+        "title, candidate_key" if order_by == "title" else "updated_at, title"
+    )
     where = "project_id = ?"
     params: list[Any] = [project_id]
     if status:
@@ -1378,7 +1384,7 @@ def list_screening_candidates(
         ).fetchone()[0]
         rows = connection.execute(
             f"""SELECT * FROM screening_candidates WHERE {where}
-                ORDER BY updated_at, title LIMIT ? OFFSET ?""",
+                ORDER BY {order_clause} LIMIT ? OFFSET ?""",
             [*params, page_size, (page - 1) * page_size],
         ).fetchall()
     return [dict(row) for row in rows], total

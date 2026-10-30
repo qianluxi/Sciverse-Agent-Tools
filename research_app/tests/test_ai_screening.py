@@ -124,7 +124,7 @@ def test_suggest_screening_rejects_duplicate_ids():
 
 
 def test_suggest_screening_isolates_batch_error():
-    client = FakeClient(["not json"])
+    client = FakeClient(["not json", "not json"])
 
     result = suggest_screening(client, {}, _candidates())
 
@@ -154,3 +154,34 @@ def test_suggest_screening_marks_unknown_criterion_ids_as_invalid():
 
     assert result["items"][0]["criteria"] == ["I1: Eligible trials"]
     assert result["items"][0]["invalid_criteria"] == ["I9"]
+
+
+def test_suggest_screening_retries_failed_batch_once(monkeypatch):
+    from research_app.ai import AIError
+
+    class FlakyClient:
+        model = "test-model"
+
+        def __init__(self):
+            self.calls = 0
+
+        def chat(self, messages, *, max_tokens=2048):
+            self.calls += 1
+            if self.calls == 1:
+                raise AIError("ReadTimeout")
+            return (
+                '{"papers":['
+                '{"candidate_key":"paper:a","suggestion":"include",'
+                '"criterion_ids":[],"rationale":"ok","confidence":"high",'
+                '"evidence_quotes":[]},'
+                '{"candidate_key":"paper:b","suggestion":"exclude","criterion_ids":[],'
+                '"rationale":"ok","confidence":"high","evidence_quotes":[]}'
+                "]}"
+            )
+
+    client = FlakyClient()
+    result = suggest_screening(client, {}, _candidates())
+
+    assert client.calls == 2
+    assert all(not item.get("error") for item in result["items"])
+    assert result["items"][0]["suggestion"] == "include"

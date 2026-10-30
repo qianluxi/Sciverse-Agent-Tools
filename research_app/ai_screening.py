@@ -221,11 +221,17 @@ def suggest_screening(
     results = []
     for start in range(0, len(candidates), BATCH_SIZE):
         batch = candidates[start : start + BATCH_SIZE]
-        try:
-            results.extend(_suggest_batch(client, criteria, batch))
-        except AIError as error:
+        last_error = None
+        for attempt in range(2):
+            try:
+                results.extend(_suggest_batch(client, criteria, batch))
+                last_error = None
+                break
+            except AIError as error:
+                last_error = error
+        if last_error is not None:
             for candidate in batch:
-                results.append(_error_item(candidate, str(error)))
+                results.append(_error_item(candidate, str(last_error)))
     return {
         "items": results,
         "model": getattr(client, "model", ""),

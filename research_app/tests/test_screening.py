@@ -377,3 +377,20 @@ def test_v2_database_migrates_identifiers_for_cross_id_dedup(monkeypatch, tmp_pa
 
     assert result == {"identified": 1, "added": 0, "duplicates": 1, "conflicts": 0}
     assert storage.screening_stats(project_id)["unique"] == 1
+
+
+def test_screening_queue_can_keep_stable_title_order_after_saving(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    project_id = storage.create_screening_project("Review", "Q", "Include", "Exclude")
+    storage.add_screening_candidates(project_id, [_paper(2), _paper(1)])
+
+    before, _ = storage.list_screening_candidates(
+        project_id, page_size=10, order_by="title"
+    )
+    storage.set_screening_decision(project_id, "doi:10.1000/study-2", "included")
+    after, _ = storage.list_screening_candidates(
+        project_id, page_size=10, order_by="title"
+    )
+
+    assert [candidate["title"] for candidate in before] == ["Study 1", "Study 2"]
+    assert [candidate["title"] for candidate in after] == ["Study 1", "Study 2"]

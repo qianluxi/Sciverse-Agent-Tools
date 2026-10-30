@@ -1,12 +1,31 @@
 from __future__ import annotations
 
+import hashlib
+import os
 from math import ceil
 
 import streamlit as st
 
 from research_app import storage
+from research_app.ai import OpenAICompatibleClient
+from research_app.ai_settings import default_profile
+from research_app.ai_translation import (
+    cached_abstract_translations,
+    cached_translations,
+    needs_translation,
+    save_abstract_translations,
+    save_translations,
+    translate_abstracts,
+    translate_titles,
+)
 from research_app.exports import export_screening_csv
-from research_app.screening import EXCLUSION_REASONS, STATUS_LABELS
+from research_app.screening import (
+    EXCLUSION_REASONS,
+    STATUS_LABELS,
+    candidate_key,
+    identifier_keys,
+    paper_id,
+)
 
 
 st.set_page_config(page_title="系统综述筛选 · Sciverse", page_icon="S", layout="wide")
@@ -24,6 +43,39 @@ def _label(status: str) -> str:
 
 def _show_error(error: Exception) -> None:
     st.error(str(error))
+
+
+def _abstract_unavailable(abstract: str) -> bool:
+    text = str(abstract or "").strip()
+    if not text:
+        return True
+    return any(
+        marker in text
+        for marker in (
+            "First Name is required",
+            "Last Name is required",
+            "Email Address is required",
+        )
+    )
+
+
+def _translate_batch(
+    base_url: str,
+    api_key: str,
+    model: str,
+    titles: list[str],
+    abstracts: list[str],
+) -> tuple[dict[str, str], dict[str, str]]:
+    client = OpenAICompatibleClient(
+        base_url=base_url,
+        api_key=api_key,
+        model=model,
+    )
+    title_translations = translate_titles(client, titles) if titles else {}
+    abstract_translations = (
+        translate_abstracts(client, abstracts) if abstracts else {}
+    )
+    return title_translations, abstract_translations
 
 
 projects = storage.list_screening_projects()
@@ -47,6 +99,33 @@ project_id = st.selectbox(
 st.session_state["screening_project_id"] = project_id
 st.session_state["current_project_id"] = project_id
 project = storage.get_screening_project(project_id)
+
+_default_profile = default_profile()
+st.session_state.setdefault("ai_base_url", _default_profile["base_url"])
+st.session_state.setdefault("ai_model", _default_profile["model"])
+st.session_state.setdefault("ai_key_session", os.environ.get("OPENAI_API_KEY", ""))
+with st.sidebar:
+    st.markdown("### AI 翻译")
+    entered_base_url = st.text_input(
+        "Base URL",
+        value=st.session_state.get("ai_base_url", _default_profile["base_url"]),
+        key="screening_translation_base_url",
+    )
+    st.session_state["ai_base_url"] = entered_base_url.strip().rstrip("/")
+    entered_key = st.text_input(
+        "API Key",
+        type="password",
+        value=st.session_state.get("ai_key_session", ""),
+        key="screening_translation_key",
+        help="只在当前浏览器会话使用，不写入本地数据库。",
+    )
+    st.session_state["ai_key_session"] = entered_key
+    entered_model = st.text_input(
+        "模型名",
+        value=st.session_state.get("ai_model", _default_profile["model"]),
+        key="screening_translation_model",
+    )
+    st.session_state["ai_model"] = entered_model.strip()
 
 st.markdown(f"### {project['name']}")
 st.write(f"**研究问题：** {project['question']}")
@@ -127,7 +206,7 @@ with queue_tab:
     ]
     page_size = 10
     candidates, total = storage.list_screening_candidates(
-        project_id, status=filter_status, page=1, page_size=page_size
+        project_id, status=filter_status, page=1, page_size=page_size, order_by="title"
     )
     total_pages = max(1, ceil(total / page_size))
     if total_pages > 1:
@@ -135,16 +214,164 @@ with queue_tab:
             "队列页码", min_value=1, max_value=total_pages, value=1, step=1, key="queue_page"
         )
         candidates, total = storage.list_screening_candidates(
-            project_id, status=filter_status, page=int(page), page_size=page_size
+            project_id, status=filter_status, page=int(page), page_size=page_size, order_by="title"
         )
-    st.caption(f"共 {total} 条；当前显示 {len(candidates)} 条。")
+    st.caption(f"共 {total} 条，当前显示 {len(candidates)} 条")
+
+    fallback_papers = list(current_papers)
+    latest_run = storage.latest_search_run(project_id)
+    if latest_run:
+        fallback_papers.extend(latest_run.get("papers") or [])
+    paper_lookup = {}
+    for index, paper in enumerate(fallback_papers):
+        fallback_key = candidate_key(paper, index)
+        paper_lookup[fallback_key] = paper
+        paper_lookup[paper_id(paper, fallback_key)] = paper
+        for identifier in identifier_keys(paper):
+            paper_lookup[identifier] = paper
+    for candidate in candidates:
+        fallback = (
+            paper_lookup.get(candidate["candidate_key"])
+            or paper_lookup.get(candidate.get("paper_id") or "")
+            or {}
+        )
+        candidate["resolved_abstract"] = (
+            candidate.get("abstract")
+            or fallback.get("abstract")
+            or fallback.get("chunk")
+            or ""
+        )
+
+    audit_keys = {
+        item["candidate_key"]
+        for item in storage.list_screening_audit(project_id, limit=1000)
+    }
+    review_flags = [
+        candidate
+        for candidate in candidates
+        if _abstract_unavailable(candidate["resolved_abstract"])
+        or candidate["candidate_key"] not in audit_keys
+    ]
+    if review_flags:
+        st.warning(
+            f"本页有 {len(review_flags)} 条需要复核："
+            "无可用摘要的条目请按仅题名判断，信息不足时设为待定；"
+            "无审计记录的条目请保存一次人工决定。"
+        )
+
+    ai_base_url = st.session_state.get("ai_base_url", "")
+    ai_key = st.session_state.get("ai_key_session", "")
+    ai_model = st.session_state.get("ai_model", "")
+    auto_translate = st.toggle(
+        "自动翻译本页非中文标题和摘要",
+        value=True,
+        key="screening_auto_translate",
+    )
+    page_titles = [candidate["title"] for candidate in candidates]
+    page_abstracts = list(
+        dict.fromkeys(
+            candidate["resolved_abstract"]
+            for candidate in candidates
+            if candidate.get("resolved_abstract")
+            and not _abstract_unavailable(candidate["resolved_abstract"])
+        )
+    )
+    title_translations = cached_translations(page_titles, ai_model)
+    abstract_translations = cached_abstract_translations(page_abstracts, ai_model)
+    missing_titles = [
+        title for title in page_titles if needs_translation(title) and title not in title_translations
+    ]
+    missing_abstracts = [
+        abstract
+        for abstract in page_abstracts
+        if needs_translation(abstract) and abstract not in abstract_translations
+    ]
+    attempt_key = (
+        f"{ai_model}:"
+        f"{hashlib.sha256(chr(10).join([*missing_titles, *missing_abstracts]).encode('utf-8')).hexdigest()}"
+        if missing_titles or missing_abstracts
+        else ""
+    )
+    should_auto_translate = (
+        auto_translate
+        and bool(ai_key)
+        and bool(ai_base_url)
+        and bool(ai_model)
+        and bool(missing_titles or missing_abstracts)
+        and st.session_state.get("screening_translation_attempt") != attempt_key
+    )
+    if should_auto_translate:
+        st.session_state["screening_translation_attempt"] = attempt_key
+        try:
+            with st.spinner("正在翻译本页标题和摘要…"):
+                new_titles, new_abstracts = _translate_batch(
+                    ai_base_url,
+                    ai_key,
+                    ai_model,
+                    missing_titles,
+                    missing_abstracts,
+                )
+            save_translations(new_titles, ai_model)
+            save_abstract_translations(new_abstracts, ai_model)
+            title_translations.update(new_titles)
+            abstract_translations.update(new_abstracts)
+            missing_titles = [title for title in missing_titles if title not in title_translations]
+            missing_abstracts = [
+                abstract for abstract in missing_abstracts if abstract not in abstract_translations
+            ]
+        except Exception as error:
+            st.warning(f"标题/摘要翻译失败：{error}")
+    if (missing_titles or missing_abstracts) and ai_key and ai_base_url and ai_model:
+        if st.button("翻译本页剩余标题和摘要", key="screening_translate_retry"):
+            try:
+                with st.spinner("正在翻译本页标题和摘要…"):
+                    new_titles, new_abstracts = _translate_batch(
+                        ai_base_url,
+                        ai_key,
+                        ai_model,
+                        missing_titles,
+                        missing_abstracts,
+                    )
+                save_translations(new_titles, ai_model)
+                save_abstract_translations(new_abstracts, ai_model)
+                title_translations.update(new_titles)
+                abstract_translations.update(new_abstracts)
+                st.rerun()
+            except Exception as error:
+                st.warning(f"标题/摘要翻译失败：{error}")
+    elif not ai_key:
+        st.caption("可在左侧“AI 翻译”填写 API Key，自动翻译非中文标题和摘要。")
 
     if not candidates:
-        st.info("当前筛选范围内没有候选文献。")
+        st.info("当前筛选范围没有候选文献。")
     for candidate in candidates:
         key = candidate["candidate_key"]
-        with st.container(border=True):
-            st.markdown(f"#### {candidate['title']}")
+        abstract_unavailable = _abstract_unavailable(
+            candidate.get("resolved_abstract") or ""
+        )
+        needs_audit = key not in audit_keys
+        flagged = abstract_unavailable or needs_audit
+        if candidate["status"] == "pending":
+            card = st.container(border=True)
+        else:
+            flag_prefix = "⚠️ 需复核 · " if flagged else ""
+            card = st.expander(
+                f"{flag_prefix}{candidate['title']} · {_label(candidate['status'])}",
+                expanded=flagged,
+            )
+        with card:
+            title_prefix = "⚠️ " if flagged else ""
+            st.markdown(f"#### {title_prefix}{candidate['title']}")
+            translated_title = title_translations.get(candidate["title"])
+            if translated_title:
+                st.caption(f"中文（AI 翻译）：{translated_title}")
+            if abstract_unavailable:
+                st.warning(
+                    "无可用摘要：请按仅题名判断；题名信息不足时请设为待定，"
+                    "不要把“无摘要”直接作为排除理由。"
+                )
+            if needs_audit:
+                st.warning("该条目尚无人工审核审计记录，请保存一次人工决定。")
             if key.startswith("conflict:"):
                 st.error(
                     "身份冲突：该记录的强标识符指向不同候选，"
@@ -164,6 +391,15 @@ with queue_tab:
             )
             if candidate.get("notes"):
                 st.caption(f"备注：{candidate['notes']}")
+            abstract = str(candidate.get("resolved_abstract") or "").strip()
+            if abstract and not abstract_unavailable:
+                with st.expander("摘要（含中文翻译）", expanded=False):
+                    st.write(abstract)
+                    translated_abstract = abstract_translations.get(abstract)
+                    if translated_abstract:
+                        st.markdown(f"**中文（AI 翻译）：** {translated_abstract}")
+            else:
+                st.caption("摘要不可用。")
             sources = storage.list_candidate_sources(project_id, key)
             if sources:
                 with st.expander(f"来源检索快照（{len(sources)} 个）"):
@@ -243,6 +479,10 @@ with duplicates_tab:
 with audit_tab:
     audit = storage.list_screening_audit(project_id)
     if audit:
+        st.caption(
+            "审计记录保留每次修改前后的备注；“原备注”中出现“草案待审核”是历史值，"
+            "当前备注以筛选队列为准。"
+        )
         st.dataframe(
             [
                 {

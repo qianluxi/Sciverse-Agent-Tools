@@ -1,0 +1,59 @@
+{
+  "total": 60,
+  "counts": {
+    "gold_included": 30,
+    "gold_excluded": 30,
+    "ai_include": 26,
+    "ai_exclude": 26,
+    "ai_uncertain": 8,
+    "true_include": 23,
+    "false_exclusion": 0,
+    "excluded_correct": 26,
+    "missing_suggestions": 0,
+    "ai_errors": 0
+  },
+  "metrics": {
+    "include_precision": 0.8846153846153846,
+    "include_recall": 0.7666666666666667,
+    "exclusion_precision": 1.0,
+    "false_exclusion_rate": 0.0,
+    "missed_inclusion_rate": 0.0,
+    "non_exclusion_recall": 1.0,
+    "uncertain_rate": 0.13333333333333333
+  },
+  "confidence": [
+    {
+      "confidence": "high",
+      "total": 39,
+      "gold_included": 16,
+      "true_include": 16,
+      "false_exclusion": 0,
+      "ai_exclude": 23,
+      "ai_uncertain": 0,
+      "include_recall": 1.0,
+      "false_exclusion_rate": 0.0
+    },
+    {
+      "confidence": "medium",
+      "total": 13,
+      "gold_included": 7,
+      "true_include": 6,
+      "false_exclusion": 0,
+      "ai_exclude": 3,
+      "ai_uncertain": 1,
+      "include_recall": 0.8571428571428571,
+      "false_exclusion_rate": 0.0
+    },
+    {
+      "confidence": "low",
+      "total": 8,
+      "gold_included": 7,
+      "true_include": 1,
+      "false_exclusion": 0,
+      "ai_exclude": 0,
+      "ai_uncertain": 7,
+      "include_recall": 0.14285714285714285,
+      "false_exclusion_rate": null
+    }
+  ]
+}

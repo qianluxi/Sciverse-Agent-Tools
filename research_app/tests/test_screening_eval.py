@@ -78,7 +78,8 @@ def test_review_summary_uses_reviewed_items_as_denominator():
         [
             {"review_status": "accepted"},
             {"review_status": "accepted"},
-            {"review_status": "modified"},
+            {"review_status": "overridden"},
+            {"review_status": "resolved_uncertain"},
             {"review_status": "rejected"},
             {"review_status": "pending"},
         ]
@@ -87,10 +88,12 @@ def test_review_summary_uses_reviewed_items_as_denominator():
     assert summary["counts"] == {
         "pending": 1,
         "accepted": 2,
-        "modified": 1,
+        "overridden": 1,
+        "resolved_uncertain": 1,
         "rejected": 1,
     }
-    assert summary["reviewed"] == 4
-    assert summary["accepted_rate"] == pytest.approx(0.5)
-    assert summary["modified_rate"] == pytest.approx(0.25)
-    assert summary["rejected_rate"] == pytest.approx(0.25)
+    assert summary["reviewed"] == 5
+    assert summary["accepted_rate"] == pytest.approx(0.4)
+    assert summary["overridden_rate"] == pytest.approx(0.2)
+    assert summary["resolved_uncertain_rate"] == pytest.approx(0.2)
+    assert summary["rejected_rate"] == pytest.approx(0.2)

@@ -447,6 +447,133 @@ def test_apply_screening_review_rolls_back_all_writes_on_event_failure(
     assert storage.list_screening_review_events(project_id) == []
 
 
+def _screening_task_with_suggestion(
+    project_id, candidate_key, suggestion
+):
+    storage.add_screening_candidates(
+        project_id,
+        [{"title": "Paper X", "unique_id": candidate_key[4:]}],
+    )
+    task_id = storage.create_ai_task(
+        project_id,
+        kind="screening",
+        model="test-model",
+        prompt_version="screening-v2",
+        input_hash="classification-hash",
+    )
+    storage.save_screening_suggestions(
+        project_id,
+        task_id,
+        [
+            {
+                "candidate_key": candidate_key,
+                "paper_id": candidate_key[4:],
+                "title": "Paper X",
+                "suggestion": suggestion,
+                "criteria": [],
+                "rationale": "test",
+                "confidence": "high",
+                "evidence_quotes": [],
+                "quote_checks": [],
+                "invalid_criteria": [],
+            }
+        ],
+    )
+    return task_id
+
+
+def test_apply_screening_review_distinguishes_override_and_uncertain_resolution(
+    monkeypatch, tmp_path
+):
+    _isolate(monkeypatch, tmp_path)
+    project_id = _project()
+
+    override_task = _screening_task_with_suggestion(
+        project_id, "uid:paper:o", "exclude"
+    )
+    result = storage.apply_screening_review(
+        project_id, override_task, "uid:paper:o", "included"
+    )
+    assert result["review_status"] == "overridden"
+
+    uncertain_task = _screening_task_with_suggestion(
+        project_id, "uid:paper:u", "uncertain"
+    )
+    result = storage.apply_screening_review(
+        project_id, uncertain_task, "uid:paper:u", "excluded", reason="其他"
+    )
+    assert result["review_status"] == "resolved_uncertain"
+
+    accepted_task = _screening_task_with_suggestion(
+        project_id, "uid:paper:a", "include"
+    )
+    result = storage.apply_screening_review(
+        project_id, accepted_task, "uid:paper:a", "included"
+    )
+    assert result["review_status"] == "accepted"
+
+
+def test_apply_screening_review_rejects_benchmark_task(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    project_id = _project()
+    storage.add_screening_candidates(
+        project_id, [{"title": "Paper B", "unique_id": "paper:b"}]
+    )
+    task_id = storage.create_ai_task(
+        project_id,
+        kind="screening_benchmark",
+        model="test-model",
+        prompt_version="screening-v2",
+        input_hash="benchmark-hash",
+    )
+    storage.save_screening_suggestions(
+        project_id,
+        task_id,
+        [
+            {
+                "candidate_key": "uid:paper:b",
+                "paper_id": "paper:b",
+                "title": "Paper B",
+                "suggestion": "include",
+                "criteria": [],
+                "rationale": "test",
+                "confidence": "high",
+                "evidence_quotes": [],
+                "quote_checks": [],
+                "invalid_criteria": [],
+            }
+        ],
+    )
+    with pytest.raises(ValueError):
+        storage.apply_screening_review(
+            project_id, task_id, "uid:paper:b", "included"
+        )
+
+
+def test_reclassify_review_status_splits_legacy_modified():
+    assert (
+        storage._reclassify_review_status("exclude", "modified", "included")
+        == "overridden"
+    )
+    assert (
+        storage._reclassify_review_status("include", "modified", "excluded")
+        == "overridden"
+    )
+    assert (
+        storage._reclassify_review_status("uncertain", "modified", "included")
+        == "resolved_uncertain"
+    )
+    assert (
+        storage._reclassify_review_status("uncertain", "modified", "excluded")
+        == "resolved_uncertain"
+    )
+    assert (
+        storage._reclassify_review_status("include", "accepted", "included")
+        == "accepted"
+    )
+    assert storage._reclassify_review_status(None, "rejected", None) == "rejected"
+
+
 def test_screening_snapshot_freezes_gold_and_review_events_are_append_only(
     monkeypatch, tmp_path
 ):
@@ -821,7 +948,7 @@ def test_schema_v10_tables_are_created(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     _project()
     with storage._connection() as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 10
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 11
         tables = {
             row[0]
             for row in connection.execute(

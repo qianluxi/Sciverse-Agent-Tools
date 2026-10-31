@@ -1,0 +1,36 @@
+{
+  "task_id": "08fa007e964648f4bb11c185ce751e1f",
+  "project": "??RC??????-????-v1",
+  "model": "glm-5.3-flash",
+  "prompt_version": "screening-v2",
+  "total": 30,
+  "timing_seconds": 1240,
+  "avg_seconds_per_paper": 41.333333333333336,
+  "timing_note": "????????????????? AI ??/?????",
+  "review_status_counts": {
+    "accepted": 20,
+    "overridden": 2,
+    "resolved_uncertain": 8,
+    "rejected": 0
+  },
+  "no_abstract": [
+    {
+      "candidate_key": "doi:10.3850/978-981-07-7137-9_262",
+      "ai_suggestion": "uncertain",
+      "decision": "excluded",
+      "review_status": "resolved_uncertain"
+    },
+    {
+      "candidate_key": "doi:10.5169/seals-55207",
+      "ai_suggestion": "uncertain",
+      "decision": "included",
+      "review_status": "resolved_uncertain"
+    }
+  ],
+  "ai_suggestion_breakdown": {
+    "include": 12,
+    "exclude": 10,
+    "uncertain": 8
+  },
+  "explicit_conflict_rate": "2/22 = 9.1%"
+}

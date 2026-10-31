@@ -23,7 +23,7 @@ from research_app.screening import (
 )
 
 
-_SCHEMA_VERSION = 10
+_SCHEMA_VERSION = 11
 _BACKUP_SCHEMA_VERSION = 2
 _MAX_HISTORY_ENTRIES = 50
 _MAX_SNAPSHOT_BYTES = 5 * 1024 * 1024
@@ -32,6 +32,31 @@ _MAX_PARAMS_BYTES = 16 * 1024
 _MAX_BACKUP_BYTES = 2 * 1024 * 1024
 _SENSITIVE_KEYS = {"token", "api_token", "sciverse_api_token", "authorization"}
 _BACKUP_FORMAT = "sciverse-research-workbench"
+
+REVIEW_STATUSES = frozenset(
+    {"pending", "accepted", "overridden", "resolved_uncertain", "rejected"}
+)
+
+
+def _review_status_for(suggestion: str | None, final_status: str) -> str:
+    if final_status == "pending":
+        return "rejected"
+    expected = {"include": "included", "exclude": "excluded"}.get(str(suggestion))
+    if expected is None:
+        return "resolved_uncertain"
+    return "accepted" if final_status == expected else "overridden"
+
+
+def _reclassify_review_status(
+    suggestion: str | None,
+    review_status: str | None,
+    review_decision: str | None,
+) -> str:
+    if review_status != "modified":
+        return review_status or "pending"
+    if str(suggestion) in {"include", "exclude"}:
+        return "overridden"
+    return "resolved_uncertain"
 
 
 def database_path() -> Path:
@@ -426,6 +451,100 @@ def _migrate(connection: sqlite3.Connection) -> None:
         )
         version = 10
         connection.execute("PRAGMA user_version = 10")
+    if version < 11:
+        connection.executescript(
+            """
+            CREATE TABLE ai_screening_suggestions_v11 (
+                project_id TEXT NOT NULL REFERENCES screening_projects(id) ON DELETE CASCADE,
+                task_id TEXT NOT NULL REFERENCES ai_task_runs(id) ON DELETE CASCADE,
+                candidate_key TEXT NOT NULL,
+                paper_id TEXT NOT NULL DEFAULT '',
+                title TEXT NOT NULL DEFAULT '',
+                year INTEGER,
+                suggestion TEXT NOT NULL DEFAULT 'uncertain'
+                    CHECK (suggestion IN ('include', 'exclude', 'uncertain')),
+                criteria_json TEXT NOT NULL DEFAULT '[]',
+                rationale TEXT NOT NULL DEFAULT '',
+                confidence TEXT NOT NULL DEFAULT 'low',
+                evidence_quotes_json TEXT NOT NULL DEFAULT '[]',
+                quote_checks_json TEXT NOT NULL DEFAULT '[]',
+                error TEXT,
+                invalid_criteria_json TEXT NOT NULL DEFAULT '[]',
+                review_status TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (review_status IN ('pending', 'accepted', 'overridden',
+                                             'resolved_uncertain', 'rejected')),
+                review_decision TEXT,
+                review_note TEXT NOT NULL DEFAULT '',
+                reviewed_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (task_id, candidate_key)
+            );
+            """
+        )
+        columns = [
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(ai_screening_suggestions)"
+            ).fetchall()
+        ]
+        for row in connection.execute(
+            "SELECT * FROM ai_screening_suggestions"
+        ).fetchall():
+            data = dict(row)
+            data["review_status"] = _reclassify_review_status(
+                data.get("suggestion"),
+                data.get("review_status"),
+                data.get("review_decision"),
+            )
+            connection.execute(
+                f"""INSERT INTO ai_screening_suggestions_v11
+                    ({', '.join(columns)})
+                    VALUES ({', '.join('?' for _ in columns)})""",
+                [data[column] for column in columns],
+            )
+        connection.execute("DROP TABLE ai_screening_suggestions")
+        connection.execute(
+            "ALTER TABLE ai_screening_suggestions_v11 RENAME TO ai_screening_suggestions"
+        )
+        connection.execute(
+            """CREATE INDEX IF NOT EXISTS ai_screening_suggestions_project
+               ON ai_screening_suggestions(project_id, task_id)"""
+        )
+        for row in connection.execute(
+            """SELECT id, ai_suggestion, review_status, review_decision
+               FROM ai_screening_review_events
+               WHERE review_status = 'modified'"""
+        ).fetchall():
+            connection.execute(
+                "UPDATE ai_screening_review_events SET review_status = ? WHERE id = ?",
+                (
+                    _reclassify_review_status(
+                        row["ai_suggestion"],
+                        row["review_status"],
+                        row["review_decision"],
+                    ),
+                    row["id"],
+                ),
+            )
+        for row in connection.execute(
+            """SELECT a.id AS aid, s.suggestion, s.review_decision, a.ai_action
+               FROM screening_audit a
+               LEFT JOIN ai_screening_suggestions s
+                 ON a.ai_task_id = s.task_id AND a.candidate_key = s.candidate_key
+               WHERE a.ai_action = 'modified'"""
+        ).fetchall():
+            connection.execute(
+                "UPDATE screening_audit SET ai_action = ? WHERE id = ?",
+                (
+                    _reclassify_review_status(
+                        row["suggestion"], row["ai_action"], row["review_decision"]
+                    ),
+                    row["aid"],
+                ),
+            )
+        version = 11
+        connection.execute("PRAGMA user_version = 11")
 
 
 @contextmanager
@@ -1412,7 +1531,7 @@ def set_screening_decision(
 ) -> bool:
     if status not in {"pending", "included", "excluded"}:
         raise ValueError("筛选状态无效。")
-    if ai_action not in {None, "accepted", "modified"}:
+    if ai_action not in {None, "accepted", "overridden", "resolved_uncertain", "rejected"}:
         raise ValueError("AI 建议处理动作无效。")
     if candidate_key_value.startswith("conflict:"):
         raise ValueError("身份冲突尚未解决，不能保存筛选决定。")
@@ -2277,7 +2396,7 @@ def review_screening_suggestion(
     review_decision: str | None = None,
     note: str = "",
 ) -> None:
-    if review_status not in {"pending", "accepted", "modified", "rejected"}:
+    if review_status not in REVIEW_STATUSES:
         raise ValueError("AI 建议处理状态无效。")
     if review_decision not in {None, "pending", "included", "excluded"}:
         raise ValueError("人工筛选状态无效。")
@@ -2333,12 +2452,11 @@ def apply_screening_review(
         _screening_project(connection, project_id)
         task = connection.execute(
             """SELECT 1 FROM ai_task_runs
-               WHERE id = ? AND project_id = ?
-                 AND kind IN ('screening', 'screening_benchmark')""",
+               WHERE id = ? AND project_id = ? AND kind = 'screening'""",
             (task_id, project_id),
         ).fetchone()
         if task is None:
-            raise ValueError("AI 筛选任务不存在。")
+            raise ValueError("AI 筛选任务不存在，或该任务不是普通筛选任务。")
         suggestion = connection.execute(
             """SELECT suggestion FROM ai_screening_suggestions
                WHERE project_id = ? AND task_id = ? AND candidate_key = ?""",
@@ -2355,17 +2473,14 @@ def apply_screening_review(
         if candidate is None:
             raise ValueError("候选文献不存在。")
 
-        expected = {
-            "include": "included",
-            "exclude": "excluded",
-        }.get(str(suggestion["suggestion"]))
+        suggestion_value = str(suggestion["suggestion"])
         status_before = candidate["status"]
         if final_status == "pending":
             review_status = "rejected"
             review_decision = None
             status_after = status_before
         else:
-            review_status = "accepted" if final_status == expected else "modified"
+            review_status = _review_status_for(suggestion_value, final_status)
             review_decision = final_status
             status_after = final_status
             if (
@@ -2603,7 +2718,7 @@ def append_screening_review_event(
     status_after: str | None,
     note: str = "",
 ) -> int:
-    if review_status not in {"pending", "accepted", "modified", "rejected"}:
+    if review_status not in REVIEW_STATUSES:
         raise ValueError("AI 建议处理状态无效。")
     note = str(note or "").strip()
     if len(note) > 2000:

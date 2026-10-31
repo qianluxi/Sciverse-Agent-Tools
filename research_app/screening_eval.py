@@ -136,7 +136,8 @@ def review_summary(suggestions: list[dict[str, Any]]) -> dict[str, Any]:
     counts = {
         "pending": 0,
         "accepted": 0,
-        "modified": 0,
+        "overridden": 0,
+        "resolved_uncertain": 0,
         "rejected": 0,
     }
     for item in suggestions:
@@ -144,11 +145,17 @@ def review_summary(suggestions: list[dict[str, Any]]) -> dict[str, Any]:
         if status not in counts:
             status = "pending"
         counts[status] += 1
-    reviewed = counts["accepted"] + counts["modified"] + counts["rejected"]
+    reviewed = (
+        counts["accepted"]
+        + counts["overridden"]
+        + counts["resolved_uncertain"]
+        + counts["rejected"]
+    )
     return {
         "counts": counts,
         "reviewed": reviewed,
         "accepted_rate": _rate(counts["accepted"], reviewed),
-        "modified_rate": _rate(counts["modified"], reviewed),
+        "overridden_rate": _rate(counts["overridden"], reviewed),
+        "resolved_uncertain_rate": _rate(counts["resolved_uncertain"], reviewed),
         "rejected_rate": _rate(counts["rejected"], reviewed),
     }

@@ -286,15 +286,17 @@ review = review_summary(suggestions)
 if review["reviewed"]:
     st.caption(
         f"已处理 {review['reviewed']} 条："
-        f"采用率 {review['accepted_rate']:.1%}，"
-        f"改判率 {review['modified_rate']:.1%}，"
-        f"拒绝率 {review['rejected_rate']:.1%}。"
+        f"采用 {review['counts']['accepted']}、"
+        f"推翻 {review['counts']['overridden']}、"
+        f"完成不确定判断 {review['counts']['resolved_uncertain']}、"
+        f"拒绝 {review['counts']['rejected']}。"
     )
 
 review_labels = {
     "pending": "待处理",
     "accepted": "已采用",
-    "modified": "已改判",
+    "overridden": "已推翻 AI 建议",
+    "resolved_uncertain": "完成不确定判断",
     "rejected": "已拒绝",
 }
 status_options = ["pending", "included", "excluded"]

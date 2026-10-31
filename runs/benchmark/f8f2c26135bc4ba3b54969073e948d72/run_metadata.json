@@ -1,0 +1,129 @@
+{
+  "task": {
+    "id": "f8f2c26135bc4ba3b54969073e948d72",
+    "project_id": "8285e00c52914f95a4b080e2cc49bc62",
+    "kind": "screening_benchmark",
+    "model": "glm-5.3-flash",
+    "prompt_version": "screening-v2",
+    "input_hash": "63faa75ad2f86af725e211e250dc7afa3da461ea55304b23e2213fbc2bd79c35",
+    "status": "completed",
+    "error": null,
+    "created_at": "2026-10-30T07:27:51+00:00",
+    "updated_at": "2026-10-30T07:29:57+00:00"
+  },
+  "snapshot": {
+    "task_id": "f8f2c26135bc4ba3b54969073e948d72",
+    "kind": "screening_benchmark",
+    "dataset_hash": "5e32458194cd92445680cbdc9a61cc36a3c79fa4e8abe0897d6ea796562cd140",
+    "dataset_version": "screening_benchmark-5e32458194cd"
+  },
+  "criteria": {
+    "question": "建筑钢筋混凝土柱及梁柱节点的抗震加固方法及其对承载力、延性、滞回性能和破坏模式的影响",
+    "items": [
+      {
+        "id": "I1",
+        "kind": "inclusion",
+        "text": "研究对象为建筑钢筋混凝土柱或梁柱节点"
+      },
+      {
+        "id": "I2",
+        "kind": "inclusion",
+        "text": "涉及抗震加固、修复或改造"
+      },
+      {
+        "id": "I3",
+        "kind": "inclusion",
+        "text": "评估抗震性能、承载力、延性、滞回性能或破坏模式"
+      },
+      {
+        "id": "I4",
+        "kind": "inclusion",
+        "text": "试验、数值或分析研究"
+      },
+      {
+        "id": "I5",
+        "kind": "inclusion",
+        "text": "摘要可用，或题名足以明确判断"
+      },
+      {
+        "id": "E1",
+        "kind": "exclusion",
+        "text": "研究对象不是建筑RC柱或梁柱节点（桥梁柱/墩、板柱节点、剪力墙、整体框架/建筑、砌体等）"
+      },
+      {
+        "id": "E2",
+        "kind": "exclusion",
+        "text": "未涉及抗震加固、修复或改造"
+      },
+      {
+        "id": "E3",
+        "kind": "exclusion",
+        "text": "仅评估成本、环境或生命周期，或研究非抗震荷载"
+      },
+      {
+        "id": "E4",
+        "kind": "exclusion",
+        "text": "综述、摘要不可用且题名不足以判断、或非原始研究"
+      }
+    ]
+  },
+  "evaluation": {
+    "total": 60,
+    "counts": {
+      "gold_included": 30,
+      "gold_excluded": 30,
+      "ai_include": 26,
+      "ai_exclude": 26,
+      "ai_uncertain": 8,
+      "true_include": 23,
+      "false_exclusion": 0,
+      "excluded_correct": 26,
+      "missing_suggestions": 0,
+      "ai_errors": 0
+    },
+    "metrics": {
+      "include_precision": 0.8846153846153846,
+      "include_recall": 0.7666666666666667,
+      "exclusion_precision": 1.0,
+      "false_exclusion_rate": 0.0,
+      "missed_inclusion_rate": 0.0,
+      "non_exclusion_recall": 1.0,
+      "uncertain_rate": 0.13333333333333333
+    },
+    "confidence": [
+      {
+        "confidence": "high",
+        "total": 39,
+        "gold_included": 16,
+        "true_include": 16,
+        "false_exclusion": 0,
+        "ai_exclude": 23,
+        "ai_uncertain": 0,
+        "include_recall": 1.0,
+        "false_exclusion_rate": 0.0
+      },
+      {
+        "confidence": "medium",
+        "total": 13,
+        "gold_included": 7,
+        "true_include": 6,
+        "false_exclusion": 0,
+        "ai_exclude": 3,
+        "ai_uncertain": 1,
+        "include_recall": 0.8571428571428571,
+        "false_exclusion_rate": 0.0
+      },
+      {
+        "confidence": "low",
+        "total": 8,
+        "gold_included": 7,
+        "true_include": 1,
+        "false_exclusion": 0,
+        "ai_exclude": 0,
+        "ai_uncertain": 7,
+        "include_recall": 0.14285714285714285,
+        "false_exclusion_rate": null
+      }
+    ]
+  }
+}

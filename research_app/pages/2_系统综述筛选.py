@@ -480,7 +480,9 @@ with audit_tab:
                     "新备注": item["new_notes"] or "",
                     "AI 处理": {
                         "accepted": "采用建议",
-                        "modified": "人工改判",
+                        "overridden": "推翻建议",
+                        "resolved_uncertain": "完成不确定判断",
+                        "rejected": "拒绝建议",
                     }.get(item.get("ai_action"), ""),
                     "AI 任务": item.get("ai_task_id") or "",
                 }

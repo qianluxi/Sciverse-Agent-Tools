@@ -1,0 +1,425 @@
+{
+  "items": [
+    {
+      "candidate_key": "doi:10.21203/rs.3.rs-3287823/v1",
+      "paper_id": "paper:10.21203/rs.3.rs-3287823/v1",
+      "year": 2023,
+      "gold": "included",
+      "abstract_sha256": "accf5c2d7f7e2c66940b08523fd7a0130a3fe218cc949bc8642ea128e7e99bea"
+    },
+    {
+      "candidate_key": "doi:10.3390/polym8040107",
+      "paper_id": "paper:10.3390/polym8040107",
+      "year": 2016,
+      "gold": "included",
+      "abstract_sha256": "8523bbb5131f8164d0e4ae0ae8733f4eb9a6e909fbcdb92215e3d860aa23872e"
+    },
+    {
+      "candidate_key": "doi:10.20381/ruor-9782",
+      "paper_id": "paper:10.20381/ruor-9782",
+      "year": 2004,
+      "gold": "excluded",
+      "abstract_sha256": "32bcb877b9192d9db5b139fa5dbc1f98ed6b98543213cfd49723e479ff5a286e"
+    },
+    {
+      "candidate_key": "doi:10.1061/(asce)0733-9445(2004)130:4(609)",
+      "paper_id": "paper:10.1061/(asce)0733-9445(2004)130:4(609)",
+      "year": 2004,
+      "gold": "excluded",
+      "abstract_sha256": "5363328c8635374121f7f2a09040df94d5a359a612d3271113bb233e8cea3e0f"
+    },
+    {
+      "candidate_key": "doi:10.20381/ruor-4383",
+      "paper_id": "paper:10.20381/ruor-4383",
+      "year": 2015,
+      "gold": "excluded",
+      "abstract_sha256": "97f76f3a4e9c2785e202ede745181496af05110ce97caf0dc915de119e6b973f"
+    },
+    {
+      "candidate_key": "doi:10.71846/16-wcee-0522",
+      "paper_id": "paper:10.71846/16-wcee-0522",
+      "year": 2025,
+      "gold": "included",
+      "abstract_sha256": ""
+    },
+    {
+      "candidate_key": "doi:10.1007/s10518-024-02027-3",
+      "paper_id": "paper:10.1007/s10518-024-02027-3",
+      "year": 2025,
+      "gold": "excluded",
+      "abstract_sha256": "023ce14d6353b192f0e1fb0acaa043403da24bb457bef2b415f86aa97e2c9808"
+    },
+    {
+      "candidate_key": "doi:10.18702/acf.2015.09.1.37",
+      "paper_id": "paper:10.18702/acf.2015.09.1.37",
+      "year": 2015,
+      "gold": "included",
+      "abstract_sha256": "643b3b8e05d9674c1cc32b5793c5a18b6fa6d26509dd6ee44d07dc528d8eab31"
+    },
+    {
+      "candidate_key": "doi:10.1016/j.engstruct.2011.05.025",
+      "paper_id": "paper:10.1016/j.engstruct.2011.05.025",
+      "year": 2011,
+      "gold": "excluded",
+      "abstract_sha256": "ced336ef97a0af5f8d60cb7233e5af4cc28e514b54f93fc7305ef60245c644da"
+    },
+    {
+      "candidate_key": "doi:10.1016/s0141-0296(98)00137-0",
+      "paper_id": "paper:10.1016/s0141-0296(98)00137-0",
+      "year": 2000,
+      "gold": "included",
+      "abstract_sha256": "c1f689f7a3252d55be56a37150a538c977dc1f20e8a71acf7a0c7f290ace9824"
+    },
+    {
+      "candidate_key": "doi:10.1016/j.jobe.2026.115838",
+      "paper_id": "paper:10.1016/j.jobe.2026.115838",
+      "year": 2026,
+      "gold": "included",
+      "abstract_sha256": ""
+    },
+    {
+      "candidate_key": "doi:10.1016/j.jclepro.2024.142290",
+      "paper_id": "paper:10.1016/j.jclepro.2024.142290",
+      "year": 2024,
+      "gold": "excluded",
+      "abstract_sha256": "81af5f460e6a468679aa763a38cd1f40c3999a20210796670f6188206f4fe87e"
+    },
+    {
+      "candidate_key": "doi:10.1080/15732470701801159",
+      "paper_id": "paper:10.1080/15732470701801159",
+      "year": 2010,
+      "gold": "included",
+      "abstract_sha256": "fbebc09cf1c0c52d18fcc0ce65bcca8f37b75756006841ba0d4528e1cf07c2f4"
+    },
+    {
+      "candidate_key": "doi:10.1016/j.engstruct.2020.110390",
+      "paper_id": "paper:10.1016/j.engstruct.2020.110390",
+      "year": 2020,
+      "gold": "included",
+      "abstract_sha256": "10ead05cf7255307dc56bcb68a366f601d77338eea5c955acf31d22d77241b38"
+    },
+    {
+      "candidate_key": "doi:10.5459/bnzsee.25.3.203-210",
+      "paper_id": "paper:10.5459/bnzsee.25.3.203-210",
+      "year": 1992,
+      "gold": "excluded",
+      "abstract_sha256": "041d879bf6a7b8b97efac3b2080b503b5fe101bcd8f313b6cbf209b061bd930c"
+    },
+    {
+      "candidate_key": "doi:10.4028/www.scientific.net/amm.477-478.681",
+      "paper_id": "paper:10.4028/www.scientific.net/amm.477-478.681",
+      "year": 2013,
+      "gold": "included",
+      "abstract_sha256": "a5592f0d93ea81fcdc36faf2e810e89349da60d5b306825200f6f1b77357ec22"
+    },
+    {
+      "candidate_key": "doi:10.1061/40946(248)106",
+      "paper_id": "paper:10.1061/40946(248)106",
+      "year": 2007,
+      "gold": "included",
+      "abstract_sha256": "c64e3c0a3c9d025e089655dc250fcc8489f7dec6d760ec90ef5d831462f60e7c"
+    },
+    {
+      "candidate_key": "doi:10.14359/12845",
+      "paper_id": "paper:10.14359/12845",
+      "year": 2003,
+      "gold": "included",
+      "abstract_sha256": "240824e8923e391e3dacbcd1ca00ff8db776c896b82319abe1084179c432cd20"
+    },
+    {
+      "candidate_key": "doi:10.1088/1755-1315/614/1/012063",
+      "paper_id": "paper:10.1088/1755-1315/614/1/012063",
+      "year": 2020,
+      "gold": "excluded",
+      "abstract_sha256": "a83cf61a5246ddc40937fd22f7a96fc6223d29143969341a76e84d9f4f911302"
+    },
+    {
+      "candidate_key": "doi:10.1109/ichce57331.2022.10042794",
+      "paper_id": "paper:10.1109/ichce57331.2022.10042794",
+      "year": 2022,
+      "gold": "included",
+      "abstract_sha256": "d1ae2a570619766e8e0a357113b26246bc3e418d9c46e0cfa78d0ac31556cfa0"
+    },
+    {
+      "candidate_key": "doi:10.3390/books978-3-0365-5058-9",
+      "paper_id": "paper:10.3390/books978-3-0365-5058-9",
+      "year": 2022,
+      "gold": "excluded",
+      "abstract_sha256": "b536c1459d6177140677e57f1f647075a9610c457525dddc1e83dd4c9f593b5b"
+    },
+    {
+      "candidate_key": "doi:10.1063/1.2963783",
+      "paper_id": "paper:10.1063/1.2963783",
+      "year": 2008,
+      "gold": "included",
+      "abstract_sha256": "0ec49ecb2df43ad7241e1b2d7ec1415fcc7011be705f4d1743c540a007c66e98"
+    },
+    {
+      "candidate_key": "doi:10.4028/www.scientific.net/amr.194-196.1986",
+      "paper_id": "paper:10.4028/www.scientific.net/amr.194-196.1986",
+      "year": 2011,
+      "gold": "included",
+      "abstract_sha256": "8222d9e8007d7abc3be009c4256a3406c9795820f825bf3bf25420a8a22cb51f"
+    },
+    {
+      "candidate_key": "doi:10.2991/icache-15.2015.28",
+      "paper_id": "paper:10.2991/icache-15.2015.28",
+      "year": 2015,
+      "gold": "excluded",
+      "abstract_sha256": "e1c9c8625e759e22ddd15750e5489a998dd1987ec76d0fcd778e749563be9be6"
+    },
+    {
+      "candidate_key": "doi:10.14359/4593",
+      "paper_id": "paper:10.14359/4593",
+      "year": 1994,
+      "gold": "included",
+      "abstract_sha256": "240824e8923e391e3dacbcd1ca00ff8db776c896b82319abe1084179c432cd20"
+    },
+    {
+      "candidate_key": "doi:10.2495/er030081",
+      "paper_id": "paper:10.2495/er030081",
+      "year": 2003,
+      "gold": "excluded",
+      "abstract_sha256": "2deafb2349e807e8e3d29ae13d691be609c006c62e74642354810820eac7f49d"
+    },
+    {
+      "candidate_key": "doi:10.1061/ppscfx.sceng-1407",
+      "paper_id": "paper:10.1061/ppscfx.sceng-1407",
+      "year": 2024,
+      "gold": "excluded",
+      "abstract_sha256": "aaf2ce84f8f7ae9af3a36d83a48a2d9bd229282b60cc43fd459b782b204f4c91"
+    },
+    {
+      "candidate_key": "doi:10.20381/ruor-3196",
+      "paper_id": "paper:10.20381/ruor-3196",
+      "year": 2013,
+      "gold": "included",
+      "abstract_sha256": "8501c2a32ec9484b115806191be5cdc90fa1faa9bc27cc77632446b6fb0113d2"
+    },
+    {
+      "candidate_key": "doi:10.1002/9781119987352",
+      "paper_id": "paper:10.1002/9781119987352",
+      "year": 2023,
+      "gold": "excluded",
+      "abstract_sha256": ""
+    },
+    {
+      "candidate_key": "doi:10.3141/1892-20",
+      "paper_id": "paper:10.3141/1892-20",
+      "year": 2004,
+      "gold": "excluded",
+      "abstract_sha256": "612d773c2f1e1d207785c355de2ad5937a21310942475ad7dd934a6d730a393a"
+    },
+    {
+      "candidate_key": "doi:10.1061/41084(364)133",
+      "paper_id": "paper:10.1061/41084(364)133",
+      "year": 2009,
+      "gold": "included",
+      "abstract_sha256": "aaa879b9fea5f73bb184505949303c6ad388b85a3b9983f70e3f198fd8e73db9"
+    },
+    {
+      "candidate_key": "doi:10.14359/20248",
+      "paper_id": "paper:10.14359/20248",
+      "year": 2008,
+      "gold": "excluded",
+      "abstract_sha256": "be746eade262f1e10ded0935e4de1002a77eb3f166f78757a8dda1e12dd332de"
+    },
+    {
+      "candidate_key": "doi:10.14359/56617",
+      "paper_id": "paper:10.14359/56617",
+      "year": 2009,
+      "gold": "excluded",
+      "abstract_sha256": "240824e8923e391e3dacbcd1ca00ff8db776c896b82319abe1084179c432cd20"
+    },
+    {
+      "candidate_key": "doi:10.1007/978-94-010-0021-5_21",
+      "paper_id": "paper:10.1007/978-94-010-0021-5_21",
+      "year": 2003,
+      "gold": "excluded",
+      "abstract_sha256": "7efc1e84fcacb9e73cf42ed95bf6b4b517254af30c33c6b02e3831f89f43a3d7"
+    },
+    {
+      "candidate_key": "doi:10.1007/978-981-97-0102-5_7",
+      "paper_id": "paper:10.1007/978-981-97-0102-5_7",
+      "year": 2024,
+      "gold": "excluded",
+      "abstract_sha256": "88dec0f7f856441a7da68245d1baf0dc973117d21c19b4e18a83ef344b3a967f"
+    },
+    {
+      "candidate_key": "doi:10.1061/(asce)st.1943-541x.0003111",
+      "paper_id": "paper:10.1061/(asce)st.1943-541x.0003111",
+      "year": 2021,
+      "gold": "included",
+      "abstract_sha256": "8c96099861558e88e01f19f9b9734fd41f2d5c62360108c9a7ccb348001b09aa"
+    },
+    {
+      "candidate_key": "doi:10.1680/macr.2000.52.6.419",
+      "paper_id": "paper:10.1680/macr.2000.52.6.419",
+      "year": 2000,
+      "gold": "excluded",
+      "abstract_sha256": "d5ce9098e86e865ec6b89094d89103997db268611979608a3a7d12f96e560889"
+    },
+    {
+      "candidate_key": "doi:10.82308/53822",
+      "paper_id": "paper:10.82308/53822",
+      "year": 1996,
+      "gold": "excluded",
+      "abstract_sha256": "cd430a442bddaee6fe539005cd7e752cd03454e42c662e661fdc4b19584e778f"
+    },
+    {
+      "candidate_key": "doi:10.20381/ruor-7547",
+      "paper_id": "paper:10.20381/ruor-7547",
+      "year": 1998,
+      "gold": "excluded",
+      "abstract_sha256": "62a62fd1de53f6165ad74429021ae367a559847802cde9d8de8866119eccf2fb"
+    },
+    {
+      "candidate_key": "doi:10.1186/s43065-024-00114-y",
+      "paper_id": "paper:10.1186/s43065-024-00114-y",
+      "year": 2025,
+      "gold": "excluded",
+      "abstract_sha256": "7287e9fce619334fb1eab3f86790f0a2fa35121966a31e23cbd16ddecee09e5b"
+    },
+    {
+      "candidate_key": "doi:10.21533/pen.v10i1.2587",
+      "paper_id": "paper:10.21533/pen.v10i1.2587",
+      "year": 2021,
+      "gold": "excluded",
+      "abstract_sha256": "2cf1ad03d15cbd9abcc2d57cd720bf8066bb4513937d50f0d921712655e30024"
+    },
+    {
+      "candidate_key": "doi:10.1038/s41598-026-39753-4",
+      "paper_id": "paper:10.1038/s41598-026-39753-4",
+      "year": 2026,
+      "gold": "included",
+      "abstract_sha256": "8ed2d828b6b7ec3bf5a9465302eccadf64b7cb3350252418bb6f686ee598dac1"
+    },
+    {
+      "candidate_key": "doi:10.32657/10356/46743",
+      "paper_id": "paper:10.32657/10356/46743",
+      "year": 2009,
+      "gold": "included",
+      "abstract_sha256": "937f882b6e14b5bf3f171519b22a1ebdb203681a628bdb185104c02fec96a171"
+    },
+    {
+      "candidate_key": "doi:10.1016/j.istruc.2020.05.059",
+      "paper_id": "paper:10.1016/j.istruc.2020.05.059",
+      "year": 2020,
+      "gold": "included",
+      "abstract_sha256": "924b91fcd93bc289da60956926b7f2bf4a26b5bc5e7ef88d441d95490af8a7bf"
+    },
+    {
+      "candidate_key": "doi:10.20381/ruor-19759",
+      "paper_id": "paper:10.20381/ruor-19759",
+      "year": 2007,
+      "gold": "excluded",
+      "abstract_sha256": "e2cbbe6d64a72f32a32e9a4a408706ed105e1bc1c4adbcfa6757113f11ff52c0"
+    },
+    {
+      "candidate_key": "doi:10.25549/usctheses-c17-53467",
+      "paper_id": "paper:10.25549/usctheses-c17-53467",
+      "year": 2015,
+      "gold": "included",
+      "abstract_sha256": ""
+    },
+    {
+      "candidate_key": "doi:10.82308/12556",
+      "paper_id": "paper:10.82308/12556",
+      "year": 2007,
+      "gold": "excluded",
+      "abstract_sha256": "ab305002970c446be220886050c3e298d9e5fdc0911681366f6cfb68ff46b423"
+    },
+    {
+      "candidate_key": "doi:10.82308/2141",
+      "paper_id": "paper:10.82308/2141",
+      "year": 1997,
+      "gold": "excluded",
+      "abstract_sha256": "2ee90c6bc69d4f70982014ef6dffb1f34b1e70cf5ea0bf9107fade825b3dd699"
+    },
+    {
+      "candidate_key": "doi:10.82308/55578",
+      "paper_id": "paper:10.82308/55578",
+      "year": 2013,
+      "gold": "excluded",
+      "abstract_sha256": "95192c01034093a8216a0d99a114c9e18b99c08983ed9646086a638b8ee8edd5"
+    },
+    {
+      "candidate_key": "doi:10.1016/j.istruc.2022.05.114",
+      "paper_id": "paper:10.1016/j.istruc.2022.05.114",
+      "year": 2022,
+      "gold": "excluded",
+      "abstract_sha256": "ce28e8146ec1b07a6acfe87060f08e1c57e685e7692c19ae88b2ce2d20e12f0d"
+    },
+    {
+      "candidate_key": "doi:10.1139/l07-079",
+      "paper_id": "paper:10.1139/l07-079",
+      "year": 2008,
+      "gold": "included",
+      "abstract_sha256": "16417e49e5f5000896ecc7272fc2dcfeae1dc0413bbe0b8460b929d91153a968"
+    },
+    {
+      "candidate_key": "doi:10.82308/43783",
+      "paper_id": "paper:10.82308/43783",
+      "year": 2001,
+      "gold": "excluded",
+      "abstract_sha256": "f755df5398dee0b8dc10587f5ab3b7a7c4305a12d68f737d12bf4c0cc7f78f5a"
+    },
+    {
+      "candidate_key": "doi:10.1016/j.compstruct.2007.01.028",
+      "paper_id": "paper:10.1016/j.compstruct.2007.01.028",
+      "year": 2008,
+      "gold": "included",
+      "abstract_sha256": "57c0626f02e2b6eac5a51c7df931f4f7c8c576fc940b1b8ec8a37acadfad5924"
+    },
+    {
+      "candidate_key": "doi:10.1016/j.compstruct.2016.12.016",
+      "paper_id": "paper:10.1016/j.compstruct.2016.12.016",
+      "year": 2017,
+      "gold": "included",
+      "abstract_sha256": "9098a0225a4e013d8ef3ce50a3268a25359b4e917cd559c58fad6fcfae1b3365"
+    },
+    {
+      "candidate_key": "doi:10.14288/1.0391084",
+      "paper_id": "paper:10.14288/1.0391084",
+      "year": 2020,
+      "gold": "excluded",
+      "abstract_sha256": "4ef93f781acb9535cdf6d437823f83e7863c3aa9fa38fb06c08399a089835c83"
+    },
+    {
+      "candidate_key": "doi:10.1016/j.istruc.2020.08.072",
+      "paper_id": "paper:10.1016/j.istruc.2020.08.072",
+      "year": 2020,
+      "gold": "included",
+      "abstract_sha256": "c020831a49f374329f85a538f281123a180df6db2a6031ed5dbfd380cbafc3d0"
+    },
+    {
+      "candidate_key": "doi:10.1016/j.engstruct.2009.12.021",
+      "paper_id": "paper:10.1016/j.engstruct.2009.12.021",
+      "year": 2010,
+      "gold": "included",
+      "abstract_sha256": "d60bfc303f8001ec134d0fec2e97b090e241e148125d4fc425a34bf89dab3200"
+    },
+    {
+      "candidate_key": "doi:10.5169/seals-55205",
+      "paper_id": "paper:10.5169/seals-55205",
+      "year": 1995,
+      "gold": "included",
+      "abstract_sha256": ""
+    },
+    {
+      "candidate_key": "doi:10.14359/3961",
+      "paper_id": "paper:10.14359/3961",
+      "year": 1993,
+      "gold": "included",
+      "abstract_sha256": "240824e8923e391e3dacbcd1ca00ff8db776c896b82319abe1084179c432cd20"
+    },
+    {
+      "candidate_key": "doi:10.51202/9783816791782",
+      "paper_id": "paper:10.51202/9783816791782",
+      "year": 2014,
+      "gold": "included",
+      "abstract_sha256": "5b2a97f68bd915a7652709197b2ed9b423f2e2ef2238bf789726af0fcf7812dd"
+    }
+  ],
+  "count": 60
+}

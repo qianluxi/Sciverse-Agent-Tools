@@ -135,6 +135,10 @@ selected_keys = st.multiselect(
 if not selected_keys:
     st.info("请选择至少一条已标注文献。")
     st.stop()
+st.caption(
+    f"已标注候选 {len(candidate_map)} 条，本次选入 {len(selected_keys)} 条，"
+    f"未选入 {len(candidate_map) - len(selected_keys)} 条。"
+)
 missing_abstract = sum(
     1 for key in selected_keys if not candidate_map[key].get("benchmark_abstract")
 )
@@ -311,6 +315,7 @@ if failed_suggestions:
                     saved["task"]["id"],
                     evaluation,
                 )
+                storage.finish_ai_task(saved["task"]["id"], status="completed")
                 st.rerun()
             except Exception as error:
                 st.error(str(error))

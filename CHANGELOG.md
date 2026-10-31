@@ -1,3 +1,10 @@
+## [1.20.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.19.3...v1.20.0) (2026-10-31)
+
+### Features
+
+* add abstract translation and failed-batch retry for screening ([c042ac5](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/c042ac5f3e002cfd1517e8fd704c2d6eb068c246))
+* review AI screening suggestions in place with translations ([f3e2a12](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/f3e2a12ac463eb0050e3708c6c0a6f8f07595583))
+
 ## [1.19.3](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.19.2...v1.19.3) (2026-10-29)
 
 ### Bug Fixes

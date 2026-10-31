@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from streamlit.testing.v1 import AppTest
 
 import research_app.ai_screening as ai_screening
@@ -108,12 +109,14 @@ def test_benchmark_page_evaluates_against_fixed_gold_without_changing_status(
     assert snapshot["gold"]["uid:paper:a"] == "included"
     assert snapshot["evaluation"]["metrics"]["include_recall"] == 1.0
 
-    storage.set_screening_decision(
-        project_id,
-        "uid:paper:a",
-        "excluded",
-        reason="其他",
-    )
+    assert storage.get_screening_project(project_id)["lock_status"] == "locked"
+    with pytest.raises(ValueError):
+        storage.set_screening_decision(
+            project_id,
+            "uid:paper:a",
+            "excluded",
+            reason="其他",
+        )
     app.run(timeout=30)
 
     assert not app.exception

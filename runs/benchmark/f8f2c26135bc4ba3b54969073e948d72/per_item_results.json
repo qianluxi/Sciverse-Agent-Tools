@@ -1,0 +1,730 @@
+{
+  "task_id": "f8f2c26135bc4ba3b54969073e948d72",
+  "count": 60,
+  "items": [
+    {
+      "candidate_key": "doi:10.21203/rs.3.rs-3287823/v1",
+      "gold": "included",
+      "suggestion": "include",
+      "confidence": "high",
+      "criterion_ids": [
+        "I1",
+        "I2",
+        "I3",
+        "I4",
+        "I5"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.3390/polym8040107",
+      "gold": "included",
+      "suggestion": "include",
+      "confidence": "high",
+      "criterion_ids": [
+        "I1",
+        "I2",
+        "I3",
+        "I4",
+        "I5"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.20381/ruor-9782",
+      "gold": "excluded",
+      "suggestion": "exclude",
+      "confidence": "medium",
+      "criterion_ids": [
+        "E1",
+        "E3"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.1061/(asce)0733-9445(2004)130:4(609)",
+      "gold": "excluded",
+      "suggestion": "exclude",
+      "confidence": "high",
+      "criterion_ids": [
+        "E1"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.20381/ruor-4383",
+      "gold": "excluded",
+      "suggestion": "exclude",
+      "confidence": "high",
+      "criterion_ids": [
+        "E3"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.71846/16-wcee-0522",
+      "gold": "included",
+      "suggestion": "uncertain",
+      "confidence": "low",
+      "criterion_ids": [
+        "I1",
+        "I2"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.1007/s10518-024-02027-3",
+      "gold": "excluded",
+      "suggestion": "exclude",
+      "confidence": "medium",
+      "criterion_ids": [
+        "E1"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.18702/acf.2015.09.1.37",
+      "gold": "included",
+      "suggestion": "include",
+      "confidence": "high",
+      "criterion_ids": [
+        "I1",
+        "I2",
+        "I3",
+        "I4",
+        "I5"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.1016/j.engstruct.2011.05.025",
+      "gold": "excluded",
+      "suggestion": "exclude",
+      "confidence": "high",
+      "criterion_ids": [
+        "E1"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.1016/s0141-0296(98)00137-0",
+      "gold": "included",
+      "suggestion": "include",
+      "confidence": "high",
+      "criterion_ids": [
+        "I1",
+        "I2",
+        "I3",
+        "I4"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.1016/j.jobe.2026.115838",
+      "gold": "included",
+      "suggestion": "uncertain",
+      "confidence": "low",
+      "criterion_ids": [
+        "I1",
+        "I2"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.1016/j.jclepro.2024.142290",
+      "gold": "excluded",
+      "suggestion": "exclude",
+      "confidence": "high",
+      "criterion_ids": [
+        "E3"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.1080/15732470701801159",
+      "gold": "included",
+      "suggestion": "include",
+      "confidence": "high",
+      "criterion_ids": [
+        "I1",
+        "I2",
+        "I3",
+        "I4"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.1016/j.engstruct.2020.110390",
+      "gold": "included",
+      "suggestion": "uncertain",
+      "confidence": "low",
+      "criterion_ids": [
+        "I2",
+        "I3"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.5459/bnzsee.25.3.203-210",
+      "gold": "excluded",
+      "suggestion": "exclude",
+      "confidence": "high",
+      "criterion_ids": [
+        "E1"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.4028/www.scientific.net/amm.477-478.681",
+      "gold": "included",
+      "suggestion": "include",
+      "confidence": "medium",
+      "criterion_ids": [
+        "I1",
+        "I2",
+        "I3",
+        "I4"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.1061/40946(248)106",
+      "gold": "included",
+      "suggestion": "include",
+      "confidence": "medium",
+      "criterion_ids": [
+        "I1",
+        "I2",
+        "I3",
+        "I4",
+        "I5"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.14359/12845",
+      "gold": "included",
+      "suggestion": "include",
+      "confidence": "low",
+      "criterion_ids": [
+        "I1",
+        "I2",
+        "I3",
+        "I5"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.1088/1755-1315/614/1/012063",
+      "gold": "excluded",
+      "suggestion": "exclude",
+      "confidence": "high",
+      "criterion_ids": [
+        "E4"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.1109/ichce57331.2022.10042794",
+      "gold": "included",
+      "suggestion": "include",
+      "confidence": "high",
+      "criterion_ids": [
+        "I1",
+        "I2",
+        "I3",
+        "I4",
+        "I5"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.3390/books978-3-0365-5058-9",
+      "gold": "excluded",
+      "suggestion": "exclude",
+      "confidence": "high",
+      "criterion_ids": [
+        "E4",
+        "E1"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.1063/1.2963783",
+      "gold": "included",
+      "suggestion": "uncertain",
+      "confidence": "medium",
+      "criterion_ids": [
+        "I1",
+        "I4",
+        "I5"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.4028/www.scientific.net/amr.194-196.1986",
+      "gold": "included",
+      "suggestion": "include",
+      "confidence": "high",
+      "criterion_ids": [
+        "I1",
+        "I2",
+        "I3",
+        "I4",
+        "I5"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.2991/icache-15.2015.28",
+      "gold": "excluded",
+      "suggestion": "exclude",
+      "confidence": "high",
+      "criterion_ids": [
+        "E1"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.14359/4593",
+      "gold": "included",
+      "suggestion": "include",
+      "confidence": "medium",
+      "criterion_ids": [
+        "I1",
+        "I2",
+        "I3",
+        "I4",
+        "I5"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.2495/er030081",
+      "gold": "excluded",
+      "suggestion": "exclude",
+      "confidence": "high",
+      "criterion_ids": [
+        "E1"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.1061/ppscfx.sceng-1407",
+      "gold": "excluded",
+      "suggestion": "exclude",
+      "confidence": "high",
+      "criterion_ids": [
+        "E1"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.20381/ruor-3196",
+      "gold": "included",
+      "suggestion": "include",
+      "confidence": "high",
+      "criterion_ids": [
+        "I1",
+        "I2",
+        "I3",
+        "I4",
+        "I5"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.1002/9781119987352",
+      "gold": "excluded",
+      "suggestion": "uncertain",
+      "confidence": "low",
+      "criterion_ids": [
+        "E4"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.3141/1892-20",
+      "gold": "excluded",
+      "suggestion": "exclude",
+      "confidence": "high",
+      "criterion_ids": [
+        "E1"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.1061/41084(364)133",
+      "gold": "included",
+      "suggestion": "include",
+      "confidence": "high",
+      "criterion_ids": [
+        "I1",
+        "I2",
+        "I3",
+        "I4",
+        "I5"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.14359/20248",
+      "gold": "excluded",
+      "suggestion": "include",
+      "confidence": "medium",
+      "criterion_ids": [
+        "I1",
+        "I2",
+        "I3",
+        "I5"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.14359/56617",
+      "gold": "excluded",
+      "suggestion": "exclude",
+      "confidence": "high",
+      "criterion_ids": [
+        "E1"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.1007/978-94-010-0021-5_21",
+      "gold": "excluded",
+      "suggestion": "include",
+      "confidence": "medium",
+      "criterion_ids": [
+        "I1",
+        "I2",
+        "I3",
+        "I4"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.1007/978-981-97-0102-5_7",
+      "gold": "excluded",
+      "suggestion": "include",
+      "confidence": "medium",
+      "criterion_ids": [
+        "I1",
+        "I2",
+        "I3"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.1061/(asce)st.1943-541x.0003111",
+      "gold": "included",
+      "suggestion": "include",
+      "confidence": "high",
+      "criterion_ids": [
+        "I1",
+        "I2",
+        "I3",
+        "I4"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.1680/macr.2000.52.6.419",
+      "gold": "excluded",
+      "suggestion": "exclude",
+      "confidence": "high",
+      "criterion_ids": [
+        "E2"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.82308/53822",
+      "gold": "excluded",
+      "suggestion": "exclude",
+      "confidence": "high",
+      "criterion_ids": [
+        "I2",
+        "I3",
+        "E1"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.20381/ruor-7547",
+      "gold": "excluded",
+      "suggestion": "exclude",
+      "confidence": "high",
+      "criterion_ids": [
+        "I2",
+        "I3",
+        "E1"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.1186/s43065-024-00114-y",
+      "gold": "excluded",
+      "suggestion": "exclude",
+      "confidence": "high",
+      "criterion_ids": [
+        "I2",
+        "I3",
+        "E1"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.21533/pen.v10i1.2587",
+      "gold": "excluded",
+      "suggestion": "exclude",
+      "confidence": "medium",
+      "criterion_ids": [
+        "E1",
+        "I2",
+        "I3"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.1038/s41598-026-39753-4",
+      "gold": "included",
+      "suggestion": "include",
+      "confidence": "high",
+      "criterion_ids": [
+        "I1",
+        "I2",
+        "I3",
+        "I4",
+        "I5"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.32657/10356/46743",
+      "gold": "included",
+      "suggestion": "include",
+      "confidence": "high",
+      "criterion_ids": [
+        "I1",
+        "I2",
+        "I3",
+        "I4",
+        "I5"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.1016/j.istruc.2020.05.059",
+      "gold": "included",
+      "suggestion": "include",
+      "confidence": "high",
+      "criterion_ids": [
+        "I1",
+        "I2",
+        "I3",
+        "I4",
+        "I5"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.20381/ruor-19759",
+      "gold": "excluded",
+      "suggestion": "exclude",
+      "confidence": "high",
+      "criterion_ids": [
+        "E1",
+        "I2",
+        "I3",
+        "I4"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.25549/usctheses-c17-53467",
+      "gold": "included",
+      "suggestion": "uncertain",
+      "confidence": "low",
+      "criterion_ids": [
+        "I1",
+        "I2"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.82308/12556",
+      "gold": "excluded",
+      "suggestion": "exclude",
+      "confidence": "high",
+      "criterion_ids": [
+        "E1",
+        "I2",
+        "I3",
+        "I4"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.82308/2141",
+      "gold": "excluded",
+      "suggestion": "exclude",
+      "confidence": "high",
+      "criterion_ids": [
+        "E1",
+        "I2",
+        "I3",
+        "I4"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.82308/55578",
+      "gold": "excluded",
+      "suggestion": "exclude",
+      "confidence": "high",
+      "criterion_ids": [
+        "E1"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.1016/j.istruc.2022.05.114",
+      "gold": "excluded",
+      "suggestion": "exclude",
+      "confidence": "high",
+      "criterion_ids": [
+        "E4",
+        "I1",
+        "I2"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.1139/l07-079",
+      "gold": "included",
+      "suggestion": "include",
+      "confidence": "high",
+      "criterion_ids": [
+        "I1",
+        "I2",
+        "I3",
+        "I4",
+        "I5"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.82308/43783",
+      "gold": "excluded",
+      "suggestion": "exclude",
+      "confidence": "high",
+      "criterion_ids": [
+        "E1"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.1016/j.compstruct.2007.01.028",
+      "gold": "included",
+      "suggestion": "include",
+      "confidence": "medium",
+      "criterion_ids": [
+        "I1",
+        "I2",
+        "I3",
+        "I4",
+        "I5"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.1016/j.compstruct.2016.12.016",
+      "gold": "included",
+      "suggestion": "include",
+      "confidence": "high",
+      "criterion_ids": [
+        "I1",
+        "I2",
+        "I3",
+        "I4",
+        "I5"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.14288/1.0391084",
+      "gold": "excluded",
+      "suggestion": "exclude",
+      "confidence": "high",
+      "criterion_ids": [
+        "E1"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.1016/j.istruc.2020.08.072",
+      "gold": "included",
+      "suggestion": "include",
+      "confidence": "medium",
+      "criterion_ids": [
+        "I1",
+        "I2",
+        "I3",
+        "I4",
+        "I5"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.1016/j.engstruct.2009.12.021",
+      "gold": "included",
+      "suggestion": "include",
+      "confidence": "high",
+      "criterion_ids": [
+        "I1",
+        "I2",
+        "I3",
+        "I4",
+        "I5"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.5169/seals-55205",
+      "gold": "included",
+      "suggestion": "uncertain",
+      "confidence": "low",
+      "criterion_ids": [
+        "I1",
+        "I2"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.14359/3961",
+      "gold": "included",
+      "suggestion": "uncertain",
+      "confidence": "low",
+      "criterion_ids": [
+        "I1",
+        "I2"
+      ],
+      "error": null
+    },
+    {
+      "candidate_key": "doi:10.51202/9783816791782",
+      "gold": "included",
+      "suggestion": "include",
+      "confidence": "medium",
+      "criterion_ids": [
+        "I1",
+        "I2",
+        "I3",
+        "I4",
+        "I5"
+      ],
+      "error": null
+    }
+  ]
+}

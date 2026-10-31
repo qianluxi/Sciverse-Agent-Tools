@@ -1,0 +1,216 @@
+{
+  "task_id": "08fa007e964648f4bb11c185ce751e1f",
+  "count": 30,
+  "items": [
+    {
+      "candidate_key": "doi:10.46501/ijmtst060914",
+      "ai_suggestion": "exclude",
+      "review_status": "accepted",
+      "review_decision": "excluded",
+      "abstract_available": true
+    },
+    {
+      "candidate_key": "doi:10.1201/9781315226460-281/analytical-development-seismic-retrofit-technique-rc-beam-column-joint-using-single-diagonal-haunch-hong-hao-chunwei-zhang",
+      "ai_suggestion": "include",
+      "review_status": "accepted",
+      "review_decision": "included",
+      "abstract_available": true
+    },
+    {
+      "candidate_key": "doi:10.1016/j.engstruct.2018.05.098",
+      "ai_suggestion": "include",
+      "review_status": "accepted",
+      "review_decision": "included",
+      "abstract_available": true
+    },
+    {
+      "candidate_key": "doi:10.1007/978-3-030-88166-5_109",
+      "ai_suggestion": "include",
+      "review_status": "accepted",
+      "review_decision": "included",
+      "abstract_available": true
+    },
+    {
+      "candidate_key": "doi:10.5169/seals-55207",
+      "ai_suggestion": "uncertain",
+      "review_status": "resolved_uncertain",
+      "review_decision": "included",
+      "abstract_available": false
+    },
+    {
+      "candidate_key": "doi:10.3390/polym10040361",
+      "ai_suggestion": "include",
+      "review_status": "accepted",
+      "review_decision": "included",
+      "abstract_available": true
+    },
+    {
+      "candidate_key": "doi:10.3130/aijs.71.109_2",
+      "ai_suggestion": "include",
+      "review_status": "accepted",
+      "review_decision": "included",
+      "abstract_available": true
+    },
+    {
+      "candidate_key": "doi:10.1051/e3sconf/202342203004",
+      "ai_suggestion": "exclude",
+      "review_status": "overridden",
+      "review_decision": "included",
+      "abstract_available": true
+    },
+    {
+      "candidate_key": "doi:10.3724/j.gyjzg23082308",
+      "ai_suggestion": "uncertain",
+      "review_status": "resolved_uncertain",
+      "review_decision": "included",
+      "abstract_available": true
+    },
+    {
+      "candidate_key": "doi:10.1002/suco.70320",
+      "ai_suggestion": "exclude",
+      "review_status": "overridden",
+      "review_decision": "included",
+      "abstract_available": true
+    },
+    {
+      "candidate_key": "doi:10.1016/j.compositesb.2019.107272",
+      "ai_suggestion": "include",
+      "review_status": "accepted",
+      "review_decision": "included",
+      "abstract_available": true
+    },
+    {
+      "candidate_key": "doi:10.2495/eres960271",
+      "ai_suggestion": "exclude",
+      "review_status": "accepted",
+      "review_decision": "excluded",
+      "abstract_available": true
+    },
+    {
+      "candidate_key": "doi:10.1061/9780784479117.051",
+      "ai_suggestion": "exclude",
+      "review_status": "accepted",
+      "review_decision": "excluded",
+      "abstract_available": true
+    },
+    {
+      "candidate_key": "doi:10.1061/(asce)0733-9445(2010)136:1(26)",
+      "ai_suggestion": "exclude",
+      "review_status": "accepted",
+      "review_decision": "excluded",
+      "abstract_available": true
+    },
+    {
+      "candidate_key": "doi:10.3850/978-981-07-7137-9_262",
+      "ai_suggestion": "uncertain",
+      "review_status": "resolved_uncertain",
+      "review_decision": "excluded",
+      "abstract_available": false
+    },
+    {
+      "candidate_key": "doi:10.1061/(asce)0733-9445(2009)135:10(1177)",
+      "ai_suggestion": "include",
+      "review_status": "accepted",
+      "review_decision": "included",
+      "abstract_available": true
+    },
+    {
+      "candidate_key": "doi:10.5772/27952",
+      "ai_suggestion": "uncertain",
+      "review_status": "resolved_uncertain",
+      "review_decision": "excluded",
+      "abstract_available": true
+    },
+    {
+      "candidate_key": "doi:10.4028/scientific5/amr.452-453.1099",
+      "ai_suggestion": "include",
+      "review_status": "accepted",
+      "review_decision": "included",
+      "abstract_available": true
+    },
+    {
+      "candidate_key": "doi:10.4334/jkci.2006.18.6.729",
+      "ai_suggestion": "include",
+      "review_status": "accepted",
+      "review_decision": "included",
+      "abstract_available": true
+    },
+    {
+      "candidate_key": "doi:10.1061/9780784482896.046",
+      "ai_suggestion": "exclude",
+      "review_status": "accepted",
+      "review_decision": "excluded",
+      "abstract_available": true
+    },
+    {
+      "candidate_key": "doi:10.3151/coj.54.9_953",
+      "ai_suggestion": "uncertain",
+      "review_status": "resolved_uncertain",
+      "review_decision": "excluded",
+      "abstract_available": true
+    },
+    {
+      "candidate_key": "doi:10.3390/app16041712",
+      "ai_suggestion": "uncertain",
+      "review_status": "resolved_uncertain",
+      "review_decision": "included",
+      "abstract_available": true
+    },
+    {
+      "candidate_key": "doi:10.20372/nadre:10628",
+      "ai_suggestion": "exclude",
+      "review_status": "accepted",
+      "review_decision": "excluded",
+      "abstract_available": true
+    },
+    {
+      "candidate_key": "doi:10.1016/j.engstruct.2020.111556",
+      "ai_suggestion": "uncertain",
+      "review_status": "resolved_uncertain",
+      "review_decision": "excluded",
+      "abstract_available": true
+    },
+    {
+      "candidate_key": "doi:10.1680/macr.2006.58.5.267",
+      "ai_suggestion": "include",
+      "review_status": "accepted",
+      "review_decision": "included",
+      "abstract_available": true
+    },
+    {
+      "candidate_key": "doi:10.1680/macr.10.00181",
+      "ai_suggestion": "include",
+      "review_status": "accepted",
+      "review_decision": "included",
+      "abstract_available": true
+    },
+    {
+      "candidate_key": "doi:10.1016/j.engstruct.2023.116438",
+      "ai_suggestion": "exclude",
+      "review_status": "accepted",
+      "review_decision": "excluded",
+      "abstract_available": true
+    },
+    {
+      "candidate_key": "doi:10.14711/thesis-b914043",
+      "ai_suggestion": "exclude",
+      "review_status": "accepted",
+      "review_decision": "excluded",
+      "abstract_available": true
+    },
+    {
+      "candidate_key": "doi:10.1016/j.istruc.2024.106811",
+      "ai_suggestion": "include",
+      "review_status": "accepted",
+      "review_decision": "included",
+      "abstract_available": true
+    },
+    {
+      "candidate_key": "doi:10.1201/b11585-103",
+      "ai_suggestion": "uncertain",
+      "review_status": "resolved_uncertain",
+      "review_decision": "included",
+      "abstract_available": true
+    }
+  ]
+}

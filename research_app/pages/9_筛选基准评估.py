@@ -315,7 +315,31 @@ if failed_suggestions:
                     saved["task"]["id"],
                     evaluation,
                 )
-                storage.finish_ai_task(saved["task"]["id"], status="completed")
+                remaining_failed = [
+                    item
+                    for item in updated_suggestions
+                    if item.get("error")
+                ]
+                if updated_suggestions and len(remaining_failed) == len(
+                    updated_suggestions
+                ):
+                    first_error = next(
+                        (
+                            item.get("error")
+                            for item in remaining_failed
+                            if item.get("error")
+                        ),
+                        "未返回分析结果",
+                    )
+                    storage.finish_ai_task(
+                        saved["task"]["id"],
+                        status="failed",
+                        error=f"重试后仍全部失败：{first_error}",
+                    )
+                else:
+                    storage.finish_ai_task(
+                        saved["task"]["id"], status="completed"
+                    )
                 st.rerun()
             except Exception as error:
                 st.error(str(error))

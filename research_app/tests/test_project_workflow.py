@@ -598,12 +598,14 @@ def test_screening_snapshot_freezes_gold_and_review_events_are_append_only(
         items=[{"candidate_key": "uid:paper:a", "title": "Paper A"}],
         gold={"uid:paper:a": "included"},
     )
-    storage.set_screening_decision(
-        project_id,
-        "uid:paper:a",
-        "excluded",
-        reason="其他",
-    )
+    with pytest.raises(ValueError):
+        storage.set_screening_decision(
+            project_id,
+            "uid:paper:a",
+            "excluded",
+            reason="其他",
+        )
+    assert storage.get_screening_project(project_id)["lock_status"] == "locked"
 
     loaded = storage.load_screening_snapshot(project_id, task_id)
     assert loaded["gold"] == {"uid:paper:a": "included"}
@@ -948,7 +950,7 @@ def test_schema_v10_tables_are_created(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     _project()
     with storage._connection() as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 11
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 12
         tables = {
             row[0]
             for row in connection.execute(
@@ -988,3 +990,154 @@ def test_schema_v10_tables_are_created(monkeypatch, tmp_path):
     assert "abstract" in candidate_columns
     assert {"ai_task_id", "ai_action"} <= audit_columns
     assert "invalid_criteria_json" in suggestion_columns
+
+
+def test_locked_project_blocks_candidate_mutations(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    project_id = _project()
+    storage.add_screening_candidates(
+        project_id, [{"title": "Paper A", "unique_id": "paper:a"}]
+    )
+    storage.set_screening_decision(project_id, "uid:paper:a", "included")
+
+    storage.set_screening_project_lock(project_id, True, reason="test freeze")
+    assert storage.get_screening_project(project_id)["lock_status"] == "locked"
+    with pytest.raises(ValueError):
+        storage.set_screening_decision(
+            project_id, "uid:paper:a", "excluded", reason="其他"
+        )
+    with pytest.raises(ValueError):
+        storage.add_screening_candidates(
+            project_id, [{"title": "Paper B", "unique_id": "paper:b"}]
+        )
+    with pytest.raises(ValueError):
+        storage.delete_screening_project(project_id)
+    assert storage.list_all_screening_candidates(project_id)[0]["status"] == "included"
+
+    storage.set_screening_project_lock(project_id, False)
+    storage.set_screening_decision(project_id, "uid:paper:a", "excluded", reason="其他")
+    assert storage.list_all_screening_candidates(project_id)[0]["status"] == "excluded"
+
+
+V10_SCHEMA = """
+CREATE TABLE screening_projects (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, question TEXT NOT NULL,
+    inclusion_criteria TEXT NOT NULL, exclusion_criteria TEXT NOT NULL,
+    identified_count INTEGER NOT NULL DEFAULT 0,
+    duplicate_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    stats_tracked INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE ai_task_runs (
+    id TEXT PRIMARY KEY, project_id TEXT NOT NULL, kind TEXT NOT NULL,
+    model TEXT NOT NULL DEFAULT '', prompt_version TEXT NOT NULL DEFAULT '',
+    input_hash TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'completed',
+    error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE ai_screening_suggestions (
+    project_id TEXT NOT NULL, task_id TEXT NOT NULL, candidate_key TEXT NOT NULL,
+    paper_id TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '', year INTEGER,
+    suggestion TEXT NOT NULL DEFAULT 'uncertain',
+    criteria_json TEXT NOT NULL DEFAULT '[]', rationale TEXT NOT NULL DEFAULT '',
+    confidence TEXT NOT NULL DEFAULT 'low',
+    evidence_quotes_json TEXT NOT NULL DEFAULT '[]',
+    quote_checks_json TEXT NOT NULL DEFAULT '[]', error TEXT,
+    review_status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (review_status IN ('pending','accepted','modified','rejected')),
+    review_decision TEXT, review_note TEXT NOT NULL DEFAULT '',
+    reviewed_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    invalid_criteria_json TEXT NOT NULL DEFAULT '[]',
+    PRIMARY KEY (task_id, candidate_key)
+);
+CREATE TABLE ai_screening_review_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL,
+    task_id TEXT NOT NULL, candidate_key TEXT NOT NULL, ai_suggestion TEXT,
+    review_status TEXT NOT NULL, review_decision TEXT,
+    status_before TEXT, status_after TEXT, note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);
+CREATE TABLE screening_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL,
+    candidate_key TEXT NOT NULL, old_status TEXT, new_status TEXT NOT NULL,
+    old_reason TEXT, new_reason TEXT, old_notes TEXT, new_notes TEXT,
+    changed_at TEXT NOT NULL, ai_task_id TEXT, ai_action TEXT
+);
+CREATE TABLE ai_screening_snapshots (
+    task_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, kind TEXT NOT NULL,
+    criteria_json TEXT NOT NULL, items_json TEXT NOT NULL, gold_json TEXT,
+    dataset_hash TEXT NOT NULL, dataset_version TEXT NOT NULL,
+    evaluation_json TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+PRAGMA user_version = 10;
+"""
+
+
+def test_v10_database_migrates_review_status_and_locks_benchmark(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    path = tmp_path / "workbench.sqlite3"
+    with sqlite3.connect(path) as connection:
+        connection.executescript(V10_SCHEMA)
+        connection.execute(
+            """INSERT INTO screening_projects(
+                   id, name, question, inclusion_criteria, exclusion_criteria,
+                   created_at, updated_at, stats_tracked)
+               VALUES ('pbench', 'Bench', 'Q', 'I', 'E', 't', 't', 1)"""
+        )
+        connection.execute(
+            """INSERT INTO screening_projects(
+                   id, name, question, inclusion_criteria, exclusion_criteria,
+                   created_at, updated_at, stats_tracked)
+               VALUES ('popen', 'Open', 'Q', 'I', 'E', 't', 't', 1)"""
+        )
+        connection.execute(
+            """INSERT INTO ai_task_runs(id, project_id, kind, created_at, updated_at)
+               VALUES ('t1', 'pbench', 'screening', 't', 't')"""
+        )
+        connection.execute(
+            """INSERT INTO ai_screening_suggestions(
+                   project_id, task_id, candidate_key, suggestion, review_status,
+                   review_decision, review_note, created_at, updated_at)
+               VALUES ('pbench', 't1', 'uid:a', 'exclude', 'modified',
+                       'included', 'keep me', 't', 't')"""
+        )
+        connection.execute(
+            """INSERT INTO ai_screening_review_events(
+                   project_id, task_id, candidate_key, ai_suggestion,
+                   review_status, review_decision, note, created_at)
+               VALUES ('pbench', 't1', 'uid:a', 'exclude', 'modified',
+                       'included', 'ev', 't')"""
+        )
+        connection.execute(
+            """INSERT INTO screening_audit(
+                   project_id, candidate_key, new_status, changed_at,
+                   ai_task_id, ai_action)
+               VALUES ('pbench', 'uid:a', 'included', 't', 't1', 'modified')"""
+        )
+        connection.execute(
+            """INSERT INTO ai_screening_snapshots(
+                   task_id, project_id, kind, criteria_json, items_json,
+                   dataset_hash, dataset_version, created_at, updated_at)
+               VALUES ('b1', 'pbench', 'screening_benchmark', '{}', '[]',
+                       'h', 'v', 't', 't')"""
+        )
+
+    project = storage.get_screening_project("pbench")
+    assert project["lock_status"] == "locked"
+    assert project["lock_reason"] == "已存在基准评估快照"
+    assert storage.get_screening_project("popen")["lock_status"] == "open"
+
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 12
+        suggestion = connection.execute(
+            """SELECT suggestion, review_status, review_decision, review_note
+               FROM ai_screening_suggestions WHERE task_id = 't1'"""
+        ).fetchone()
+        assert suggestion == ("exclude", "overridden", "included", "keep me")
+        events = connection.execute(
+            "SELECT review_status FROM ai_screening_review_events"
+        ).fetchall()
+        assert events == [("overridden",)]
+        audit = connection.execute(
+            "SELECT ai_action FROM screening_audit"
+        ).fetchone()
+        assert audit == ("overridden",)

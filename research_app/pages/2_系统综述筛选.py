@@ -83,6 +83,7 @@ project_id = st.selectbox(
 st.session_state["screening_project_id"] = project_id
 st.session_state["current_project_id"] = project_id
 project = storage.get_screening_project(project_id)
+project_locked = project.get("lock_status") == "locked"
 
 _default_profile = default_profile()
 st.session_state.setdefault("ai_base_url", _default_profile["base_url"])
@@ -132,6 +133,11 @@ for column, label, value in zip(
 ):
     column.metric(label, value)
 st.caption(f"去重后候选：{stats['unique']} 条。PRISMA 计数均由底层候选和决定记录计算。")
+if project_locked:
+    st.warning(
+        "该项目已作为基准集冻结（只读）：候选与金标准不能在普通筛选页修改、导入或删除。"
+        "如需修订，请另建新的数据集版本。"
+    )
 
 current_papers = st.session_state.get("papers", [])
 selected_items = list(st.session_state.get("export_selection", {}).items())
@@ -154,7 +160,9 @@ if papers_to_add:
     else:
         st.caption("主页未选择文献，将使用当前页全部检索结果。")
         button_label = f"将当前页全部 {len(current_papers)} 条加入项目"
-    if st.button(button_label, type="primary"):
+    if project_locked:
+        st.caption("该项目已冻结，不能继续导入候选。")
+    if st.button(button_label, type="primary", disabled=project_locked):
         try:
             result = storage.add_screening_candidates(
                 project_id,
@@ -406,6 +414,8 @@ with queue_tab:
                 st.caption("没有可追溯的检索快照来源。")
             if key.startswith("conflict:"):
                 st.caption("解决身份冲突前，此候选不能保存筛选决定。")
+            elif project_locked:
+                st.caption("该项目已作为基准集冻结（只读），此处不能修改金标准。")
             else:
                 with st.form(f"decision_{key}"):
                     status_options = ["pending", "included", "excluded"]

@@ -1,12 +1,12 @@
 {
   "task_id": "08fa007e964648f4bb11c185ce751e1f",
-  "project": "??RC??????-????-v1",
+  "project": "建筑RC柱及梁柱节点-真实审核-v1",
   "model": "glm-5.3-flash",
   "prompt_version": "screening-v2",
   "total": 30,
   "timing_seconds": 1240,
   "avg_seconds_per_paper": 41.333333333333336,
-  "timing_note": "????????????????? AI ??/?????",
+  "timing_note": "外部秒表单次实测；未分篇计时，未设 AI 辅助/纯人工对照",
   "review_status_counts": {
     "accepted": 20,
     "overridden": 2,

@@ -7,9 +7,11 @@
 - `benchmark/<task_id>/`
   - `run_metadata.json`：任务、模型、提示词版本、数据集版本与哈希、评估指标汇总
   - `input_manifest.json`：每篇候选的 `candidate_key`、`paper_id`、`year`、`gold` 与 `abstract_sha256`
+  - `per_item_results.json`：逐篇 `candidate_key`、`gold`、AI `suggestion`、`confidence`、`criterion_ids`、`error`（无摘要/引句，可用于独立重算指标）
   - `evaluation.json`：冻结评估的 counts/metrics/confidence 分层（无原文）
 - `human_review/<task_id>/`
   - `review_summary.json`：真实人工审核的复核状态分布、AI 建议分布、无摘要条目、计时与口径说明
+  - `per_item_review.json`：逐篇 AI 建议、最终决定、复核状态与是否有摘要（无摘要/引句）
 
 ## 任务索引
 

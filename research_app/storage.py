@@ -23,7 +23,7 @@ from research_app.screening import (
 )
 
 
-_SCHEMA_VERSION = 11
+_SCHEMA_VERSION = 12
 _BACKUP_SCHEMA_VERSION = 2
 _MAX_HISTORY_ENTRIES = 50
 _MAX_SNAPSHOT_BYTES = 5 * 1024 * 1024
@@ -545,6 +545,34 @@ def _migrate(connection: sqlite3.Connection) -> None:
             )
         version = 11
         connection.execute("PRAGMA user_version = 11")
+    if version < 12:
+        project_columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(screening_projects)"
+            ).fetchall()
+        }
+        if "lock_status" not in project_columns:
+            connection.execute(
+                "ALTER TABLE screening_projects "
+                "ADD COLUMN lock_status TEXT NOT NULL DEFAULT 'open'"
+            )
+        if "lock_reason" not in project_columns:
+            connection.execute(
+                "ALTER TABLE screening_projects "
+                "ADD COLUMN lock_reason TEXT NOT NULL DEFAULT ''"
+            )
+        connection.execute(
+            """UPDATE screening_projects
+               SET lock_status = 'locked', lock_reason = '已存在基准评估快照'
+               WHERE lock_status = 'open'
+                 AND id IN (
+                     SELECT DISTINCT project_id FROM ai_screening_snapshots
+                     WHERE kind = 'screening_benchmark'
+                 )"""
+        )
+        version = 12
+        connection.execute("PRAGMA user_version = 12")
 
 
 @contextmanager
@@ -1015,6 +1043,39 @@ def _screening_project(connection: sqlite3.Connection, project_id: str) -> sqlit
     return row
 
 
+def _require_unlocked(
+    connection: sqlite3.Connection, project_id: str
+) -> sqlite3.Row:
+    row = _screening_project(connection, project_id)
+    if row["lock_status"] == "locked":
+        raise ValueError(
+            "该项目已作为基准集冻结（只读），不能直接修改候选或金标准；"
+            "如需修订请另建数据集版本。"
+        )
+    return row
+
+
+def set_screening_project_lock(
+    project_id: str,
+    locked: bool,
+    *,
+    reason: str = "",
+) -> None:
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        connection.execute(
+            """UPDATE screening_projects
+               SET lock_status = ?, lock_reason = ?, updated_at = ?
+               WHERE id = ?""",
+            (
+                "locked" if locked else "open",
+                str(reason or "").strip(),
+                _timestamp(),
+                project_id,
+            ),
+        )
+
+
 def create_screening_project(
     name: str,
     question: str,
@@ -1060,6 +1121,17 @@ def get_screening_project(project_id: str) -> dict[str, Any]:
 
 def delete_screening_project(project_id: str) -> bool:
     with _connection() as connection:
+        row = connection.execute(
+            "SELECT lock_status FROM screening_projects WHERE id = ?",
+            (project_id,),
+        ).fetchone()
+        if row is None:
+            return False
+        if row["lock_status"] == "locked":
+            raise ValueError(
+                "该项目已作为基准集冻结（只读），不能直接删除；"
+                "如需清理请先显式解锁或另建数据集版本。"
+            )
         cursor = connection.execute(
             "DELETE FROM screening_projects WHERE id = ?",
             (project_id,),
@@ -1271,7 +1343,7 @@ def add_screening_candidates(
     skipped = 0
     manual_source_created = False
     with _connection() as connection:
-        _screening_project(connection, project_id)
+        _require_unlocked(connection, project_id)
         invalid_sources = []
         for index, run_id in enumerate(run_ids):
             if not run_id:
@@ -1545,7 +1617,7 @@ def set_screening_decision(
         raise ValueError("备注不能超过 2000 个字符。")
     now = _timestamp()
     with _connection() as connection:
-        _screening_project(connection, project_id)
+        _require_unlocked(connection, project_id)
         row = connection.execute(
             """SELECT status, exclusion_reason, notes FROM screening_candidates
                WHERE project_id = ? AND candidate_key = ?""",
@@ -2449,7 +2521,7 @@ def apply_screening_review(
         raise ValueError("身份冲突尚未解决，不能保存筛选决定。")
     now = _timestamp()
     with _connection() as connection:
-        _screening_project(connection, project_id)
+        _require_unlocked(connection, project_id)
         task = connection.execute(
             """SELECT 1 FROM ai_task_runs
                WHERE id = ? AND project_id = ? AND kind = 'screening'""",
@@ -2620,6 +2692,13 @@ def create_screening_snapshot(
                 now,
             ),
         )
+        if kind == "screening_benchmark":
+            connection.execute(
+                """UPDATE screening_projects
+                   SET lock_status = 'locked', lock_reason = ?, updated_at = ?
+                   WHERE id = ?""",
+                ("基准评估冻结", now, project_id),
+            )
     return {
         "task_id": task_id,
         "kind": kind,

@@ -3,6 +3,7 @@ from pathlib import Path
 from streamlit.testing.v1 import AppTest
 
 import research_app.ai_screening as ai_screening
+import research_app.ai_translation as ai_translation
 import research_app.storage as storage
 
 
@@ -157,6 +158,94 @@ def test_ai_screening_page_rejects_without_changing_status(monkeypatch, tmp_path
     assert saved["suggestions"][0]["review_status"] == "rejected"
     assert saved["suggestions"][0]["review_decision"] is None
     assert storage.list_screening_audit(project_id) == []
+
+
+def test_ai_screening_page_shows_title_and_abstract_translations(
+    monkeypatch, tmp_path
+):
+    project_id = _setup(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        ai_screening,
+        "suggest_screening",
+        lambda client, criteria, candidates: _fake_suggestion(
+            candidates[0]["candidate_key"]
+        ),
+    )
+    monkeypatch.setenv(
+        "SCIVERSE_TRANSLATION_CACHE", str(tmp_path / "titles.json")
+    )
+    monkeypatch.setenv(
+        "SCIVERSE_ABSTRACT_TRANSLATION_CACHE", str(tmp_path / "abstracts.json")
+    )
+    title_calls = []
+    abstract_calls = []
+
+    def fake_titles(client, titles):
+        title_calls.extend(titles)
+        return {title: "符合条件的随机对照试验" for title in titles}
+
+    def fake_abstracts(client, abstracts):
+        abstract_calls.extend(abstracts)
+        return {abstract: "关于干预 X 的随机试验。" for abstract in abstracts}
+
+    monkeypatch.setattr(ai_translation, "translate_titles", fake_titles)
+    monkeypatch.setattr(ai_translation, "translate_abstracts", fake_abstracts)
+    app = _app(project_id)
+    app.multiselect[0].set_value(["uid:paper:a"]).run(timeout=30)
+    next(
+        button for button in app.button if button.label == "生成 AI 筛选建议"
+    ).click().run(timeout=30)
+
+    assert not app.exception
+    assert title_calls == ["Eligible study"]
+    assert abstract_calls == ["Randomized trial of intervention X."]
+    assert any("符合条件的随机对照试验" in item.value for item in app.caption)
+    assert any(
+        "关于干预 X 的随机试验。" in item.value for item in app.markdown
+    )
+    assert storage.list_all_screening_candidates(project_id)[0]["status"] == "pending"
+
+
+def test_ai_screening_page_hints_when_abstract_unavailable(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        storage, "database_path", lambda: tmp_path / "workbench.sqlite3"
+    )
+    project_id = storage.create_screening_project("Review", "Q", "Include", "Exclude")
+    storage.add_screening_candidates(
+        project_id,
+        [{"title": "No abstract study", "unique_id": "paper:a"}],
+    )
+    monkeypatch.setattr(
+        ai_screening,
+        "suggest_screening",
+        lambda client, criteria, candidates: {
+            "items": [
+                {
+                    "candidate_key": candidates[0]["candidate_key"],
+                    "paper_id": "paper:a",
+                    "title": "No abstract study",
+                    "year": 2024,
+                    "suggestion": "uncertain",
+                    "criteria": [],
+                    "rationale": "",
+                    "confidence": "low",
+                    "evidence_quotes": [],
+                    "quote_checks": [],
+                    "error": None,
+                }
+            ],
+            "model": "test-model",
+            "prompt_version": "screening-v1",
+        },
+    )
+    app = _app(project_id)
+    app.multiselect[0].set_value(["uid:paper:a"]).run(timeout=30)
+    next(
+        button for button in app.button if button.label == "生成 AI 筛选建议"
+    ).click().run(timeout=30)
+
+    assert not app.exception
+    assert any("无可用摘要" in item.value for item in app.caption)
 
 
 def test_ai_screening_page_marks_all_failed_task(monkeypatch, tmp_path):

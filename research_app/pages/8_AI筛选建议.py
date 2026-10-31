@@ -5,6 +5,7 @@ import json
 import os
 
 import streamlit as st
+from streamlit.errors import StreamlitAPIException
 
 from research_app import storage
 from research_app.ai import OpenAICompatibleClient
@@ -16,6 +17,15 @@ from research_app.ai_screening import (
     suggest_screening,
 )
 from research_app.ai_settings import default_profile
+from research_app.ai_translation import (
+    abstract_unavailable,
+    cached_abstract_translations,
+    cached_translations,
+    needs_translation,
+    save_abstract_translations,
+    save_translations,
+    translate_texts,
+)
 from research_app.project_ui import project_selector
 from research_app.screening_criteria import build_project_criteria
 from research_app.screening import (
@@ -115,19 +125,23 @@ for index, paper in enumerate(fallback_papers):
     for identifier in identifier_keys(paper):
         paper_lookup[identifier] = paper
 
-candidate_map = {candidate["candidate_key"]: candidate for candidate in eligible_candidates}
-for candidate in eligible_candidates:
+def _resolved_abstract(candidate):
     fallback = (
         paper_lookup.get(candidate["candidate_key"])
         or paper_lookup.get(candidate.get("paper_id") or "")
         or {}
     )
-    candidate["resolved_abstract"] = (
+    return (
         candidate.get("abstract")
         or fallback.get("abstract")
         or fallback.get("chunk")
         or ""
     )
+
+
+candidate_map = {candidate["candidate_key"]: candidate for candidate in eligible_candidates}
+for candidate in eligible_candidates:
+    candidate["resolved_abstract"] = _resolved_abstract(candidate)
 
 selected_keys = st.multiselect(
     "选择待筛选文献",
@@ -302,7 +316,7 @@ def note_key(candidate_key_value):
 def save_human_decision(item, decision, reason, note):
     if decision == "excluded" and reason not in EXCLUSION_REASONS:
         reason = "其他"
-    storage.apply_screening_review(
+    return storage.apply_screening_review(
         project_id,
         task_id,
         item["candidate_key"],
@@ -320,6 +334,98 @@ for item in suggestions:
     candidate = candidate_by_key.get(item["candidate_key"])
     if candidate and not item.get("error"):
         reviewable_items.append((item, candidate))
+
+review_titles = list(
+    dict.fromkeys(
+        (item.get("title") or "").strip()
+        for item, _ in reviewable_items
+        if (item.get("title") or "").strip()
+    )
+)
+review_abstracts: list[str] = []
+for _, candidate in reviewable_items:
+    abstract = _resolved_abstract(candidate)
+    if abstract and not abstract_unavailable(abstract) and abstract not in review_abstracts:
+        review_abstracts.append(abstract)
+
+title_translations = cached_translations(review_titles, model)
+abstract_translations = cached_abstract_translations(review_abstracts, model)
+missing_titles = [
+    title
+    for title in review_titles
+    if needs_translation(title) and title not in title_translations
+]
+missing_abstracts = [
+    abstract
+    for abstract in review_abstracts
+    if needs_translation(abstract) and abstract not in abstract_translations
+]
+
+st.markdown("### 标题与摘要翻译")
+auto_translate = st.toggle(
+    "自动翻译非中文标题和摘要",
+    value=True,
+    key="ai_screening_auto_translate",
+)
+if not ai_key or not base_url or not model:
+    st.caption("可在左侧“AI 服务”填写 API Key 和模型名，自动翻译非中文标题和摘要。")
+elif missing_titles or missing_abstracts:
+    attempt_key = f"{model}:" + hashlib.sha256(
+        chr(10)
+        .join([*missing_titles, *missing_abstracts])
+        .encode("utf-8")
+    ).hexdigest()
+    attempt_state_key = f"ai_screening_translation_attempt_{task_id}"
+    if auto_translate and st.session_state.get(attempt_state_key) != attempt_key:
+        st.session_state[attempt_state_key] = attempt_key
+        try:
+            with st.spinner("正在翻译标题和摘要…"):
+                new_titles, new_abstracts = translate_texts(
+                    OpenAICompatibleClient(
+                        base_url=base_url,
+                        api_key=ai_key,
+                        model=model,
+                    ),
+                    missing_titles,
+                    missing_abstracts,
+                )
+            save_translations(new_titles, model)
+            save_abstract_translations(new_abstracts, model)
+            title_translations.update(new_titles)
+            abstract_translations.update(new_abstracts)
+            missing_titles = [
+                title for title in missing_titles if title not in title_translations
+            ]
+            missing_abstracts = [
+                abstract
+                for abstract in missing_abstracts
+                if abstract not in abstract_translations
+            ]
+        except Exception as error:
+            st.warning(f"标题/摘要翻译失败：{error}")
+    if (missing_titles or missing_abstracts) and base_url and model:
+        if st.button(
+            "翻译剩余标题和摘要",
+            key=f"ai_screening_translate_retry_{task_id}",
+        ):
+            try:
+                with st.spinner("正在翻译标题和摘要…"):
+                    new_titles, new_abstracts = translate_texts(
+                        OpenAICompatibleClient(
+                            base_url=base_url,
+                            api_key=ai_key,
+                            model=model,
+                        ),
+                        missing_titles,
+                        missing_abstracts,
+                    )
+                save_translations(new_titles, model)
+                save_abstract_translations(new_abstracts, model)
+                st.rerun()
+            except Exception as error:
+                st.warning(f"标题/摘要翻译失败：{error}")
+else:
+    st.caption("本批标题和摘要已有中文翻译。")
 
 prefill_col, save_all_col = st.columns(2)
 with prefill_col:
@@ -377,14 +483,61 @@ with save_all_col:
 st.caption(
     "先预填或手动选择，再点“保存全部当前决定”。"
     "选择“待定”的条目不会被批量保存，仍保持待处理。"
+    "单篇保存只刷新当前条目、不会跳动页面；顶部统计在整页刷新后更新。"
 )
 
-for item, candidate in reviewable_items:
+_saved_state_prefix = f"ai_screening_saved_{task_id}_"
+for _stale_key in [
+    name for name in st.session_state if name.startswith("ai_screening_saved_")
+]:
+    st.session_state.pop(_stale_key, None)
+
+
+def saved_state_key(candidate_key_value):
+    return f"{_saved_state_prefix}{candidate_key_value}"
+
+
+def rerun_fragment():
+    try:
+        st.rerun(scope="fragment")
+    except StreamlitAPIException:
+        st.rerun()
+
+
+@st.fragment
+def render_review_item(item, candidate):
     key = item["candidate_key"]
+    saved = st.session_state.get(saved_state_key(key)) or {}
+    current_status = saved.get("status") or candidate["status"]
+    current_review_status = saved.get("review_status") or item.get("review_status")
+    current_note = saved.get("note", item.get("review_note") or "")
     with st.container(border=True):
-        st.markdown(f"#### {item.get('title') or '（无标题）'}")
+        title = item.get("title") or ""
+        st.markdown(f"#### {title or '（无标题）'}")
+        translated_title = title_translations.get(title)
+        if translated_title:
+            st.caption(f"中文（AI 翻译）：{translated_title}")
+        metadata = " · ".join(
+            str(value)
+            for value in (candidate.get("year"), candidate.get("doi"))
+            if value
+        )
+        if metadata:
+            st.caption(metadata)
+        abstract = _resolved_abstract(candidate)
+        if abstract and not abstract_unavailable(abstract):
+            with st.expander("摘要（含中文翻译）", expanded=False):
+                st.write(abstract)
+                translated_abstract = abstract_translations.get(abstract)
+                if translated_abstract:
+                    st.markdown(f"**中文（AI 翻译）：** {translated_abstract}")
+        else:
+            st.caption(
+                "无可用摘要：请按仅题名判断；题名信息不足时请设为待定，"
+                "不要把“无摘要”直接作为排除理由。"
+            )
         st.caption(
-            f"当前项目状态：{STATUS_LABELS.get(candidate['status'], candidate['status'])}"
+            f"当前项目状态：{STATUS_LABELS.get(current_status, current_status)}"
         )
         suggestion = item.get("suggestion") or "uncertain"
         confidence = CONFIDENCE_LABELS.get(
@@ -413,9 +566,11 @@ for item, candidate in reviewable_items:
                 st.caption(
                     f"{quote.get('section') or '位置未注明'} · {quote_status(check)}"
                 )
-        st.caption(f"人工处理状态：{review_labels.get(item.get('review_status'), '待处理')}")
-        if item.get("review_note"):
-            st.caption(f"上次处理备注：{item['review_note']}")
+        st.caption(
+            f"人工处理状态：{review_labels.get(current_review_status, '待处理')}"
+        )
+        if current_note:
+            st.caption(f"上次处理备注：{current_note}")
         st.caption("选择“待定”并保存表示拒绝该建议，候选状态不会改变。")
 
         expected = {
@@ -435,13 +590,13 @@ for item, candidate in reviewable_items:
                         if current_reason in EXCLUSION_REASONS
                         else "其他"
                     )
-                st.rerun()
+                rerun_fragment()
         else:
             st.caption("AI 未给出明确纳入或排除建议，请人工选择。")
 
         current_index = (
-            status_options.index(candidate["status"])
-            if candidate["status"] in status_options
+            status_options.index(current_status)
+            if current_status in status_options
             else 0
         )
         st.radio(
@@ -465,7 +620,7 @@ for item, candidate in reviewable_items:
         )
         st.text_area(
             "人工备注",
-            value=item.get("review_note") or "",
+            value=current_note,
             height=70,
             key=note_key(key),
         )
@@ -474,16 +629,26 @@ for item, candidate in reviewable_items:
             key=f"ai_screening_save_{task_id}_{key}",
         ):
             try:
-                save_human_decision(
+                note = st.session_state.get(note_key(key), "")
+                result = save_human_decision(
                     item,
-                    st.session_state.get(decision_key(key), candidate["status"]),
+                    st.session_state.get(decision_key(key), current_status),
                     st.session_state.get(reason_key(key)),
-                    st.session_state.get(note_key(key), ""),
+                    note,
                 )
-                st.session_state["ai_screening_message"] = "人工决定已保存。"
-                st.rerun()
+                st.session_state[saved_state_key(key)] = {
+                    "status": result["status_after"],
+                    "review_status": result["review_status"],
+                    "note": note,
+                }
+                st.toast("人工决定已保存。")
+                rerun_fragment()
             except Exception as error:
                 st.error(str(error))
+
+
+for item, candidate in reviewable_items:
+    render_review_item(item, candidate)
 
 st.markdown("### 建议与人工决定审计")
 audit_rows = [

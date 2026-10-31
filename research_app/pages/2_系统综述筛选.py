@@ -10,13 +10,15 @@ from research_app import storage
 from research_app.ai import OpenAICompatibleClient
 from research_app.ai_settings import default_profile
 from research_app.ai_translation import (
+    abstract_unavailable as _abstract_unavailable,
+)
+from research_app.ai_translation import (
     cached_abstract_translations,
     cached_translations,
     needs_translation,
     save_abstract_translations,
     save_translations,
-    translate_abstracts,
-    translate_titles,
+    translate_texts,
 )
 from research_app.exports import export_screening_csv
 from research_app.screening import (
@@ -45,20 +47,6 @@ def _show_error(error: Exception) -> None:
     st.error(str(error))
 
 
-def _abstract_unavailable(abstract: str) -> bool:
-    text = str(abstract or "").strip()
-    if not text:
-        return True
-    return any(
-        marker in text
-        for marker in (
-            "First Name is required",
-            "Last Name is required",
-            "Email Address is required",
-        )
-    )
-
-
 def _translate_batch(
     base_url: str,
     api_key: str,
@@ -71,11 +59,7 @@ def _translate_batch(
         api_key=api_key,
         model=model,
     )
-    title_translations = translate_titles(client, titles) if titles else {}
-    abstract_translations = (
-        translate_abstracts(client, abstracts) if abstracts else {}
-    )
-    return title_translations, abstract_translations
+    return translate_texts(client, titles, abstracts)
 
 
 projects = storage.list_screening_projects()

@@ -18,9 +18,23 @@ _CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
 _MAX_CACHE_ENTRIES = 5000
 
 
+_ABSTRACT_PLACEHOLDER_MARKERS = (
+    "First Name is required",
+    "Last Name is required",
+    "Email Address is required",
+)
+
+
 def needs_translation(title: str) -> bool:
     text = title.strip()
     return bool(text) and not bool(_CJK_RE.search(text))
+
+
+def abstract_unavailable(abstract: str) -> bool:
+    text = str(abstract or "").strip()
+    if not text:
+        return True
+    return any(marker in text for marker in _ABSTRACT_PLACEHOLDER_MARKERS)
 
 
 def cache_path() -> Path:
@@ -252,3 +266,15 @@ def translate_abstracts(
             raise AIError("摘要翻译响应缺少 translation。")
         translations[abstract] = translation.strip()
     return translations
+
+
+def translate_texts(
+    client: OpenAICompatibleClient,
+    titles: list[str],
+    abstracts: list[str],
+) -> tuple[dict[str, str], dict[str, str]]:
+    title_translations = translate_titles(client, titles) if titles else {}
+    abstract_translations = (
+        translate_abstracts(client, abstracts) if abstracts else {}
+    )
+    return title_translations, abstract_translations

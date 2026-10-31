@@ -142,7 +142,9 @@ OpenCode Go 推荐模型为 `glm-5.3-flash` 或其他走 `/chat/completions` 的
 
 - 输出结构化建议：建议纳入、建议排除或需人工判断
 - 每篇附命中标准、判断理由、置信度，以及标题或摘要中的原文依据
+- 每篇直接显示题名、年份/DOI 和摘要（可展开），配置 Key 后非中文标题和摘要自动翻译为中文，可在本页完成人工审核而无需再回“系统综述筛选”；翻译按模型和提示词版本缓存，失败可手动重试
 - 人工可逐篇选择最终状态并保存；采用、改判和拒绝都会写入 AI 建议审计
+- 单篇审核采用局部刷新：切换人工决定或保存单篇只更新当前卡片，不会跳回页面顶部；顶部统计在整页刷新后更新
 - 可点“采纳此 AI 建议”预填单篇，或“全部按 AI 建议预填”预填所有明确建议；预填不会保存
 - “保存全部当前决定”统一保存已选择的纳入/排除；保持“待定”的条目不会被批量保存
 - AI 建议本身不会改变候选状态；拒绝建议时保持原有筛选状态
@@ -178,7 +180,7 @@ OpenCode Go 推荐模型为 `glm-5.3-flash` 或其他走 `/chat/completions` 的
 powershell -ExecutionPolicy Bypass -File scripts/build_desktop.ps1
 ```
 
-构建结果位于 `dist/SciverseResearchWorkbench.exe`。双击后会启动本地服务并自动打开浏览器；不需要命令行。首次构建需要安装 PyInstaller，耗时和体积取决于当前 Python 环境。当前产物为 109,556,396 字节（约 104 MB）；本机最新构建首次启动实测约 7.6 秒，干净 Windows 机器可能更慢。onefile 首次启动需要解压，请等待浏览器自动打开。
+构建结果位于 `dist/SciverseResearchWorkbench.exe`。双击后会启动本地服务并自动打开浏览器；不需要命令行。首次构建需要安装 PyInstaller，耗时和体积取决于当前 Python 环境。当前产物为 106,220,224 字节（约 106 MB）；本机最新构建首次启动实测约 7.6 秒，干净 Windows 机器可能更慢。onefile 首次启动需要解压，请等待浏览器自动打开。
 
 AI 页面的 API Key 只在当前会话输入，不写入 exe 或本地数据库；Base URL 和模型名保存在本机 `~/.sciverse/ai-settings.json`。Sciverse Token 仍按原有方式从环境变量或凭据文件读取。
 

@@ -1,3 +1,9 @@
+## [1.21.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.21.0...v1.21.1) (2026-10-31)
+
+### Bug Fixes
+
+* lock frozen benchmark projects and complete review archival ([b50a918](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/b50a918cf72999633b2a5bfc486fa9d321fa6312))
+
 ## [1.21.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.20.0...v1.21.0) (2026-10-31)
 
 ### Features

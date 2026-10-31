@@ -1,3 +1,9 @@
+## [1.21.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.20.0...v1.21.0) (2026-10-31)
+
+### Features
+
+* split review status and archive stage 9 evidence ([2575794](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/25757949487c54cc6ab387435323254647916e7a))
+
 ## [1.20.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.19.3...v1.20.0) (2026-10-31)
 
 ### Features

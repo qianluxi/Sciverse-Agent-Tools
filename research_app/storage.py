@@ -23,7 +23,7 @@ from research_app.screening import (
 )
 
 
-_SCHEMA_VERSION = 12
+_SCHEMA_VERSION = 13
 _BACKUP_SCHEMA_VERSION = 2
 _MAX_HISTORY_ENTRIES = 50
 _MAX_SNAPSHOT_BYTES = 5 * 1024 * 1024
@@ -573,6 +573,55 @@ def _migrate(connection: sqlite3.Connection) -> None:
         )
         version = 12
         connection.execute("PRAGMA user_version = 12")
+    if version < 13:
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS evidence_batches (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id TEXT NOT NULL REFERENCES screening_projects(id) ON DELETE CASCADE,
+                task_id TEXT NOT NULL REFERENCES ai_task_runs(id) ON DELETE CASCADE,
+                batch_index INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending', 'running', 'completed', 'failed', 'skipped')),
+                paper_keys_json TEXT NOT NULL DEFAULT '[]',
+                request_count INTEGER NOT NULL DEFAULT 0,
+                error TEXT,
+                started_at TEXT,
+                finished_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(task_id, batch_index)
+            );
+            CREATE INDEX IF NOT EXISTS evidence_batches_project
+                ON evidence_batches(project_id, task_id, batch_index);
+            CREATE TABLE IF NOT EXISTS evidence_item_versions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id TEXT NOT NULL REFERENCES screening_projects(id) ON DELETE CASCADE,
+                paper_id TEXT NOT NULL,
+                title TEXT NOT NULL DEFAULT '',
+                year INTEGER,
+                task_id TEXT NOT NULL,
+                batch_id INTEGER,
+                version_no INTEGER NOT NULL,
+                source TEXT NOT NULL
+                    CHECK (source IN ('ai_raw', 'human_corrected', 'final_adopted')),
+                data_json TEXT NOT NULL,
+                quote_checks_json TEXT NOT NULL DEFAULT '[]',
+                model TEXT NOT NULL DEFAULT '',
+                prompt_version TEXT NOT NULL DEFAULT '',
+                reviewer_note TEXT NOT NULL DEFAULT '',
+                error TEXT,
+                created_at TEXT NOT NULL,
+                UNIQUE(project_id, paper_id, source, version_no)
+            );
+            CREATE INDEX IF NOT EXISTS evidence_item_versions_paper
+                ON evidence_item_versions(project_id, paper_id, source, version_no DESC);
+            CREATE INDEX IF NOT EXISTS evidence_item_versions_task
+                ON evidence_item_versions(project_id, task_id);
+            """
+        )
+        version = 13
+        connection.execute("PRAGMA user_version = 13")
 
 
 @contextmanager
@@ -2150,6 +2199,357 @@ def load_latest_evidence(project_id: str) -> dict[str, Any] | None:
             }
         )
     return {"task": dict(task), "items": items}
+
+
+EVIDENCE_BATCH_STATUSES = frozenset(
+    {"pending", "running", "completed", "failed", "skipped"}
+)
+EVIDENCE_VERSION_SOURCES = frozenset(
+    {"ai_raw", "human_corrected", "final_adopted"}
+)
+
+
+def create_evidence_batch(
+    project_id: str,
+    task_id: str,
+    batch_index: int,
+    *,
+    paper_keys: list[str] | None = None,
+) -> dict[str, Any]:
+    if int(batch_index) < 0:
+        raise ValueError("批次序号无效。")
+    keys = [str(key) for key in paper_keys or [] if str(key)]
+    now = _timestamp()
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        task = connection.execute(
+            "SELECT 1 FROM ai_task_runs WHERE id = ? AND project_id = ?",
+            (task_id, project_id),
+        ).fetchone()
+        if task is None:
+            raise ValueError("AI 任务不存在。")
+        row = connection.execute(
+            "SELECT id FROM evidence_batches WHERE task_id = ? AND batch_index = ?",
+            (task_id, int(batch_index)),
+        ).fetchone()
+        if row is not None:
+            return {"id": int(row["id"]), "created": False}
+        cursor = connection.execute(
+            """INSERT INTO evidence_batches(
+                   project_id, task_id, batch_index, status, paper_keys_json,
+                   request_count, created_at, updated_at
+               ) VALUES (?, ?, ?, 'pending', ?, 0, ?, ?)""",
+            (
+                project_id,
+                task_id,
+                int(batch_index),
+                json.dumps(keys, ensure_ascii=False),
+                now,
+                now,
+            ),
+        )
+        return {"id": int(cursor.lastrowid), "created": True}
+
+
+def update_evidence_batch(
+    batch_id: int,
+    *,
+    status: str,
+    error: str | None = None,
+    request_count: int | None = None,
+) -> None:
+    if status not in EVIDENCE_BATCH_STATUSES:
+        raise ValueError("证据批次状态无效。")
+    now = _timestamp()
+    with _connection() as connection:
+        row = connection.execute(
+            "SELECT * FROM evidence_batches WHERE id = ?", (int(batch_id),)
+        ).fetchone()
+        if row is None:
+            raise ValueError("证据批次不存在。")
+        started_at = row["started_at"]
+        finished_at = row["finished_at"]
+        if status == "running" and not started_at:
+            started_at = now
+        if status in {"completed", "failed", "skipped"}:
+            finished_at = now
+        connection.execute(
+            """UPDATE evidence_batches
+               SET status = ?, error = ?, request_count = ?,
+                   started_at = ?, finished_at = ?, updated_at = ?
+               WHERE id = ?""",
+            (
+                status,
+                str(error or "") or None,
+                int(request_count) if request_count is not None else row["request_count"],
+                started_at,
+                finished_at,
+                now,
+                int(batch_id),
+            ),
+        )
+
+
+def list_evidence_batches(
+    project_id: str,
+    task_id: str | None = None,
+) -> list[dict[str, Any]]:
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        if task_id:
+            rows = connection.execute(
+                """SELECT * FROM evidence_batches
+                   WHERE project_id = ? AND task_id = ?
+                   ORDER BY batch_index""",
+                (project_id, task_id),
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                """SELECT * FROM evidence_batches
+                   WHERE project_id = ?
+                   ORDER BY task_id, batch_index""",
+                (project_id,),
+            ).fetchall()
+    batches = []
+    for row in rows:
+        item = dict(row)
+        item["paper_keys"] = json.loads(item.pop("paper_keys_json"))
+        batches.append(item)
+    return batches
+
+
+def append_evidence_version(
+    project_id: str,
+    paper_id: str,
+    task_id: str,
+    *,
+    source: str,
+    data: dict[str, Any],
+    quote_checks: list[dict[str, Any]] | None = None,
+    model: str = "",
+    prompt_version: str = "",
+    reviewer_note: str = "",
+    title: str = "",
+    year: int | None = None,
+    batch_id: int | None = None,
+    error: str | None = None,
+) -> dict[str, Any]:
+    if source not in EVIDENCE_VERSION_SOURCES:
+        raise ValueError("证据版本来源无效。")
+    if not isinstance(data, dict):
+        raise ValueError("证据内容必须为对象。")
+    paper_id_value = str(paper_id or "")
+    if not paper_id_value:
+        raise ValueError("缺少论文标识。")
+    data_json = json.dumps(data, ensure_ascii=False, sort_keys=True)
+    checks_json = json.dumps(
+        quote_checks or [], ensure_ascii=False, sort_keys=True
+    )
+    error_text = str(error or "") or None
+    note = str(reviewer_note or "")
+    if len(note) > 2000:
+        raise ValueError("备注不能超过 2000 个字符。")
+    now = _timestamp()
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        task = connection.execute(
+            "SELECT 1 FROM ai_task_runs WHERE id = ? AND project_id = ?",
+            (task_id, project_id),
+        ).fetchone()
+        if task is None:
+            raise ValueError("AI 任务不存在。")
+        latest = connection.execute(
+            """SELECT version_no, title, year, data_json, quote_checks_json,
+                      model, prompt_version, error
+               FROM evidence_item_versions
+               WHERE project_id = ? AND paper_id = ? AND source = ?
+               ORDER BY version_no DESC LIMIT 1""",
+            (project_id, paper_id_value, source),
+        ).fetchone()
+        if latest is not None:
+            if not title and latest["title"]:
+                title = latest["title"]
+            if year is None and latest["year"] is not None:
+                year = int(latest["year"])
+        if (
+            latest is not None
+            and latest["data_json"] == data_json
+            and latest["quote_checks_json"] == checks_json
+            and latest["model"] == str(model or "")
+            and latest["prompt_version"] == str(prompt_version or "")
+            and latest["error"] == error_text
+        ):
+            if (
+                str(title or "") != latest["title"]
+                or (year is not None and year != latest["year"])
+            ):
+                connection.execute(
+                    """UPDATE evidence_item_versions
+                       SET title = ?, year = ?
+                       WHERE project_id = ? AND paper_id = ? AND source = ?
+                         AND version_no = ?""",
+                    (
+                        str(title or ""),
+                        int(year) if year is not None else None,
+                        project_id,
+                        paper_id_value,
+                        source,
+                        int(latest["version_no"]),
+                    ),
+                )
+            return {"version_no": int(latest["version_no"]), "created": False}
+        if latest is None:
+            version_no = 1
+        else:
+            version_no = int(latest["version_no"]) + 1
+        cursor = connection.execute(
+            """INSERT INTO evidence_item_versions(
+                   project_id, paper_id, title, year, task_id, batch_id,
+                   version_no, source, data_json, quote_checks_json,
+                   model, prompt_version, reviewer_note, error, created_at
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                project_id,
+                paper_id_value,
+                str(title or ""),
+                int(year) if year is not None else None,
+                task_id,
+                int(batch_id) if batch_id is not None else None,
+                version_no,
+                source,
+                data_json,
+                checks_json,
+                str(model or ""),
+                str(prompt_version or ""),
+                note,
+                error_text,
+                now,
+            ),
+        )
+        return {"id": int(cursor.lastrowid), "version_no": version_no, "created": True}
+
+
+def list_evidence_versions(
+    project_id: str,
+    paper_id: str,
+    *,
+    source: str | None = None,
+) -> list[dict[str, Any]]:
+    if source is not None and source not in EVIDENCE_VERSION_SOURCES:
+        raise ValueError("证据版本来源无效。")
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        if source:
+            rows = connection.execute(
+                """SELECT * FROM evidence_item_versions
+                   WHERE project_id = ? AND paper_id = ? AND source = ?
+                   ORDER BY version_no DESC""",
+                (project_id, str(paper_id), source),
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                """SELECT * FROM evidence_item_versions
+                   WHERE project_id = ? AND paper_id = ?
+                   ORDER BY source, version_no DESC""",
+                (project_id, str(paper_id)),
+            ).fetchall()
+    versions = []
+    for row in rows:
+        item = dict(row)
+        item["data"] = json.loads(item.pop("data_json"))
+        item["quote_checks"] = json.loads(item.pop("quote_checks_json"))
+        versions.append(item)
+    return versions
+
+
+def load_evidence_matrix(project_id: str) -> list[dict[str, Any]]:
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        rows = connection.execute(
+            """SELECT v.*
+               FROM evidence_item_versions v
+               JOIN (
+                   SELECT paper_id, source, MAX(version_no) AS max_version
+                   FROM evidence_item_versions
+                   WHERE project_id = ?
+                   GROUP BY paper_id, source
+               ) mx
+                 ON v.project_id = ?
+                AND v.paper_id = mx.paper_id
+                AND v.source = mx.source
+                AND v.version_no = mx.max_version
+               ORDER BY v.title, v.paper_id""",
+            (project_id, project_id),
+        ).fetchall()
+    papers: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        entry = papers.setdefault(
+            row["paper_id"],
+            {
+                "paper_id": row["paper_id"],
+                "title": row["title"],
+                "year": row["year"],
+                "versions": {},
+            },
+        )
+        if row["title"]:
+            entry["title"] = row["title"]
+        if row["year"] is not None:
+            entry["year"] = row["year"]
+        entry["versions"][row["source"]] = {
+            "version_no": int(row["version_no"]),
+            "data": json.loads(row["data_json"]),
+            "quote_checks": json.loads(row["quote_checks_json"]),
+            "model": row["model"],
+            "prompt_version": row["prompt_version"],
+            "reviewer_note": row["reviewer_note"],
+            "error": row["error"],
+            "task_id": row["task_id"],
+            "batch_id": row["batch_id"],
+            "created_at": row["created_at"],
+        }
+    return list(papers.values())
+
+
+def get_latest_ai_task(project_id: str, kind: str) -> dict[str, Any] | None:
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        row = connection.execute(
+            """SELECT * FROM ai_task_runs
+               WHERE project_id = ? AND kind = ?
+               ORDER BY created_at DESC, id DESC LIMIT 1""",
+            (project_id, kind),
+        ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def evidence_task_status(
+    project_id: str,
+    task_id: str,
+    *,
+    source: str = "ai_raw",
+) -> dict[str, list[str]]:
+    if source not in EVIDENCE_VERSION_SOURCES:
+        raise ValueError("证据版本来源无效。")
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        rows = connection.execute(
+            """SELECT v.paper_id, v.error
+               FROM evidence_item_versions v
+               JOIN (
+                   SELECT paper_id, MAX(version_no) AS max_version
+                   FROM evidence_item_versions
+                   WHERE project_id = ? AND task_id = ? AND source = ?
+                   GROUP BY paper_id
+               ) mx
+                 ON v.paper_id = mx.paper_id
+                AND v.version_no = mx.max_version
+               WHERE v.project_id = ? AND v.task_id = ? AND v.source = ?""",
+            (project_id, task_id, source, project_id, task_id, source),
+        ).fetchall()
+    completed = [row["paper_id"] for row in rows if not row["error"]]
+    failed = [row["paper_id"] for row in rows if row["error"]]
+    return {"completed": completed, "failed": failed, "processed": completed + failed}
 
 
 def inspect_project_statistics(project_id: str | None = None) -> list[dict[str, Any]]:

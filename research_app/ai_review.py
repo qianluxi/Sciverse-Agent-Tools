@@ -248,3 +248,160 @@ def export_evidence_markdown(evidence: list[dict[str, Any]]) -> bytes:
             lines.extend(["", f"**核对备注**：{row['reviewer_note']}"])
         lines.extend(["", "---", ""])
     return ("\n".join(lines).rstrip() + "\n").encode("utf-8")
+
+
+MATRIX_SOURCES = ("ai_raw", "human_corrected", "final_adopted")
+MATRIX_SOURCE_LABELS = {
+    "ai_raw": "AI 原始",
+    "human_corrected": "人工校正",
+    "final_adopted": "最终采用",
+}
+MATRIX_CSV_COLUMNS = [
+    "paper_id",
+    "title",
+    "year",
+    "value_source",
+    "ai_version",
+    "human_version",
+    "final_version",
+    *FIELD_KEYS,
+    "quote_1",
+    "quote_1_section",
+    "quote_1_verification",
+    "quote_2",
+    "quote_2_section",
+    "quote_2_verification",
+    "quote_3",
+    "quote_3_section",
+    "quote_3_verification",
+    "reviewer_note",
+    "task_id",
+    "model",
+    "prompt_version",
+    "error",
+]
+
+
+def _matrix_choice(versions: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    for source in ("final_adopted", "human_corrected", "ai_raw"):
+        version = versions.get(source)
+        if version is not None:
+            return source, version
+    return "", {}
+
+
+def matrix_rows(matrix: list[dict[str, Any]]) -> list[dict[str, str]]:
+    rows = []
+    for paper in matrix:
+        versions = paper.get("versions") or {}
+        source, version = _matrix_choice(versions)
+        data = normalize_evidence_data(version.get("data"))
+        quotes = data.get("evidence_quotes") or []
+        checks = version.get("quote_checks") or []
+        row = {
+            "paper_id": str(paper.get("paper_id") or ""),
+            "title": str(paper.get("title") or ""),
+            "year": _year_text(paper.get("year")),
+            "value_source": MATRIX_SOURCE_LABELS.get(source, source),
+            "ai_version": str((versions.get("ai_raw") or {}).get("version_no") or ""),
+            "human_version": str(
+                (versions.get("human_corrected") or {}).get("version_no") or ""
+            ),
+            "final_version": str(
+                (versions.get("final_adopted") or {}).get("version_no") or ""
+            ),
+            "reviewer_note": str(version.get("reviewer_note") or ""),
+            "task_id": str(version.get("task_id") or ""),
+            "model": str(version.get("model") or ""),
+            "prompt_version": str(version.get("prompt_version") or ""),
+            "error": str(version.get("error") or ""),
+        }
+        row.update({field: data[field] for field in FIELD_KEYS})
+        for index in range(1, 4):
+            position = index - 1
+            if position < len(quotes):
+                quote = quotes[position]
+                check = checks[position] if position < len(checks) else {}
+                row[f"quote_{index}"] = str(quote.get("quote") or "")
+                row[f"quote_{index}_section"] = str(quote.get("section") or "")
+                row[f"quote_{index}_verification"] = quote_status(check)
+            else:
+                row[f"quote_{index}"] = ""
+                row[f"quote_{index}_section"] = ""
+                row[f"quote_{index}_verification"] = ""
+        rows.append(row)
+    return rows
+
+
+def export_matrix_csv(matrix: list[dict[str, Any]]) -> bytes:
+    output = io.StringIO(newline="")
+    writer = csv.DictWriter(output, fieldnames=MATRIX_CSV_COLUMNS)
+    writer.writeheader()
+    write_safe_rows(writer, matrix_rows(matrix))
+    return output.getvalue().encode("utf-8-sig")
+
+
+def export_matrix_markdown(
+    matrix: list[dict[str, Any]],
+    *,
+    task: dict[str, Any] | None = None,
+) -> bytes:
+    rows = matrix_rows(matrix)
+    models = "、".join(sorted({row["model"] for row in rows if row["model"]})) or "未知"
+    versions = (
+        "、".join(
+            sorted({row["prompt_version"] for row in rows if row["prompt_version"]})
+        )
+        or "未知"
+    )
+    lines = [
+        "# 项目级证据矩阵",
+        "",
+        f"- 任务：`{(task or {}).get('id') or '未知'}`",
+        f"- 模型：{models}",
+        f"- 提示词版本：{versions}",
+        f"- 导出时间：{datetime.now(timezone.utc).isoformat(timespec='seconds')}",
+        "- 说明：AI 原始、人工校正与最终采用版本分开保存；本表展示当前采用值。",
+        "",
+    ]
+    for row in rows:
+        title = row["title"] or "（无标题）"
+        lines.extend(
+            [
+                f"## {title}",
+                "",
+                f"- 来源：`{row['paper_id']}`",
+                f"- 年份：{row['year'] or '未知'}",
+                f"- 当前采用：{row['value_source']}（ai={row['ai_version'] or '—'}，"
+                f"human={row['human_version'] or '—'}，final={row['final_version'] or '—'}）",
+                f"- 任务：`{row['task_id'] or '未知'}`",
+                f"- 模型：{row['model'] or '未知'}",
+                f"- 提示词版本：{row['prompt_version'] or '未知'}",
+            ]
+        )
+        if row["error"]:
+            lines.extend(["", f"**提取失败**：{row['error']}"])
+        for field in FIELD_KEYS:
+            lines.append(f"- {FIELD_LABELS[field]}：{row[field]}")
+        quote_entries = [
+            (index, row[f"quote_{index}"], row[f"quote_{index}_section"], row[f"quote_{index}_verification"])
+            for index in range(1, 4)
+            if row[f"quote_{index}"]
+        ]
+        if quote_entries:
+            lines.extend(["", "### 原文引句", ""])
+            for index, quote, section, status in quote_entries:
+                lines.extend(
+                    [
+                        f"**引句 {index}**",
+                        "",
+                        f"> {quote}",
+                        ">",
+                        f"> 位置：{section or '未知'} · 校验：{status}",
+                        "",
+                    ]
+                )
+        if row["reviewer_note"]:
+            lines.extend(["", f"**审核备注**：{row['reviewer_note']}"])
+        lines.extend(["", "---", ""])
+    return ("\n".join(lines).rstrip() + "\n").encode("utf-8")

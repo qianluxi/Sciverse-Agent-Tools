@@ -30,6 +30,7 @@ These instructions apply only to code and documentation under `research_app/`. R
 
 - Run `pytest research_app/tests/ -v` for the workbench smoke and unit tests.
 - Run `python -m py_compile research_app/app.py` for a quick syntax check.
+- Do not rebuild the Windows portable exe for routine code updates; rebuild `dist/*.exe` only when preparing a delivery/release.
 - Run the root generator and relevant SDK tests when changing their contracts or shared interfaces.
 - Test 400, 401, 429, 5xx, timeout, empty-result, and permission-denied behavior with mocks as the service layer grows.
 - Do not modify generated SDK or Skill artifacts by hand; coordinate interface changes through the root OpenAPI workflow.

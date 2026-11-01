@@ -18,6 +18,7 @@ $hiddenImports = @(
     "research_app.ai_translation",
     "research_app.errors",
     "research_app.evidence",
+    "research_app.evidence_matrix",
     "research_app.field_scan",
     "research_app.project_ui",
     "research_app.exports",

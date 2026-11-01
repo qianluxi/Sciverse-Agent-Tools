@@ -1,3 +1,9 @@
+## [1.22.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.21.1...v1.22.0) (2026-11-01)
+
+### Features
+
+* add project-level evidence matrix ([d5b1ccf](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/d5b1ccf55d2a398ce125da6f517f51ccc2b4225a))
+
 ## [1.21.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.21.0...v1.21.1) (2026-10-31)
 
 ### Bug Fixes

@@ -1,3 +1,9 @@
+## [1.23.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.22.4...v1.23.0) (2026-11-05)
+
+### Features
+
+* add PRISMA fulltext stage and project report ([7502e55](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/7502e55103afc50c8312810c5c3d77abc3c1adc4))
+
 ## [1.22.4](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.22.3...v1.22.4) (2026-11-05)
 
 ### Bug Fixes

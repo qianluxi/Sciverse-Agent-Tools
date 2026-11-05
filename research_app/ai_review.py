@@ -256,14 +256,28 @@ MATRIX_SOURCE_LABELS = {
     "human_corrected": "人工校正",
     "final_adopted": "最终采用",
 }
+MATRIX_INPUT_LABELS = {
+    "full_text": "全文",
+    "abstract": "摘要",
+    "none": "无文本",
+}
 MATRIX_CSV_COLUMNS = [
     "paper_id",
     "title",
     "year",
     "value_source",
+    "batch_id",
     "ai_version",
     "human_version",
     "final_version",
+    "ai_task_id",
+    "ai_batch_id",
+    "human_task_id",
+    "human_batch_id",
+    "final_task_id",
+    "final_batch_id",
+    "input_source",
+    "input_error",
     *FIELD_KEYS,
     "quote_1",
     "quote_1_section",
@@ -295,6 +309,9 @@ def matrix_rows(matrix: list[dict[str, Any]]) -> list[dict[str, str]]:
     for paper in matrix:
         versions = paper.get("versions") or {}
         source, version = _matrix_choice(versions)
+        ai_version = versions.get("ai_raw") or {}
+        human_version = versions.get("human_corrected") or {}
+        final_version = versions.get("final_adopted") or {}
         data = normalize_evidence_data(version.get("data"))
         quotes = data.get("evidence_quotes") or []
         checks = version.get("quote_checks") or []
@@ -303,13 +320,20 @@ def matrix_rows(matrix: list[dict[str, Any]]) -> list[dict[str, str]]:
             "title": str(paper.get("title") or ""),
             "year": _year_text(paper.get("year")),
             "value_source": MATRIX_SOURCE_LABELS.get(source, source),
-            "ai_version": str((versions.get("ai_raw") or {}).get("version_no") or ""),
-            "human_version": str(
-                (versions.get("human_corrected") or {}).get("version_no") or ""
+            "batch_id": str(version.get("batch_id") or ""),
+            "ai_version": str(ai_version.get("version_no") or ""),
+            "human_version": str(human_version.get("version_no") or ""),
+            "final_version": str(final_version.get("version_no") or ""),
+            "ai_task_id": str(ai_version.get("task_id") or ""),
+            "ai_batch_id": str(ai_version.get("batch_id") or ""),
+            "human_task_id": str(human_version.get("task_id") or ""),
+            "human_batch_id": str(human_version.get("batch_id") or ""),
+            "final_task_id": str(final_version.get("task_id") or ""),
+            "final_batch_id": str(final_version.get("batch_id") or ""),
+            "input_source": MATRIX_INPUT_LABELS.get(
+                str(version.get("input_source") or ""), ""
             ),
-            "final_version": str(
-                (versions.get("final_adopted") or {}).get("version_no") or ""
-            ),
+            "input_error": str(version.get("input_error") or ""),
             "reviewer_note": str(version.get("reviewer_note") or ""),
             "task_id": str(version.get("task_id") or ""),
             "model": str(version.get("model") or ""),
@@ -374,7 +398,9 @@ def export_matrix_markdown(
                 f"- 年份：{row['year'] or '未知'}",
                 f"- 当前采用：{row['value_source']}（ai={row['ai_version'] or '—'}，"
                 f"human={row['human_version'] or '—'}，final={row['final_version'] or '—'}）",
-                f"- 任务：`{row['task_id'] or '未知'}`",
+                f"- 批次：`{row['batch_id'] or '—'}` · 任务：`{row['task_id'] or '未知'}`",
+                f"- 输入来源：{row['input_source'] or '未知'}"
+                + (f"（{row['input_error']}）" if row["input_error"] else ""),
                 f"- 模型：{row['model'] or '未知'}",
                 f"- 提示词版本：{row['prompt_version'] or '未知'}",
             ]

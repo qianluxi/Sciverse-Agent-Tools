@@ -1,3 +1,5 @@
+import hashlib
+
 import pytest
 
 import research_app.storage as storage
@@ -26,7 +28,9 @@ def test_evidence_batch_creation_is_idempotent(monkeypatch, tmp_path):
     first = storage.create_evidence_batch(
         project_id, task_id, 0, paper_keys=["uid:a", "uid:b"]
     )
-    again = storage.create_evidence_batch(project_id, task_id, 0, paper_keys=["uid:a"])
+    again = storage.create_evidence_batch(
+        project_id, task_id, 0, paper_keys=["uid:a", "uid:b"]
+    )
 
     assert first["created"] is True
     assert again["created"] is False
@@ -35,6 +39,9 @@ def test_evidence_batch_creation_is_idempotent(monkeypatch, tmp_path):
     assert len(batches) == 1
     assert batches[0]["status"] == "pending"
     assert batches[0]["paper_keys"] == ["uid:a", "uid:b"]
+
+    with pytest.raises(ValueError):
+        storage.create_evidence_batch(project_id, task_id, 0, paper_keys=["uid:a"])
 
 
 def test_evidence_batch_tracks_status_and_timestamps(monkeypatch, tmp_path):
@@ -167,3 +174,89 @@ def test_evidence_matrix_can_write_on_locked_project(monkeypatch, tmp_path):
         project_id, "uid:a", task_id, source="ai_raw", data={"v": 1}
     )
     assert version["version_no"] == 1
+
+
+def test_append_evidence_version_saves_note_only_changes(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    project_id, task_id = _project_task()
+
+    first = storage.append_evidence_version(
+        project_id, "uid:a", task_id, source="ai_raw", data={"v": 1},
+        reviewer_note="first",
+    )
+    second = storage.append_evidence_version(
+        project_id, "uid:a", task_id, source="ai_raw", data={"v": 1},
+        reviewer_note="second",
+    )
+
+    assert first["version_no"] == 1
+    assert second["version_no"] == 2
+    history = storage.list_evidence_versions(project_id, "uid:a", source="ai_raw")
+    assert [item["reviewer_note"] for item in history] == ["second", "first"]
+
+
+def test_append_evidence_version_validates_task_and_batch(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    project_id, task_id = _project_task()
+    batch = storage.create_evidence_batch(
+        project_id, task_id, 0, paper_keys=["uid:a"]
+    )
+
+    with pytest.raises(ValueError):
+        storage.append_evidence_version(
+            project_id, "uid:b", task_id, source="ai_raw", data={},
+            batch_id=batch["id"],
+        )
+    with pytest.raises(ValueError):
+        storage.append_evidence_version(
+            project_id, "uid:a", task_id, source="ai_raw", data={}, batch_id=9999
+        )
+
+    screening_task = storage.create_ai_task(
+        project_id,
+        kind="screening",
+        model="test-model",
+        prompt_version="screening-v2",
+        input_hash="screening-hash",
+    )
+    with pytest.raises(ValueError):
+        storage.append_evidence_version(
+            project_id, "uid:a", screening_task, source="ai_raw", data={}
+        )
+
+
+def test_task_inputs_are_frozen(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    project_id, task_id = _project_task()
+    entry = {
+        "paper_id": "uid:a",
+        "candidate_key": "uid:a",
+        "title": "Paper A",
+        "year": 2024,
+        "doc_id": "doc:1",
+        "source_run_ids": ["run:1"],
+        "input_source": "full_text",
+        "input_text": "frozen text",
+    }
+
+    first = storage.save_evidence_task_inputs(project_id, task_id, [entry])
+    assert first == {"saved": 1, "skipped": 0}
+
+    same = storage.save_evidence_task_inputs(project_id, task_id, [entry])
+    assert same == {"saved": 0, "skipped": 1}
+
+    changed = {**entry, "input_text": "changed text"}
+    with pytest.raises(ValueError):
+        storage.save_evidence_task_inputs(project_id, task_id, [changed])
+
+    inputs = storage.list_evidence_task_inputs(project_id, task_id)
+    assert len(inputs) == 1
+    assert inputs[0]["input_text"] == "frozen text"
+    assert inputs[0]["source_run_ids"] == ["run:1"]
+    assert inputs[0]["input_text_hash"] == hashlib.sha256(
+        b"frozen text"
+    ).hexdigest()
+    assert (
+        storage.get_evidence_task_input(project_id, task_id, "uid:a")["input_source"]
+        == "full_text"
+    )

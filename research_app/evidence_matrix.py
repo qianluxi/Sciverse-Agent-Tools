@@ -103,8 +103,6 @@ def run_pending_batches(
     project_id: str,
     task_id: str,
     client: Any,
-    paper_lookup: dict[str, dict[str, Any]],
-    text_provider: Callable[[dict[str, Any]], str],
     *,
     retry_failed: bool = False,
     max_batches: int | None = None,
@@ -117,6 +115,10 @@ def run_pending_batches(
     status = storage.evidence_task_status(project_id, task_id)
     completed_papers = set(status["completed"])
     failed_papers = set(status["failed"])
+    snapshots = {
+        item["paper_id"]: item
+        for item in storage.list_evidence_task_inputs(project_id, task_id)
+    }
     batches = storage.list_evidence_batches(project_id, task_id)
     if retry_failed:
         candidates = [
@@ -151,6 +153,7 @@ def run_pending_batches(
         batch_requests = 0
         batch_completed = 0
         batch_failed = 0
+        batch_errors: list[str] = []
         processed = 0
         interrupted = False
 
@@ -159,15 +162,32 @@ def run_pending_batches(
                 result.paused = True
                 interrupted = True
                 break
-            paper = paper_lookup.get(paper_key) or {}
-            title = str(paper.get("title") or "")
-            year = paper.get("year")
-            try:
-                text = str(text_provider(paper) or "")
-            except Exception as error:  # noqa: BLE001
-                text = ""
-                result.errors.append(f"{paper_key}：读取文本失败（{error}）")
-            if not text:
+            snapshot = snapshots.get(paper_key)
+            if snapshot is None:
+                reason = "缺少任务输入快照，请重新规划任务"
+                storage.append_evidence_version(
+                    project_id,
+                    paper_key,
+                    task_id,
+                    source="ai_raw",
+                    data={},
+                    model=model,
+                    prompt_version=EVIDENCE_PROMPT_VERSION,
+                    batch_id=batch["id"],
+                    error=reason,
+                )
+                failed_papers.add(paper_key)
+                batch_failed += 1
+                batch_errors.append(f"{paper_key}：{reason}")
+                result.errors.append(f"{paper_key}：{reason}")
+                processed += 1
+                continue
+
+            title = str(snapshot.get("title") or "")
+            year = snapshot.get("year")
+            text = str(snapshot.get("input_text") or "")
+            if not text or snapshot.get("input_source") == "none":
+                reason = str(snapshot.get("input_error") or "没有可用文本")
                 storage.append_evidence_version(
                     project_id,
                     paper_key,
@@ -179,10 +199,12 @@ def run_pending_batches(
                     title=title,
                     year=year,
                     batch_id=batch["id"],
-                    error="没有可用文本",
+                    error=reason,
                 )
                 failed_papers.add(paper_key)
                 batch_failed += 1
+                batch_errors.append(f"{paper_key}：{reason}")
+                result.errors.append(f"{paper_key}：{reason}")
                 processed += 1
                 continue
 
@@ -190,7 +212,7 @@ def run_pending_batches(
                 "paper_id": paper_key,
                 "title": title,
                 "year": year or "",
-                "text": text[:6000],
+                "text": text,
             }
             item: dict[str, Any] = {"error": "未执行", "data": None}
             for attempt in range(int(retries) + 1):
@@ -242,6 +264,7 @@ def run_pending_batches(
                 failed_papers.add(paper_key)
                 completed_papers.discard(paper_key)
                 batch_failed += 1
+                batch_errors.append(f"{paper_key}：{item.get('error')}")
                 result.errors.append(f"{paper_key}：{item.get('error')}")
             else:
                 completed_papers.add(paper_key)
@@ -259,10 +282,17 @@ def run_pending_batches(
             new_status = "skipped"
         else:
             new_status = "completed"
+        current_completed = sum(
+            1 for key in batch["paper_keys"] if key in completed_papers
+        )
+        current_failed = sum(1 for key in batch["paper_keys"] if key in failed_papers)
         storage.update_evidence_batch(
             batch["id"],
             status=new_status,
             request_count=int(batch.get("request_count") or 0) + batch_requests,
+            completed_count=current_completed,
+            failed_count=current_failed,
+            error="；".join(batch_errors[:5]) or None,
         )
         if result.paused:
             break

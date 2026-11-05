@@ -63,3 +63,7 @@ def test_evidence_matrix_page_plans_batches(monkeypatch, tmp_path):
     assert len(batches) == 1
     assert batches[0]["paper_keys"] == ["uid:paper:a"]
     assert batches[0]["status"] == "pending"
+    inputs = storage.list_evidence_task_inputs(project_id, task["id"])
+    assert len(inputs) == 1
+    assert inputs[0]["input_source"] == "abstract"
+    assert inputs[0]["input_text"] == "Study abstract text."

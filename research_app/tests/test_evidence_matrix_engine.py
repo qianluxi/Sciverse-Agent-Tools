@@ -21,9 +21,11 @@ class FakeClient:
     def __init__(self, *, fail_times: int = 0) -> None:
         self.calls = 0
         self.fail_times = fail_times
+        self.messages: list = []
 
     def chat(self, messages, max_tokens=2048):
         self.calls += 1
+        self.messages.append(messages)
         if self.calls <= self.fail_times:
             raise AIError("HTTP 429: rate limited")
         return EVIDENCE_JSON
@@ -52,8 +54,20 @@ def _papers(count: int):
     ]
 
 
-def _lookup(papers):
-    return {paper["paper_id"]: paper for paper in papers}
+def _entry(paper, *, text="full text", source="full_text", error=None):
+    return {
+        "paper_id": paper["paper_id"],
+        "candidate_key": paper["paper_id"],
+        "title": paper["title"],
+        "year": paper.get("year"),
+        "input_source": source,
+        "input_text": text if source != "none" else "",
+        "input_error": error,
+    }
+
+
+def _freeze(project_id, task_id, entries):
+    storage.save_evidence_task_inputs(project_id, task_id, entries)
 
 
 def test_plan_batches_chunks_and_is_idempotent(monkeypatch, tmp_path):
@@ -66,39 +80,45 @@ def test_plan_batches_chunks_and_is_idempotent(monkeypatch, tmp_path):
     batches = storage.list_evidence_batches(project_id, task_id)
     assert [len(batch["paper_keys"]) for batch in batches] == [3, 3, 1]
 
-    replanned = plan_batches(project_id, task_id, papers[:2], batch_size=3)
+    replanned = plan_batches(project_id, task_id, papers[:3], batch_size=3)
     assert replanned[0]["created"] is False
     assert len(storage.list_evidence_batches(project_id, task_id)) == 3
 
 
-def test_run_pending_batches_extracts_and_resumes(monkeypatch, tmp_path):
+def test_plan_batches_rejects_changed_paper_list(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     project_id, task_id = _project_task()
     papers = _papers(3)
+    plan_batches(project_id, task_id, papers, batch_size=3)
+
+    try:
+        plan_batches(project_id, task_id, papers[:2], batch_size=3)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("changed paper list should be rejected")
+
+
+def test_run_uses_frozen_input_and_resumes(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    project_id, task_id = _project_task()
+    papers = _papers(3)
+    _freeze(project_id, task_id, [_entry(paper, text="FROZEN-SOURCE") for paper in papers])
     plan_batches(project_id, task_id, papers, batch_size=2)
 
+    client = FakeClient()
     result = run_pending_batches(
-        project_id,
-        task_id,
-        FakeClient(),
-        _lookup(papers),
-        lambda paper: "full text with quote",
-        backoff_seconds=0,
+        project_id, task_id, client, backoff_seconds=0
     )
     assert result.completed == 3
     assert result.failed == 0
     assert result.requests == 3
+    assert "FROZEN-SOURCE" in str(client.messages[0])
     assert pending_batches(project_id, task_id)["pending"] == 0
-    matrix = storage.load_evidence_matrix(project_id)
-    assert len(matrix) == 3
+    assert len(storage.load_evidence_matrix(project_id)) == 3
 
     again = run_pending_batches(
-        project_id,
-        task_id,
-        FakeClient(),
-        _lookup(papers),
-        lambda paper: "full text with quote",
-        backoff_seconds=0,
+        project_id, task_id, FakeClient(), backoff_seconds=0
     )
     assert again.requests == 0
     assert again.batches_run == 0
@@ -108,6 +128,7 @@ def test_run_retries_transient_errors_with_backoff(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     project_id, task_id = _project_task()
     papers = _papers(1)
+    _freeze(project_id, task_id, [_entry(papers[0])])
     plan_batches(project_id, task_id, papers, batch_size=1)
     sleeps = []
 
@@ -115,8 +136,6 @@ def test_run_retries_transient_errors_with_backoff(monkeypatch, tmp_path):
         project_id,
         task_id,
         FakeClient(fail_times=1),
-        _lookup(papers),
-        lambda paper: "full text",
         retries=1,
         backoff_seconds=0.5,
         sleep=sleeps.append,
@@ -132,14 +151,13 @@ def test_run_stops_at_request_cap_and_resumes(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     project_id, task_id = _project_task()
     papers = _papers(4)
+    _freeze(project_id, task_id, [_entry(paper) for paper in papers])
     plan_batches(project_id, task_id, papers, batch_size=1)
 
     first = run_pending_batches(
         project_id,
         task_id,
         FakeClient(),
-        _lookup(papers),
-        lambda paper: "text",
         max_requests=2,
         backoff_seconds=0,
     )
@@ -148,72 +166,63 @@ def test_run_stops_at_request_cap_and_resumes(monkeypatch, tmp_path):
     assert pending_batches(project_id, task_id)["pending"] > 0
 
     second = run_pending_batches(
-        project_id,
-        task_id,
-        FakeClient(),
-        _lookup(papers),
-        lambda paper: "text",
-        backoff_seconds=0,
+        project_id, task_id, FakeClient(), backoff_seconds=0
     )
     assert second.completed == 2
     assert pending_batches(project_id, task_id)["pending"] == 0
 
 
-def test_missing_text_is_recorded_and_retryable(monkeypatch, tmp_path):
+def test_partial_failure_records_counts_and_error(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     project_id, task_id = _project_task()
-    papers = _papers(1)
-    plan_batches(project_id, task_id, papers, batch_size=1)
+    papers = _papers(2)
+    _freeze(
+        project_id,
+        task_id,
+        [
+            _entry(papers[0]),
+            _entry(papers[1], source="none", error="没有可用文本"),
+        ],
+    )
+    plan_batches(project_id, task_id, papers, batch_size=2)
 
     result = run_pending_batches(
-        project_id,
-        task_id,
-        FakeClient(),
-        _lookup(papers),
-        lambda paper: "",
-        backoff_seconds=0,
+        project_id, task_id, FakeClient(), backoff_seconds=0
     )
+    assert result.completed == 1
     assert result.failed == 1
-    status = storage.evidence_task_status(project_id, task_id)
-    assert status["failed"] == ["uid:0"]
 
-    retried = run_pending_batches(
-        project_id,
-        task_id,
-        FakeClient(),
-        _lookup(papers),
-        lambda paper: "text",
-        retry_failed=True,
-        backoff_seconds=0,
-    )
-    assert retried.completed == 1
-    assert storage.evidence_task_status(project_id, task_id)["failed"] == []
-    versions = storage.list_evidence_versions(project_id, "uid:0", source="ai_raw")
-    assert [version["version_no"] for version in versions] == [2, 1]
-    assert versions[0]["error"] is None
+    batch = storage.list_evidence_batches(project_id, task_id)[0]
+    assert batch["status"] == "completed"
+    assert batch["completed_count"] == 1
+    assert batch["failed_count"] == 1
+    assert "没有可用文本" in (batch["error"] or "")
+    assert storage.evidence_task_status(project_id, task_id)["failed"] == [
+        papers[1]["paper_id"]
+    ]
 
 
-def test_matrix_exports_include_provenance(monkeypatch, tmp_path):
+def test_matrix_exports_include_batch_and_version_provenance(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     project_id, task_id = _project_task()
     papers = _papers(1)
+    _freeze(project_id, task_id, [_entry(papers[0])])
     plan_batches(project_id, task_id, papers, batch_size=1)
     run_pending_batches(
-        project_id,
-        task_id,
-        FakeClient(),
-        _lookup(papers),
-        lambda paper: "full text",
-        backoff_seconds=0,
+        project_id, task_id, FakeClient(), backoff_seconds=0
     )
 
+    batch_id = storage.list_evidence_batches(project_id, task_id)[0]["id"]
     matrix = storage.load_evidence_matrix(project_id)
-    csv_bytes = export_matrix_csv(matrix).decode("utf-8-sig")
-    assert "paper_id" in csv_bytes
-    assert "task_id" in csv_bytes
-    assert "uid:0" in csv_bytes
+    csv_text = export_matrix_csv(matrix).decode("utf-8-sig")
+    assert "batch_id" in csv_text
+    assert "ai_batch_id" in csv_text
+    assert "input_source" in csv_text
+    assert str(batch_id) in csv_text
+    assert task_id in csv_text
 
     markdown = export_matrix_markdown(matrix, task={"id": task_id}).decode("utf-8")
     assert "项目级证据矩阵" in markdown
     assert task_id in markdown
-    assert "Paper 0" in markdown
+    assert str(batch_id) in markdown
+    assert "全文" in markdown

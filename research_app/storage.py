@@ -23,7 +23,7 @@ from research_app.screening import (
 )
 
 
-_SCHEMA_VERSION = 13
+_SCHEMA_VERSION = 14
 _BACKUP_SCHEMA_VERSION = 2
 _MAX_HISTORY_ENTRIES = 50
 _MAX_SNAPSHOT_BYTES = 5 * 1024 * 1024
@@ -622,6 +622,49 @@ def _migrate(connection: sqlite3.Connection) -> None:
         )
         version = 13
         connection.execute("PRAGMA user_version = 13")
+    if version < 14:
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS evidence_task_inputs (
+                project_id TEXT NOT NULL REFERENCES screening_projects(id) ON DELETE CASCADE,
+                task_id TEXT NOT NULL REFERENCES ai_task_runs(id) ON DELETE CASCADE,
+                paper_id TEXT NOT NULL,
+                candidate_key TEXT NOT NULL DEFAULT '',
+                title TEXT NOT NULL DEFAULT '',
+                year INTEGER,
+                doc_id TEXT NOT NULL DEFAULT '',
+                source_run_ids_json TEXT NOT NULL DEFAULT '[]',
+                input_source TEXT NOT NULL DEFAULT 'abstract'
+                    CHECK (input_source IN ('full_text', 'abstract', 'none')),
+                input_text TEXT NOT NULL DEFAULT '',
+                input_text_hash TEXT NOT NULL DEFAULT '',
+                input_text_length INTEGER NOT NULL DEFAULT 0,
+                input_error TEXT,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (task_id, paper_id)
+            );
+            CREATE INDEX IF NOT EXISTS evidence_task_inputs_project
+                ON evidence_task_inputs(project_id, task_id);
+            """
+        )
+        batch_columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(evidence_batches)"
+            ).fetchall()
+        }
+        if "completed_count" not in batch_columns:
+            connection.execute(
+                "ALTER TABLE evidence_batches "
+                "ADD COLUMN completed_count INTEGER NOT NULL DEFAULT 0"
+            )
+        if "failed_count" not in batch_columns:
+            connection.execute(
+                "ALTER TABLE evidence_batches "
+                "ADD COLUMN failed_count INTEGER NOT NULL DEFAULT 0"
+            )
+        version = 14
+        connection.execute("PRAGMA user_version = 14")
 
 
 @contextmanager
@@ -2223,16 +2266,21 @@ def create_evidence_batch(
     with _connection() as connection:
         _screening_project(connection, project_id)
         task = connection.execute(
-            "SELECT 1 FROM ai_task_runs WHERE id = ? AND project_id = ?",
+            """SELECT 1 FROM ai_task_runs
+               WHERE id = ? AND project_id = ?
+                 AND kind IN ('evidence', 'evidence_matrix')""",
             (task_id, project_id),
         ).fetchone()
         if task is None:
-            raise ValueError("AI 任务不存在。")
+            raise ValueError("AI 任务不存在或不是证据任务。")
         row = connection.execute(
-            "SELECT id FROM evidence_batches WHERE task_id = ? AND batch_index = ?",
+            """SELECT id, paper_keys_json FROM evidence_batches
+               WHERE task_id = ? AND batch_index = ?""",
             (task_id, int(batch_index)),
         ).fetchone()
         if row is not None:
+            if json.loads(row["paper_keys_json"]) != keys:
+                raise ValueError("同一任务同一批次已存在不同论文清单，请新建任务。")
             return {"id": int(row["id"]), "created": False}
         cursor = connection.execute(
             """INSERT INTO evidence_batches(
@@ -2257,6 +2305,8 @@ def update_evidence_batch(
     status: str,
     error: str | None = None,
     request_count: int | None = None,
+    completed_count: int | None = None,
+    failed_count: int | None = None,
 ) -> None:
     if status not in EVIDENCE_BATCH_STATUSES:
         raise ValueError("证据批次状态无效。")
@@ -2276,12 +2326,19 @@ def update_evidence_batch(
         connection.execute(
             """UPDATE evidence_batches
                SET status = ?, error = ?, request_count = ?,
+                   completed_count = ?, failed_count = ?,
                    started_at = ?, finished_at = ?, updated_at = ?
                WHERE id = ?""",
             (
                 status,
                 str(error or "") or None,
                 int(request_count) if request_count is not None else row["request_count"],
+                int(completed_count)
+                if completed_count is not None
+                else row["completed_count"],
+                int(failed_count)
+                if failed_count is not None
+                else row["failed_count"],
                 started_at,
                 finished_at,
                 now,
@@ -2316,6 +2373,113 @@ def list_evidence_batches(
         item["paper_keys"] = json.loads(item.pop("paper_keys_json"))
         batches.append(item)
     return batches
+
+
+def save_evidence_task_inputs(
+    project_id: str,
+    task_id: str,
+    items: list[dict[str, Any]],
+) -> dict[str, int]:
+    now = _timestamp()
+    saved = 0
+    skipped = 0
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        task = connection.execute(
+            """SELECT 1 FROM ai_task_runs
+               WHERE id = ? AND project_id = ?
+                 AND kind IN ('evidence', 'evidence_matrix')""",
+            (task_id, project_id),
+        ).fetchone()
+        if task is None:
+            raise ValueError("AI 任务不存在或不是证据任务。")
+        for item in items:
+            paper_id_value = str(item.get("paper_id") or "")
+            if not paper_id_value:
+                continue
+            text = str(item.get("input_text") or "")
+            text_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+            existing = connection.execute(
+                """SELECT input_text_hash FROM evidence_task_inputs
+                   WHERE task_id = ? AND paper_id = ?""",
+                (task_id, paper_id_value),
+            ).fetchone()
+            if existing is not None:
+                if existing["input_text_hash"] != text_hash:
+                    raise ValueError(
+                        "任务输入已冻结，不能替换为不同文本；请新建任务。"
+                    )
+                skipped += 1
+                continue
+            year = item.get("year")
+            try:
+                year = int(year) if year is not None else None
+            except (TypeError, ValueError):
+                year = None
+            connection.execute(
+                """INSERT INTO evidence_task_inputs(
+                       project_id, task_id, paper_id, candidate_key, title, year,
+                       doc_id, source_run_ids_json, input_source, input_text,
+                       input_text_hash, input_text_length, input_error, created_at
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    project_id,
+                    task_id,
+                    paper_id_value,
+                    str(item.get("candidate_key") or ""),
+                    str(item.get("title") or ""),
+                    year,
+                    str(item.get("doc_id") or ""),
+                    json.dumps(item.get("source_run_ids") or [], ensure_ascii=False),
+                    str(item.get("input_source") or "abstract"),
+                    text,
+                    text_hash,
+                    len(text),
+                    str(item.get("input_error") or "") or None,
+                    now,
+                ),
+            )
+            saved += 1
+    return {"saved": saved, "skipped": skipped}
+
+
+def list_evidence_task_inputs(
+    project_id: str,
+    task_id: str,
+) -> list[dict[str, Any]]:
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        rows = connection.execute(
+            """SELECT * FROM evidence_task_inputs
+               WHERE project_id = ? AND task_id = ?
+               ORDER BY paper_id""",
+            (project_id, task_id),
+        ).fetchall()
+    inputs = []
+    for row in rows:
+        item = dict(row)
+        item["source_run_ids"] = json.loads(item.pop("source_run_ids_json"))
+        inputs.append(item)
+    return inputs
+
+
+def get_evidence_task_input(
+    project_id: str,
+    task_id: str,
+    paper_id: str,
+) -> dict[str, Any] | None:
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        row = connection.execute(
+            """SELECT * FROM evidence_task_inputs
+               WHERE project_id = ? AND task_id = ? AND paper_id = ?""",
+            (project_id, task_id, str(paper_id)),
+        ).fetchone()
+    if row is None:
+        return None
+    item = dict(row)
+    item["source_run_ids"] = json.loads(item.pop("source_run_ids_json"))
+    return item
 
 
 def append_evidence_version(
@@ -2353,14 +2517,26 @@ def append_evidence_version(
     with _connection() as connection:
         _screening_project(connection, project_id)
         task = connection.execute(
-            "SELECT 1 FROM ai_task_runs WHERE id = ? AND project_id = ?",
+            """SELECT 1 FROM ai_task_runs
+               WHERE id = ? AND project_id = ?
+                 AND kind IN ('evidence', 'evidence_matrix')""",
             (task_id, project_id),
         ).fetchone()
         if task is None:
-            raise ValueError("AI 任务不存在。")
+            raise ValueError("AI 任务不存在或不是证据任务。")
+        if batch_id is not None:
+            batch = connection.execute(
+                """SELECT paper_keys_json FROM evidence_batches
+                   WHERE id = ? AND project_id = ? AND task_id = ?""",
+                (int(batch_id), project_id, task_id),
+            ).fetchone()
+            if batch is None:
+                raise ValueError("证据批次不存在或不属于该任务。")
+            if paper_id_value not in json.loads(batch["paper_keys_json"]):
+                raise ValueError("论文不属于该证据批次。")
         latest = connection.execute(
             """SELECT version_no, title, year, data_json, quote_checks_json,
-                      model, prompt_version, error
+                      model, prompt_version, reviewer_note, error
                FROM evidence_item_versions
                WHERE project_id = ? AND paper_id = ? AND source = ?
                ORDER BY version_no DESC LIMIT 1""",
@@ -2378,6 +2554,7 @@ def append_evidence_version(
             and latest["model"] == str(model or "")
             and latest["prompt_version"] == str(prompt_version or "")
             and latest["error"] == error_text
+            and latest["reviewer_note"] == note
         ):
             if (
                 str(title or "") != latest["title"]
@@ -2466,8 +2643,11 @@ def load_evidence_matrix(project_id: str) -> list[dict[str, Any]]:
     with _connection() as connection:
         _screening_project(connection, project_id)
         rows = connection.execute(
-            """SELECT v.*
+            """SELECT v.*, i.input_source AS input_source,
+                      i.input_error AS input_error
                FROM evidence_item_versions v
+               LEFT JOIN evidence_task_inputs i
+                 ON i.task_id = v.task_id AND i.paper_id = v.paper_id
                JOIN (
                    SELECT paper_id, source, MAX(version_no) AS max_version
                    FROM evidence_item_versions
@@ -2506,6 +2686,8 @@ def load_evidence_matrix(project_id: str) -> list[dict[str, Any]]:
             "error": row["error"],
             "task_id": row["task_id"],
             "batch_id": row["batch_id"],
+            "input_source": row["input_source"],
+            "input_error": row["input_error"],
             "created_at": row["created_at"],
         }
     return list(papers.values())

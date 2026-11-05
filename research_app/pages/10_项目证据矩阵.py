@@ -3,8 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import uuid
-from typing import Any, Callable
+from collections import Counter
+from typing import Any
 
 import streamlit as st
 from sciverse.credentials import resolve_token
@@ -28,18 +28,27 @@ from research_app.evidence_matrix import (
     run_pending_batches,
 )
 from research_app.project_ui import project_selector
+from research_app.screening import candidate_key, identifier_keys, paper_id
 from research_app.service import call_api
 
 
 TASK_KIND = "evidence_matrix"
+SOURCE_LABELS = {
+    "ai_raw": "AI 原始",
+    "human_corrected": "人工校正",
+    "final_adopted": "最终采用",
+}
+INPUT_SOURCE_LABELS = {"full_text": "全文", "abstract": "摘要", "none": "无文本"}
+
 
 st.set_page_config(
     page_title="项目证据矩阵 · Sciverse", page_icon="S", layout="wide"
 )
 st.title("项目证据矩阵")
 st.caption(
-    "按项目批量提取结构化证据，分批保存、可暂停续做。AI 原始、人工校正和最终采用"
-    "分别保存为独立版本，不覆盖历史；本页不会改变筛选决定。"
+    "按项目批量提取结构化证据，分批保存、可暂停续做。任务创建时会冻结每篇文献的"
+    "输入文本与来源；AI 原始、人工校正和最终采用分别保存为独立版本，不覆盖历史。"
+    "本页不会改变筛选决定。"
 )
 
 if "matrix_message" in st.session_state:
@@ -102,16 +111,62 @@ if not candidates:
     st.info("当前项目还没有候选文献，请先在检索页加入项目。")
     st.stop()
 
-paper_docs: dict[str, dict[str, Any]] = {}
-latest_run = storage.latest_search_run(project_id)
-for paper in (latest_run or {}).get("papers") or []:
-    keys = [
-        str(paper.get("unique_id") or ""),
-        str(paper.get("doc_id") or ""),
-    ]
-    for key in keys:
-        if key:
-            paper_docs.setdefault(key, paper)
+
+def _project_paper_docs() -> dict[str, dict[str, Any]]:
+    lookup: dict[str, dict[str, Any]] = {}
+    for run in storage.list_search_runs(project_id):
+        full = storage.get_search_run(project_id, run["id"])
+        for index, paper in enumerate((full or {}).get("papers") or []):
+            key = candidate_key(paper, index)
+            for identity in (
+                key,
+                paper_id(paper, key),
+                *identifier_keys(paper),
+            ):
+                if identity:
+                    lookup.setdefault(identity, paper)
+    return lookup
+
+
+def _resolve_input(paper: dict[str, Any]) -> tuple[str, str, str | None]:
+    text = ""
+    source = "none"
+    error: str | None = None
+    doc_id = str(paper.get("doc_id") or "")
+    if doc_id and sciverse_token:
+        try:
+            content = call_api(
+                sciverse_token,
+                "read_content",
+                doc_id=doc_id,
+                offset=0,
+                limit=6000,
+            )
+            text = str(content.get("text") or "").strip()
+            if text:
+                source = "full_text"
+            else:
+                error = "全文接口返回空文本"
+        except Exception as exc:  # noqa: BLE001
+            error = f"全文读取失败：{exc}"
+    if not text:
+        abstract = str(paper.get("abstract") or "").strip()
+        if abstract:
+            text = abstract
+            source = "abstract"
+            if not error:
+                error = (
+                    "没有可用全文，使用摘要"
+                    if not doc_id
+                    else "未配置 Sciverse Token，使用摘要"
+                )
+        else:
+            source = "none"
+            error = error or "没有可用文本"
+    return text[:6000], source, error
+
+
+paper_docs = _project_paper_docs()
 
 st.markdown("### 证据范围")
 scope_label = st.radio(
@@ -126,22 +181,21 @@ scope_statuses = {
     "全部": {"included", "pending", "excluded"},
 }[scope_label]
 scoped = [
-    candidate
-    for candidate in candidates
-    if candidate["status"] in scope_statuses
+    candidate for candidate in candidates if candidate["status"] in scope_statuses
 ]
 paper_map: dict[str, dict[str, Any]] = {}
 for candidate in scoped:
-    paper_id = str(candidate.get("candidate_key") or candidate.get("paper_id") or "")
-    if not paper_id:
+    identity = str(candidate.get("candidate_key") or candidate.get("paper_id") or "")
+    if not identity:
         continue
     doc = (
         paper_docs.get(str(candidate.get("paper_id") or ""))
-        or paper_docs.get(paper_id)
+        or paper_docs.get(identity)
         or {}
     )
-    paper_map[paper_id] = {
-        "paper_id": paper_id,
+    paper_map[identity] = {
+        "paper_id": identity,
+        "candidate_key": identity,
         "title": candidate.get("title") or doc.get("title") or "",
         "year": candidate.get("year") or doc.get("publication_published_year"),
         "abstract": candidate.get("abstract") or doc.get("abstract") or "",
@@ -151,26 +205,6 @@ for candidate in scoped:
 if not paper_map:
     st.info("当前范围没有可提取证据的候选文献。")
     st.stop()
-
-
-def _text_provider(paper: dict[str, Any]) -> str:
-    doc_id = str(paper.get("doc_id") or "")
-    if doc_id and sciverse_token:
-        try:
-            content = call_api(
-                sciverse_token,
-                "read_content",
-                doc_id=doc_id,
-                offset=0,
-                limit=6000,
-            )
-            text = str(content.get("text") or "").strip()
-            if text:
-                return text
-        except Exception:
-            pass
-    return str(paper.get("abstract") or "").strip()
-
 
 window_papers = st.multiselect(
     "参与提取的文献",
@@ -205,9 +239,7 @@ with option_columns[1]:
     )
 
 task = storage.get_latest_ai_task(project_id, TASK_KIND)
-batches = (
-    storage.list_evidence_batches(project_id, task["id"]) if task else []
-)
+batches = storage.list_evidence_batches(project_id, task["id"]) if task else []
 ai_ready = bool(ai_key and base_url and model)
 
 if not ai_ready:
@@ -230,10 +262,38 @@ retry_clicked = action_columns[3].button(
 
 if plan_clicked:
     papers = [paper_map[key] for key in window_papers]
+    frozen_items = []
+    content_fingerprints = []
+    for paper in papers:
+        text, source, error = _resolve_input(paper)
+        text_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        source_run_ids = [
+            source_item["run_id"]
+            for source_item in storage.list_candidate_sources(
+                project_id, paper["paper_id"]
+            )
+            if source_item.get("run_id")
+        ]
+        frozen_items.append(
+            {
+                "paper_id": paper["paper_id"],
+                "candidate_key": paper["candidate_key"],
+                "title": paper["title"],
+                "year": paper["year"],
+                "doc_id": paper["doc_id"],
+                "source_run_ids": source_run_ids,
+                "input_source": source,
+                "input_text": text,
+                "input_error": error,
+            }
+        )
+        content_fingerprints.append(
+            {"paper_id": paper["paper_id"], "text_hash": text_hash, "source": source}
+        )
     input_hash = hashlib.sha256(
         json.dumps(
             {
-                "papers": [paper["paper_id"] for paper in papers],
+                "papers": content_fingerprints,
                 "model": model,
                 "prompt_version": EVIDENCE_PROMPT_VERSION,
             },
@@ -249,6 +309,9 @@ if plan_clicked:
         input_hash=input_hash,
     )
     try:
+        frozen = storage.save_evidence_task_inputs(
+            project_id, task_id, frozen_items
+        )
         plan_batches(
             project_id,
             task_id,
@@ -256,8 +319,10 @@ if plan_clicked:
             batch_size=int(batch_size),
         )
         storage.finish_ai_task(task_id, status="running")
+        degraded = sum(1 for item in frozen_items if item["input_source"] != "full_text")
         st.session_state["matrix_message"] = (
-            f"已规划 {len(papers)} 篇文献。点击“运行下一批”开始提取。"
+            f"已冻结 {frozen['saved']} 篇输入并规划 {len(papers)} 篇；"
+            f"其中 {degraded} 篇使用摘要或无可用文本。点击“运行下一批”开始提取。"
         )
     except Exception as error:  # noqa: BLE001
         storage.finish_ai_task(task_id, status="failed", error=str(error))
@@ -276,8 +341,6 @@ if (run_one_clicked or run_all_clicked or retry_clicked) and task:
                 project_id,
                 task["id"],
                 client,
-                paper_map,
-                _text_provider,
                 retry_failed=retry_clicked,
                 max_batches=1 if run_one_clicked else None,
                 max_requests=int(max_requests),
@@ -309,6 +372,7 @@ if (run_one_clicked or run_all_clicked or retry_clicked) and task:
 if task:
     status = storage.evidence_task_status(project_id, task["id"])
     counts = pending_batches(project_id, task["id"])
+    inputs = storage.list_evidence_task_inputs(project_id, task["id"])
     total_papers = sum(len(batch["paper_keys"]) for batch in batches)
     requests_used = sum(int(batch.get("request_count") or 0) for batch in batches)
     metrics = st.columns(5)
@@ -323,6 +387,37 @@ if task:
     )
     if task.get("error"):
         st.warning(task["error"])
+    if inputs:
+        source_counts = Counter(item["input_source"] for item in inputs)
+        st.caption(
+            "冻结输入："
+            f"全文 {source_counts.get('full_text', 0)}、"
+            f"摘要 {source_counts.get('abstract', 0)}、"
+            f"无文本 {source_counts.get('none', 0)}"
+        )
+        degraded = [
+            item for item in inputs if item["input_source"] != "full_text"
+        ]
+        if degraded:
+            with st.expander(f"输入降级或缺失（{len(degraded)}）"):
+                st.caption(
+                    "这些输入已在任务创建时冻结；如需改用全文或修正文本，"
+                    "请新建任务重新规划。"
+                )
+                st.dataframe(
+                    [
+                        {
+                            "论文": item["title"] or item["paper_id"],
+                            "输入来源": INPUT_SOURCE_LABELS.get(
+                                item["input_source"], item["input_source"]
+                            ),
+                            "说明": item["input_error"] or "",
+                        }
+                        for item in degraded
+                    ],
+                    hide_index=True,
+                    use_container_width=True,
+                )
     if batches:
         st.dataframe(
             [
@@ -330,6 +425,8 @@ if task:
                     "批次": batch["batch_index"] + 1,
                     "状态": batch["status"],
                     "篇数": len(batch["paper_keys"]),
+                    "完成": batch.get("completed_count", 0),
+                    "失败": batch.get("failed_count", 0),
                     "请求": batch["request_count"],
                     "开始": batch["started_at"] or "",
                     "结束": batch["finished_at"] or "",
@@ -350,6 +447,11 @@ if matrix:
         [
             {
                 "论文": entry["title"] or entry["paper_id"],
+                "输入": INPUT_SOURCE_LABELS.get(
+                    (entry["versions"].get("ai_raw") or {}).get("input_source")
+                    or "",
+                    "",
+                ),
                 "AI 版本": (entry["versions"].get("ai_raw") or {}).get(
                     "version_no", ""
                 ),
@@ -381,77 +483,146 @@ if matrix:
         key=f"matrix_review_{project_id}",
     )
 
-    for paper_id in selected_review:
-        entry = matrix_by_paper[paper_id]
+    for paper_key in selected_review:
+        entry = matrix_by_paper[paper_key]
         versions = entry["versions"]
-        chosen_source = (
-            "human_corrected"
-            if "human_corrected" in versions
-            else "ai_raw"
-        )
-        chosen = versions.get(chosen_source) or {}
+        ai_version = versions.get("ai_raw") or {}
+        human_version = versions.get("human_corrected") or {}
+        final_version = versions.get("final_adopted") or {}
         with st.expander(
-            f"{entry['title'] or paper_id} · AI v{(versions.get('ai_raw') or {}).get('version_no', '—')}"
-            f" · 人工 v{(versions.get('human_corrected') or {}).get('version_no', '—')}"
-            f" · 最终 v{(versions.get('final_adopted') or {}).get('version_no', '—')}",
+            f"{entry['title'] or paper_key} · AI v{ai_version.get('version_no', '—')}"
+            f" · 人工 v{human_version.get('version_no', '—')}"
+            f" · 最终 v{final_version.get('version_no', '—')}",
             expanded=False,
         ):
-            ai_version = versions.get("ai_raw") or {}
-            if ai_version.get("error"):
-                st.error(f"AI 提取失败：{ai_version['error']}")
-            data = normalize_evidence_data(chosen.get("data"))
-            quotes = data.get("evidence_quotes") or []
-            checks = chosen.get("quote_checks") or []
-            if quotes:
-                for index, quote in enumerate(quotes):
-                    check = checks[index] if index < len(checks) else {}
-                    st.markdown(f"> {quote.get('quote', '')}")
+            version_columns = st.columns(3)
+            for column, source in zip(
+                version_columns, ("ai_raw", "human_corrected", "final_adopted")
+            ):
+                version = versions.get(source) or {}
+                with column:
+                    st.markdown(f"**{SOURCE_LABELS[source]}**")
+                    if not version:
+                        st.caption("尚无该版本")
+                        continue
                     st.caption(
-                        f"{quote.get('section') or '位置未注明'} · {quote_status(check)}"
+                        f"v{version.get('version_no')} · "
+                        f"{version.get('created_at') or ''}"
                     )
-            else:
-                st.caption("该版本没有原文引句。")
-            with st.form(f"matrix_edit_{paper_id}"):
+                    if version.get("input_source"):
+                        st.caption(
+                            "输入："
+                            + INPUT_SOURCE_LABELS.get(
+                                version["input_source"], version["input_source"]
+                            )
+                        )
+                    if version.get("input_error"):
+                        st.caption(f"输入说明：{version['input_error']}")
+                    if version.get("error"):
+                        st.error(version["error"])
+                        continue
+                    data = normalize_evidence_data(version.get("data"))
+                    for field in FIELD_KEYS:
+                        st.caption(f"{FIELD_LABELS[field]}：{data.get(field)}")
+                    if version.get("reviewer_note"):
+                        st.caption(f"备注：{version['reviewer_note']}")
+
+            ai_data = normalize_evidence_data(ai_version.get("data"))
+            human_data = normalize_evidence_data(human_version.get("data"))
+            final_data = normalize_evidence_data(final_version.get("data"))
+            diff_rows = []
+            for field in FIELD_KEYS:
+                differences = []
+                if human_version and ai_data.get(field) != human_data.get(field):
+                    differences.append("AI≠人工")
+                base = human_data if human_version else ai_data
+                if final_version and final_data.get(field) != base.get(field):
+                    differences.append("前版≠最终")
+                diff_rows.append(
+                    {
+                        "字段": FIELD_LABELS[field],
+                        "AI 原始": ai_data.get(field),
+                        "人工校正": human_data.get(field) if human_version else "—",
+                        "最终采用": final_data.get(field) if final_version else "—",
+                        "差异": "、".join(differences),
+                    }
+                )
+            st.markdown("**字段差异**")
+            st.dataframe(diff_rows, hide_index=True, use_container_width=True)
+
+            with st.expander("完整版本历史"):
+                history = storage.list_evidence_versions(project_id, paper_key)
+                st.dataframe(
+                    [
+                        {
+                            "来源": SOURCE_LABELS.get(item["source"], item["source"]),
+                            "版本": item["version_no"],
+                            "时间": item["created_at"],
+                            "模型": item["model"],
+                            "提示词": item["prompt_version"],
+                            "审核备注": item["reviewer_note"],
+                            "错误": item["error"] or "",
+                        }
+                        for item in history
+                    ],
+                    hide_index=True,
+                    use_container_width=True,
+                )
+
+            available_sources = [
+                source
+                for source in ("final_adopted", "human_corrected", "ai_raw")
+                if source in versions
+            ]
+            base_source = st.radio(
+                "编辑基准版本",
+                available_sources,
+                index=0,
+                format_func=lambda value: SOURCE_LABELS[value],
+                horizontal=True,
+                key=f"matrix_base_{paper_key}",
+            )
+            base = versions[base_source]
+            base_data = normalize_evidence_data(base.get("data"))
+            with st.form(f"matrix_edit_{paper_key}"):
                 edited = {}
                 for field in FIELD_KEYS:
                     edited[field] = st.text_area(
                         FIELD_LABELS[field],
-                        value=str(data.get(field) or ""),
+                        value=str(base_data.get(field) or ""),
                         height=68,
-                        key=f"matrix_{paper_id}_{field}",
+                        key=f"matrix_{paper_key}_{field}",
                     )
                 note = st.text_area(
                     "审核备注",
-                    value=str(chosen.get("reviewer_note") or ""),
+                    value=str(base.get("reviewer_note") or ""),
                     height=68,
-                    key=f"matrix_{paper_id}_note",
+                    key=f"matrix_{paper_key}_note",
                 )
                 save_human = st.form_submit_button("保存人工校正版本")
                 save_final = st.form_submit_button("标记最终采用")
             if save_human or save_final:
                 payload = {
                     **edited,
-                    "evidence_quotes": quotes,
+                    "evidence_quotes": base_data.get("evidence_quotes") or [],
                 }
-                target_task_id = (
-                    chosen.get("task_id") or (task or {}).get("id") or ""
-                )
+                target_task_id = base.get("task_id") or (task or {}).get("id") or ""
                 try:
                     if not target_task_id:
                         raise ValueError("缺少可关联的 AI 任务。")
                     storage.append_evidence_version(
                         project_id,
-                        paper_id,
+                        paper_key,
                         target_task_id,
                         source="human_corrected" if save_human else "final_adopted",
                         data=payload,
-                        quote_checks=checks,
+                        quote_checks=base.get("quote_checks") or [],
                         model=model,
                         prompt_version=EVIDENCE_PROMPT_VERSION,
                         reviewer_note=note,
                         title=entry["title"] or "",
                         year=entry["year"],
-                        batch_id=chosen.get("batch_id"),
+                        batch_id=base.get("batch_id"),
                     )
                     st.session_state["matrix_message"] = (
                         "已保存人工校正版本。"

@@ -323,7 +323,7 @@ wheels = [
 
 [[package]]
 name = "sciverse"
-version = "1.22.1"
+version = "1.22.2"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },

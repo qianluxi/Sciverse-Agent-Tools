@@ -1,3 +1,9 @@
+## [1.22.3](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.22.2...v1.22.3) (2026-11-05)
+
+### Bug Fixes
+
+* stabilize evidence review save and task recovery ([5f23dc3](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/5f23dc3b0ecce3a2597bdfe4c31960cbafeee6ca))
+
 ## [1.22.2](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.22.1...v1.22.2) (2026-11-05)
 
 ### Bug Fixes

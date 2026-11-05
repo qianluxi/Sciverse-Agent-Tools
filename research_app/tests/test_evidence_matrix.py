@@ -1,4 +1,6 @@
 import hashlib
+import json
+import sqlite3
 
 import pytest
 
@@ -253,6 +255,44 @@ def test_list_ai_tasks_filters_by_kind(monkeypatch, tmp_path):
     assert second in task_ids
     assert task_id not in task_ids
     assert all(item["kind"] == "evidence_matrix" for item in tasks)
+
+
+def test_v14_missing_error_column_migrates_to_v15(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    project_id, task_id = _project_task()
+    storage.append_evidence_version(
+        project_id, "uid:a", task_id, source="ai_raw", data={"v": 1},
+        title="Paper A",
+    )
+    db_path = tmp_path / "workbench.sqlite3"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute("ALTER TABLE evidence_item_versions DROP COLUMN error")
+        connection.execute("PRAGMA user_version = 14")
+
+    storage.get_screening_project(project_id)
+
+    with sqlite3.connect(db_path) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 15
+        columns = {
+            row[1]
+            for row in connection.execute(
+                "PRAGMA table_info(evidence_item_versions)"
+            )
+        }
+        assert "error" in columns
+        row = connection.execute(
+            """SELECT paper_id, data_json, version_no, error
+               FROM evidence_item_versions"""
+        ).fetchone()
+        assert row[0] == "uid:a"
+        assert json.loads(row[1]) == {"v": 1}
+        assert row[2] == 1
+        assert row[3] is None
+
+    # Running initialization again must be a no-op.
+    storage.get_screening_project(project_id)
+    with sqlite3.connect(db_path) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 15
 
 
 def test_task_inputs_are_frozen(monkeypatch, tmp_path):

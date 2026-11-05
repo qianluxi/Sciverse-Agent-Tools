@@ -237,7 +237,14 @@ if candidates:
 else:
     st.caption("当前项目还没有候选文献；仍可查看已有证据矩阵。")
 
-matrix_tasks = storage.list_ai_tasks_by_kind(project_id, TASK_KIND, limit=10)
+fetched_tasks = storage.list_ai_tasks_by_kind(project_id, TASK_KIND, limit=50)
+unfinished_tasks = [
+    item for item in fetched_tasks if item["status"] in {"running", "failed"}
+]
+finished_tasks = [
+    item for item in fetched_tasks if item["status"] not in {"running", "failed"}
+]
+matrix_tasks = unfinished_tasks + finished_tasks
 task = matrix_tasks[0] if matrix_tasks else None
 if len(matrix_tasks) > 1:
     task_labels = {
@@ -252,8 +259,9 @@ if len(matrix_tasks) > 1:
     )
     task = next(item for item in matrix_tasks if item["id"] == selected_task_id)
 if matrix_tasks:
+    table_tasks = matrix_tasks[:15]
     task_rows = []
-    for item in matrix_tasks:
+    for item in table_tasks:
         task_status = storage.evidence_task_status(project_id, item["id"])
         task_counts = pending_batches(project_id, item["id"])
         task_rows.append(
@@ -266,6 +274,9 @@ if matrix_tasks:
                 "待处理批次": task_counts["pending"] + task_counts["running"],
             }
         )
+    st.caption(
+        f"共 {len(matrix_tasks)} 个任务，未完成优先，列表显示前 {len(table_tasks)} 个。"
+    )
     st.dataframe(task_rows, hide_index=True, use_container_width=True)
 batches = storage.list_evidence_batches(project_id, task["id"]) if task else []
 ai_ready = bool(ai_key and base_url and model)

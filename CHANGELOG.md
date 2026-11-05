@@ -1,3 +1,9 @@
+## [1.22.4](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.22.3...v1.22.4) (2026-11-05)
+
+### Bug Fixes
+
+* migrate evidence version error column and record real API trial ([3766971](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/3766971078f0535bb53a273ec8fefbfc86292c4e))
+
 ## [1.22.3](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.22.2...v1.22.3) (2026-11-05)
 
 ### Bug Fixes

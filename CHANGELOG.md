@@ -1,3 +1,9 @@
+## [1.24.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.24.0...v1.24.1) (2026-11-05)
+
+### Bug Fixes
+
+* complete PRISMA states and traceable stage 11 report ([c3303fe](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/c3303fe92dade4434e2037bc42e514d42ba7b000))
+
 ## [1.24.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.23.1...v1.24.0) (2026-11-05)
 
 ### Features

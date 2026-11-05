@@ -1,9 +1,13 @@
+import hashlib
+import io
 import json
+import zipfile
 
 from research_app import storage
 from research_app.report import (
     build_project_report,
     export_prisma_records_csv,
+    export_project_bundle,
     export_project_report_json,
     render_project_report_markdown,
 )
@@ -77,6 +81,28 @@ def test_build_project_report_contains_prisma_and_evidence(monkeypatch, tmp_path
     payload = json.loads(export_project_report_json(report))
     assert payload["project"]["id"] == project_id
     assert payload["prisma"]["included_in_review"] == 1
+
+
+def test_project_bundle_contains_manifest_and_files(monkeypatch, tmp_path):
+    project_id = _setup(monkeypatch, tmp_path)
+
+    data = export_project_bundle(project_id)
+
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        names = set(archive.namelist())
+        assert {
+            "report.md",
+            "report.json",
+            "prisma_records.csv",
+            "evidence_matrix.csv",
+            "manifest.json",
+        } <= names
+        manifest = json.loads(archive.read("manifest.json"))
+        assert manifest["project_id"] == project_id
+        for entry in manifest["files"]:
+            content = archive.read(entry["name"])
+            assert hashlib.sha256(content).hexdigest() == entry["sha256"]
+            assert len(content) == entry["bytes"]
 
 
 def test_prisma_records_csv_includes_fulltext_status(monkeypatch, tmp_path):

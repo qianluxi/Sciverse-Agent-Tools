@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
+import zipfile
 from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
 
 from research_app import storage
+from research_app.ai_review import export_matrix_csv
 from research_app.csv_safe import write_safe_rows
 from research_app.screening import (
     FULLTEXT_STATUS_LABELS,
@@ -217,3 +220,40 @@ def export_project_report_json(report: dict[str, Any]) -> bytes:
     return (
         json.dumps(report, ensure_ascii=False, indent=2) + "\n"
     ).encode("utf-8")
+
+
+def export_project_bundle(
+    project_id: str,
+    report: dict[str, Any] | None = None,
+) -> bytes:
+    report = report or build_project_report(project_id)
+    files: dict[str, bytes] = {
+        "report.md": render_project_report_markdown(report),
+        "report.json": export_project_report_json(report),
+        "prisma_records.csv": export_prisma_records_csv(project_id),
+    }
+    matrix = storage.load_evidence_matrix(project_id)
+    if matrix:
+        files["evidence_matrix.csv"] = export_matrix_csv(matrix)
+    manifest = {
+        "format": "sciverse-project-bundle",
+        "format_version": 1,
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "project_id": project_id,
+        "files": [
+            {
+                "name": name,
+                "bytes": len(content),
+                "sha256": hashlib.sha256(content).hexdigest(),
+            }
+            for name, content in sorted(files.items())
+        ],
+    }
+    files["manifest.json"] = (
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"
+    ).encode("utf-8")
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for name, content in files.items():
+            archive.writestr(name, content)
+    return buffer.getvalue()

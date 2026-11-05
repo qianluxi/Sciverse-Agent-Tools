@@ -8,6 +8,7 @@ from research_app.project_ui import project_selector
 from research_app.report import (
     build_project_report,
     export_prisma_records_csv,
+    export_project_bundle,
     export_project_report_json,
     render_project_report_markdown,
 )
@@ -243,3 +244,11 @@ with download_columns[3]:
         key="download_report_evidence_matrix",
         disabled=not matrix,
     )
+
+st.download_button(
+    "下载可追溯成果包 ZIP（报告 + PRISMA + 证据矩阵 + manifest）",
+    data=export_project_bundle(project_id, report),
+    file_name="sciverse-project-bundle.zip",
+    mime="application/zip",
+    key="download_project_bundle",
+)

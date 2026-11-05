@@ -2319,8 +2319,10 @@ def update_evidence_batch(
             raise ValueError("证据批次不存在。")
         started_at = row["started_at"]
         finished_at = row["finished_at"]
-        if status == "running" and not started_at:
-            started_at = now
+        if status == "running":
+            if not started_at:
+                started_at = now
+            finished_at = None
         if status in {"completed", "failed", "skipped"}:
             finished_at = now
         connection.execute(

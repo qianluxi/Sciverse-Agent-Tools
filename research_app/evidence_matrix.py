@@ -121,9 +121,7 @@ def run_pending_batches(
     }
     batches = storage.list_evidence_batches(project_id, task_id)
     if retry_failed:
-        candidates = [
-            b for b in batches if b["status"] in {"failed", "completed", "running"}
-        ]
+        candidates = list(batches)
     else:
         candidates = [b for b in batches if b["status"] in {"pending", "running"}]
 
@@ -145,7 +143,12 @@ def run_pending_batches(
                 todo.append(paper_key)
 
         if not todo:
-            if batch["status"] != "completed":
+            unprocessed = [
+                key
+                for key in batch["paper_keys"]
+                if key not in completed_papers and key not in failed_papers
+            ]
+            if not unprocessed and batch["status"] != "completed":
                 storage.update_evidence_batch(batch["id"], status="completed")
             continue
 
@@ -274,7 +277,12 @@ def run_pending_batches(
         result.batches_run += 1
         result.completed += batch_completed
         result.failed += batch_failed
-        if interrupted or processed < len(todo):
+        unprocessed = [
+            key
+            for key in batch["paper_keys"]
+            if key not in completed_papers and key not in failed_papers
+        ]
+        if interrupted or unprocessed:
             new_status = "pending"
         elif batch_completed == 0 and batch_failed > 0:
             new_status = "failed"

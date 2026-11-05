@@ -62,6 +62,11 @@ def test_evidence_batch_tracks_status_and_timestamps(monkeypatch, tmp_path):
     assert done["request_count"] == 3
     assert done["finished_at"]
 
+    storage.update_evidence_batch(batch["id"], status="running")
+    resumed = storage.list_evidence_batches(project_id, task_id)[0]
+    assert resumed["status"] == "running"
+    assert resumed["finished_at"] is None
+
     with pytest.raises(ValueError):
         storage.update_evidence_batch(batch["id"], status="unknown")
 

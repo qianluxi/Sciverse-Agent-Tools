@@ -107,9 +107,6 @@ st.markdown(f"### {project['name']}")
 st.write(f"**研究问题：** {project['question']}")
 
 candidates = storage.list_all_screening_candidates(project_id)
-if not candidates:
-    st.info("当前项目还没有候选文献，请先在检索页加入项目。")
-    st.stop()
 
 
 def _project_paper_docs() -> dict[str, dict[str, Any]]:
@@ -168,75 +165,77 @@ def _resolve_input(paper: dict[str, Any]) -> tuple[str, str, str | None]:
 
 paper_docs = _project_paper_docs()
 
-st.markdown("### 证据范围")
-scope_label = st.radio(
-    "筛选状态",
-    ["仅纳入", "纳入 + 待定", "全部"],
-    horizontal=True,
-    key="matrix_scope",
-)
-scope_statuses = {
-    "仅纳入": {"included"},
-    "纳入 + 待定": {"included", "pending"},
-    "全部": {"included", "pending", "excluded"},
-}[scope_label]
-scoped = [
-    candidate for candidate in candidates if candidate["status"] in scope_statuses
-]
 paper_map: dict[str, dict[str, Any]] = {}
-for candidate in scoped:
-    identity = str(candidate.get("candidate_key") or candidate.get("paper_id") or "")
-    if not identity:
-        continue
-    doc = (
-        paper_docs.get(str(candidate.get("paper_id") or ""))
-        or paper_docs.get(identity)
-        or {}
-    )
-    paper_map[identity] = {
-        "paper_id": identity,
-        "candidate_key": identity,
-        "title": candidate.get("title") or doc.get("title") or "",
-        "year": candidate.get("year") or doc.get("publication_published_year"),
-        "abstract": candidate.get("abstract") or doc.get("abstract") or "",
-        "doc_id": doc.get("doc_id") or "",
-    }
+window_papers: list[str] = []
+batch_size = DEFAULT_BATCH_SIZE
+max_requests = DEFAULT_MAX_REQUESTS
 
-if not paper_map:
-    st.info("当前范围没有可提取证据的候选文献。")
-    st.stop()
-
-window_papers = st.multiselect(
-    "参与提取的文献",
-    list(paper_map),
-    default=list(paper_map),
-    format_func=lambda value: paper_map[value].get("title") or value,
-    max_selections=200,
-    key=f"matrix_selected_{project_id}",
-)
-if not window_papers:
-    st.info("请选择至少一篇文献。")
-    st.stop()
-
-option_columns = st.columns(2)
-with option_columns[0]:
-    batch_size = st.number_input(
-        "每批篇数",
-        min_value=1,
-        max_value=20,
-        value=DEFAULT_BATCH_SIZE,
-        step=1,
-        key="matrix_batch_size",
+if candidates:
+    st.markdown("### 证据范围")
+    scope_label = st.radio(
+        "筛选状态",
+        ["仅纳入", "纳入 + 待定", "全部"],
+        horizontal=True,
+        key="matrix_scope",
     )
-with option_columns[1]:
-    max_requests = st.number_input(
-        "单次运行最多 AI 请求",
-        min_value=1,
-        max_value=200,
-        value=DEFAULT_MAX_REQUESTS,
-        step=1,
-        key="matrix_max_requests",
-    )
+    scope_statuses = {
+        "仅纳入": {"included"},
+        "纳入 + 待定": {"included", "pending"},
+        "全部": {"included", "pending", "excluded"},
+    }[scope_label]
+    scoped = [
+        candidate for candidate in candidates if candidate["status"] in scope_statuses
+    ]
+    for candidate in scoped:
+        identity = str(candidate.get("candidate_key") or candidate.get("paper_id") or "")
+        if not identity:
+            continue
+        doc = (
+            paper_docs.get(str(candidate.get("paper_id") or ""))
+            or paper_docs.get(identity)
+            or {}
+        )
+        paper_map[identity] = {
+            "paper_id": identity,
+            "candidate_key": identity,
+            "title": candidate.get("title") or doc.get("title") or "",
+            "year": candidate.get("year") or doc.get("publication_published_year"),
+            "abstract": candidate.get("abstract") or doc.get("abstract") or "",
+            "doc_id": doc.get("doc_id") or "",
+        }
+
+    if paper_map:
+        window_papers = st.multiselect(
+            "参与提取的文献（仅用于新建任务）",
+            list(paper_map),
+            default=list(paper_map),
+            format_func=lambda value: paper_map[value].get("title") or value,
+            max_selections=200,
+            key=f"matrix_selected_{project_id}",
+        )
+        option_columns = st.columns(2)
+        with option_columns[0]:
+            batch_size = st.number_input(
+                "每批篇数",
+                min_value=1,
+                max_value=20,
+                value=DEFAULT_BATCH_SIZE,
+                step=1,
+                key="matrix_batch_size",
+            )
+        with option_columns[1]:
+            max_requests = st.number_input(
+                "单次运行最多 AI 请求",
+                min_value=1,
+                max_value=200,
+                value=DEFAULT_MAX_REQUESTS,
+                step=1,
+                key="matrix_max_requests",
+            )
+    else:
+        st.caption("当前范围没有可提取证据的候选文献；仍可查看和续做已有任务。")
+else:
+    st.caption("当前项目还没有候选文献；仍可查看已有证据矩阵。")
 
 task = storage.get_latest_ai_task(project_id, TASK_KIND)
 batches = storage.list_evidence_batches(project_id, task["id"]) if task else []
@@ -246,10 +245,14 @@ if not ai_ready:
     st.caption("请在侧栏配置 API Key、Base URL 和模型名后再运行。")
 
 action_columns = st.columns(4)
-plan_clicked = action_columns[0].button(
-    "新建任务并规划批次",
-    disabled=not ai_ready or not window_papers,
-)
+plan_clicked = False
+if paper_map:
+    plan_clicked = action_columns[0].button(
+        "新建任务并规划批次",
+        disabled=not ai_ready or not window_papers,
+    )
+else:
+    action_columns[0].caption("无可规划文献")
 run_one_clicked = action_columns[1].button(
     "运行下一批", disabled=not ai_ready or not batches
 )
@@ -550,24 +553,53 @@ if matrix:
             st.markdown("**字段差异**")
             st.dataframe(diff_rows, hide_index=True, use_container_width=True)
 
-            with st.expander("完整版本历史"):
-                history = storage.list_evidence_versions(project_id, paper_key)
-                st.dataframe(
-                    [
-                        {
-                            "来源": SOURCE_LABELS.get(item["source"], item["source"]),
-                            "版本": item["version_no"],
-                            "时间": item["created_at"],
-                            "模型": item["model"],
-                            "提示词": item["prompt_version"],
-                            "审核备注": item["reviewer_note"],
-                            "错误": item["error"] or "",
-                        }
-                        for item in history
-                    ],
-                    hide_index=True,
-                    use_container_width=True,
-                )
+            st.markdown("**完整版本历史**")
+            history = storage.list_evidence_versions(project_id, paper_key)
+            st.dataframe(
+                [
+                    {
+                        "来源": SOURCE_LABELS.get(item["source"], item["source"]),
+                        "版本": item["version_no"],
+                        "时间": item["created_at"],
+                        "模型": item["model"],
+                        "提示词": item["prompt_version"],
+                        "审核备注": item["reviewer_note"],
+                        "错误": item["error"] or "",
+                    }
+                    for item in history
+                ],
+                hide_index=True,
+                use_container_width=True,
+            )
+            for item in history:
+                with st.container(border=True):
+                    st.markdown(
+                        f"**{SOURCE_LABELS.get(item['source'], item['source'])} "
+                        f"v{item['version_no']}** · {item['created_at']}"
+                    )
+                    if item.get("error"):
+                        st.error(item["error"])
+                        continue
+                    historical = normalize_evidence_data(item.get("data"))
+                    for field in FIELD_KEYS:
+                        st.caption(
+                            f"{FIELD_LABELS[field]}：{historical.get(field)}"
+                        )
+                    historical_quotes = historical.get("evidence_quotes") or []
+                    historical_checks = item.get("quote_checks") or []
+                    for index, quote in enumerate(historical_quotes):
+                        check = (
+                            historical_checks[index]
+                            if index < len(historical_checks)
+                            else {}
+                        )
+                        st.markdown(f"> {quote.get('quote', '')}")
+                        st.caption(
+                            f"{quote.get('section') or '位置未注明'} · "
+                            f"{quote_status(check)}"
+                        )
+                    if item.get("reviewer_note"):
+                        st.caption(f"审核备注：{item['reviewer_note']}")
 
             available_sources = [
                 source
@@ -584,20 +616,20 @@ if matrix:
             )
             base = versions[base_source]
             base_data = normalize_evidence_data(base.get("data"))
-            with st.form(f"matrix_edit_{paper_key}"):
+            with st.form(f"matrix_edit_{paper_key}_{base_source}"):
                 edited = {}
                 for field in FIELD_KEYS:
                     edited[field] = st.text_area(
                         FIELD_LABELS[field],
                         value=str(base_data.get(field) or ""),
                         height=68,
-                        key=f"matrix_{paper_key}_{field}",
+                        key=f"matrix_{paper_key}_{base_source}_{field}",
                     )
                 note = st.text_area(
                     "审核备注",
                     value=str(base.get("reviewer_note") or ""),
                     height=68,
-                    key=f"matrix_{paper_key}_note",
+                    key=f"matrix_{paper_key}_{base_source}_note",
                 )
                 save_human = st.form_submit_button("保存人工校正版本")
                 save_final = st.form_submit_button("标记最终采用")
@@ -617,8 +649,9 @@ if matrix:
                         source="human_corrected" if save_human else "final_adopted",
                         data=payload,
                         quote_checks=base.get("quote_checks") or [],
-                        model=model,
-                        prompt_version=EVIDENCE_PROMPT_VERSION,
+                        model=base.get("model") or model,
+                        prompt_version=base.get("prompt_version")
+                        or EVIDENCE_PROMPT_VERSION,
                         reviewer_note=note,
                         title=entry["title"] or "",
                         year=entry["year"],

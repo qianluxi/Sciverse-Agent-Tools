@@ -398,7 +398,12 @@ def export_matrix_markdown(
                 f"- 年份：{row['year'] or '未知'}",
                 f"- 当前采用：{row['value_source']}（ai={row['ai_version'] or '—'}，"
                 f"human={row['human_version'] or '—'}，final={row['final_version'] or '—'}）",
-                f"- 批次：`{row['batch_id'] or '—'}` · 任务：`{row['task_id'] or '未知'}`",
+                f"- AI 原始：v{row['ai_version'] or '—'} · 任务 `{row['ai_task_id'] or '—'}`"
+                f" · 批次 `{row['ai_batch_id'] or '—'}`",
+                f"- 人工校正：v{row['human_version'] or '—'} · 任务 `{row['human_task_id'] or '—'}`"
+                f" · 批次 `{row['human_batch_id'] or '—'}`",
+                f"- 最终采用：v{row['final_version'] or '—'} · 任务 `{row['final_task_id'] or '—'}`"
+                f" · 批次 `{row['final_batch_id'] or '—'}`",
                 f"- 输入来源：{row['input_source'] or '未知'}"
                 + (f"（{row['input_error']}）" if row["input_error"] else ""),
                 f"- 模型：{row['model'] or '未知'}",

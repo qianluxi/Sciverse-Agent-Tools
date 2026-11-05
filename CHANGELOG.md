@@ -1,3 +1,9 @@
+## [1.22.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.22.0...v1.22.1) (2026-11-05)
+
+### Bug Fixes
+
+* freeze evidence matrix inputs and complete version review ([47d98fa](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/47d98fadb3483fe7289c282203a6562325b7432b))
+
 ## [1.22.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.21.1...v1.22.0) (2026-11-01)
 
 ### Features

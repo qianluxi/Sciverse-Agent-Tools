@@ -13,6 +13,8 @@ from typing import Any, Iterator
 
 from research_app.screening import (
     EXCLUSION_REASONS,
+    FULLTEXT_EXCLUSION_REASONS,
+    FULLTEXT_STATUSES,
     candidate_key,
     duplicate_basis,
     identifier_keys,
@@ -23,7 +25,8 @@ from research_app.screening import (
 )
 
 
-_SCHEMA_VERSION = 15
+_SCHEMA_VERSION = 16
+SCHEMA_VERSION = _SCHEMA_VERSION
 _BACKUP_SCHEMA_VERSION = 2
 _MAX_HISTORY_ENTRIES = 50
 _MAX_SNAPSHOT_BYTES = 5 * 1024 * 1024
@@ -678,6 +681,39 @@ def _migrate(connection: sqlite3.Connection) -> None:
             )
         version = 15
         connection.execute("PRAGMA user_version = 15")
+    if version < 16:
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS screening_fulltext (
+                project_id TEXT NOT NULL REFERENCES screening_projects(id) ON DELETE CASCADE,
+                candidate_key TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'not_sought'
+                    CHECK (status IN ('not_sought', 'not_retrieved', 'included', 'excluded')),
+                exclusion_reason TEXT,
+                notes TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (project_id, candidate_key)
+            );
+            CREATE INDEX IF NOT EXISTS screening_fulltext_project
+                ON screening_fulltext(project_id, status);
+            CREATE TABLE IF NOT EXISTS screening_fulltext_audit (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id TEXT NOT NULL REFERENCES screening_projects(id) ON DELETE CASCADE,
+                candidate_key TEXT NOT NULL,
+                old_status TEXT,
+                new_status TEXT NOT NULL,
+                old_reason TEXT,
+                new_reason TEXT,
+                old_notes TEXT,
+                new_notes TEXT,
+                changed_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS screening_fulltext_audit_project
+                ON screening_fulltext_audit(project_id, id DESC);
+            """
+        )
+        version = 16
+        connection.execute("PRAGMA user_version = 16")
 
 
 @contextmanager
@@ -1791,6 +1827,233 @@ def screening_stats(project_id: str) -> dict[str, int]:
         "included": included,
         "excluded": excluded,
         "screened": included + excluded,
+    }
+
+
+def get_fulltext_decision(
+    project_id: str,
+    candidate_key_value: str,
+) -> dict[str, Any] | None:
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        row = connection.execute(
+            """SELECT * FROM screening_fulltext
+               WHERE project_id = ? AND candidate_key = ?""",
+            (project_id, candidate_key_value),
+        ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def set_fulltext_decision(
+    project_id: str,
+    candidate_key_value: str,
+    status: str,
+    *,
+    reason: str | None = None,
+    notes: str = "",
+) -> bool:
+    if status not in FULLTEXT_STATUSES:
+        raise ValueError("全文阶段状态无效。")
+    if status == "excluded":
+        if reason not in FULLTEXT_EXCLUSION_REASONS:
+            raise ValueError("全文排除时必须选择标准排除原因。")
+    else:
+        reason = None
+    notes = str(notes or "").strip()
+    if len(notes) > 2000:
+        raise ValueError("备注不能超过 2000 个字符。")
+    now = _timestamp()
+    with _connection() as connection:
+        _require_unlocked(connection, project_id)
+        candidate = connection.execute(
+            """SELECT status FROM screening_candidates
+               WHERE project_id = ? AND candidate_key = ?""",
+            (project_id, candidate_key_value),
+        ).fetchone()
+        if candidate is None:
+            raise ValueError("候选文献不存在。")
+        if candidate["status"] != "included":
+            raise ValueError("只有题名/摘要纳入的候选才能进入全文阶段。")
+        existing = connection.execute(
+            """SELECT status, exclusion_reason, notes FROM screening_fulltext
+               WHERE project_id = ? AND candidate_key = ?""",
+            (project_id, candidate_key_value),
+        ).fetchone()
+        if (
+            existing is not None
+            and existing["status"] == status
+            and (existing["exclusion_reason"] or None) == reason
+            and existing["notes"] == notes
+        ):
+            return False
+        old_status = existing["status"] if existing else None
+        old_reason = existing["exclusion_reason"] if existing else None
+        old_notes = existing["notes"] if existing else None
+        connection.execute(
+            """INSERT INTO screening_fulltext(
+                   project_id, candidate_key, status, exclusion_reason, notes, updated_at
+               ) VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(project_id, candidate_key) DO UPDATE SET
+                   status = excluded.status,
+                   exclusion_reason = excluded.exclusion_reason,
+                   notes = excluded.notes,
+                   updated_at = excluded.updated_at""",
+            (project_id, candidate_key_value, status, reason, notes, now),
+        )
+        connection.execute(
+            """INSERT INTO screening_fulltext_audit(
+                   project_id, candidate_key, old_status, new_status,
+                   old_reason, new_reason, old_notes, new_notes, changed_at
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                project_id,
+                candidate_key_value,
+                old_status,
+                status,
+                old_reason,
+                reason,
+                old_notes,
+                notes,
+                now,
+            ),
+        )
+    return True
+
+
+def list_fulltext_decisions(project_id: str) -> list[dict[str, Any]]:
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        rows = connection.execute(
+            """SELECT * FROM screening_fulltext
+               WHERE project_id = ?
+               ORDER BY candidate_key""",
+            (project_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_fulltext_audit(
+    project_id: str,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    limit = max(1, min(limit, 1000))
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        rows = connection.execute(
+            """SELECT * FROM screening_fulltext_audit
+               WHERE project_id = ?
+               ORDER BY id DESC LIMIT ?""",
+            (project_id, limit),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def prisma_counts(project_id: str) -> dict[str, Any]:
+    with _connection() as connection:
+        project = _screening_project(connection, project_id)
+        counts = {
+            row["status"]: row["count"]
+            for row in connection.execute(
+                """SELECT status, COUNT(*) AS count FROM screening_candidates
+                   WHERE project_id = ? GROUP BY status""",
+                (project_id,),
+            ).fetchall()
+        }
+        import_events = [
+            dict(row)
+            for row in connection.execute(
+                """SELECT id, run_id, identified_count, duplicate_count,
+                          conflict_count, created_at
+                   FROM project_import_events
+                   WHERE project_id = ?
+                   ORDER BY id""",
+                (project_id,),
+            ).fetchall()
+        ]
+        fulltext_counts = {
+            row["status"]: row["count"]
+            for row in connection.execute(
+                """SELECT f.status, COUNT(*) AS count
+                   FROM screening_fulltext f
+                   JOIN screening_candidates c
+                     ON c.project_id = f.project_id
+                    AND c.candidate_key = f.candidate_key
+                   WHERE f.project_id = ? AND c.status = 'included'
+                   GROUP BY f.status""",
+                (project_id,),
+            ).fetchall()
+        }
+        fulltext_reasons = [
+            dict(row)
+            for row in connection.execute(
+                """SELECT f.exclusion_reason AS reason, COUNT(*) AS count
+                   FROM screening_fulltext f
+                   JOIN screening_candidates c
+                     ON c.project_id = f.project_id
+                    AND c.candidate_key = f.candidate_key
+                   WHERE f.project_id = ? AND c.status = 'included'
+                     AND f.status = 'excluded'
+                   GROUP BY f.exclusion_reason
+                   ORDER BY count DESC, reason""",
+                (project_id,),
+            ).fetchall()
+        ]
+        search_run_count = connection.execute(
+            "SELECT COUNT(*) FROM search_runs WHERE project_id = ?",
+            (project_id,),
+        ).fetchone()[0]
+
+    pending_ta = counts.get("pending", 0)
+    included_ta = counts.get("included", 0)
+    excluded_ta = counts.get("excluded", 0)
+    unique = pending_ta + included_ta + excluded_ta
+    not_sought = fulltext_counts.get("not_sought", 0) + max(
+        0, included_ta - sum(fulltext_counts.values())
+    )
+    not_retrieved = fulltext_counts.get("not_retrieved", 0)
+    fulltext_included = fulltext_counts.get("included", 0)
+    fulltext_excluded = fulltext_counts.get("excluded", 0)
+    reports_sought = not_retrieved + fulltext_included + fulltext_excluded
+    reports_assessed = fulltext_included + fulltext_excluded
+
+    warnings = []
+    if included_ta and not fulltext_counts:
+        warnings.append(
+            "尚未记录全文阶段：题名/摘要纳入不等于最终纳入，完整 PRISMA 需要全文资格评估。"
+        )
+    if pending_ta:
+        warnings.append(f"仍有 {pending_ta} 条题名/摘要待定，PRISMA 计数尚未完成。")
+    if not_sought:
+        warnings.append(f"有 {not_sought} 条题名/摘要纳入文献尚未记录全文阶段。")
+
+    return {
+        "identified": project["identified_count"],
+        "duplicates_removed": project["duplicate_count"],
+        "unique_records": unique,
+        "title_abstract": {
+            "screened": unique,
+            "pending": pending_ta,
+            "included": included_ta,
+            "excluded": excluded_ta,
+        },
+        "fulltext": {
+            "not_sought": not_sought,
+            "sought": reports_sought,
+            "not_retrieved": not_retrieved,
+            "assessed": reports_assessed,
+            "included": fulltext_included,
+            "excluded": fulltext_excluded,
+            "excluded_reasons": fulltext_reasons,
+        },
+        "included_in_review": fulltext_included,
+        "warnings": warnings,
+        "traceability": {
+            "search_runs": search_run_count,
+            "import_events": import_events,
+            "candidate_table": "screening_candidates",
+            "fulltext_table": "screening_fulltext",
+            "evidence_table": "evidence_item_versions",
+        },
     }
 
 

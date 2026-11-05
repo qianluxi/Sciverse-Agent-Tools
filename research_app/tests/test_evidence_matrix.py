@@ -257,7 +257,7 @@ def test_list_ai_tasks_filters_by_kind(monkeypatch, tmp_path):
     assert all(item["kind"] == "evidence_matrix" for item in tasks)
 
 
-def test_v14_missing_error_column_migrates_to_v15(monkeypatch, tmp_path):
+def test_v14_missing_error_column_migrates_to_latest(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     project_id, task_id = _project_task()
     storage.append_evidence_version(
@@ -272,7 +272,7 @@ def test_v14_missing_error_column_migrates_to_v15(monkeypatch, tmp_path):
     storage.get_screening_project(project_id)
 
     with sqlite3.connect(db_path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 15
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 16
         columns = {
             row[1]
             for row in connection.execute(
@@ -292,7 +292,7 @@ def test_v14_missing_error_column_migrates_to_v15(monkeypatch, tmp_path):
     # Running initialization again must be a no-op.
     storage.get_screening_project(project_id)
     with sqlite3.connect(db_path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 15
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 16
 
 
 def test_task_inputs_are_frozen(monkeypatch, tmp_path):

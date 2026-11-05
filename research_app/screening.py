@@ -19,6 +19,24 @@ STATUS_LABELS = {
     "excluded": "排除",
 }
 
+FULLTEXT_STATUSES = ("not_sought", "not_retrieved", "included", "excluded")
+FULLTEXT_STATUS_LABELS = {
+    "not_sought": "未获取全文",
+    "not_retrieved": "无法获取全文",
+    "included": "全文纳入",
+    "excluded": "全文排除",
+}
+FULLTEXT_EXCLUSION_REASONS = (
+    "无法获取全文",
+    "研究对象不符",
+    "干预或暴露不符",
+    "结局指标不符",
+    "研究设计不符",
+    "数据不完整",
+    "重复发表",
+    "其他",
+)
+
 
 def normalize_doi(value: Any) -> str:
     text = str(value or "").strip().casefold()

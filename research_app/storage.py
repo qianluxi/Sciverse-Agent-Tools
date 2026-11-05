@@ -23,7 +23,7 @@ from research_app.screening import (
 )
 
 
-_SCHEMA_VERSION = 14
+_SCHEMA_VERSION = 15
 _BACKUP_SCHEMA_VERSION = 2
 _MAX_HISTORY_ENTRIES = 50
 _MAX_SNAPSHOT_BYTES = 5 * 1024 * 1024
@@ -665,6 +665,19 @@ def _migrate(connection: sqlite3.Connection) -> None:
             )
         version = 14
         connection.execute("PRAGMA user_version = 14")
+    if version < 15:
+        version_columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(evidence_item_versions)"
+            ).fetchall()
+        }
+        if "error" not in version_columns:
+            connection.execute(
+                "ALTER TABLE evidence_item_versions ADD COLUMN error TEXT"
+            )
+        version = 15
+        connection.execute("PRAGMA user_version = 15")
 
 
 @contextmanager

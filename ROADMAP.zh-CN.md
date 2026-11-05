@@ -793,6 +793,7 @@ SQLite 仅保存：
 - 新增 `research_app/report.py`：生成项目级报告（PRISMA、筛选汇总、证据矩阵摘要、溯源），输出 Markdown/JSON，并导出 PRISMA 逐条记录 CSV。
 - 新增页面“研究报告”：展示 PRISMA 计数与口径警告、记录全文阶段决定、预览与导出报告。
 - 轻量筛选计数仍单独保留；页面明确提示“题摘纳入不等于最终纳入”，全文阶段缺失时给出警告。
+- 11.4 真实项目报告验证（数据库副本，不改生产数据）：为三个真实项目生成报告与 PRISMA 逐条记录；未记录全文阶段时 `included_in_review=0` 并给出警告；在副本中记录 1 条全文纳入、1 条全文排除后，`included_in_review=1`、排除原因正确聚合、警告相应减少。
 - `pytest research_app/tests/ -v`：239 passed、2 skipped。
 
 ## 18. 阶段 12：协作与进阶自动化（待开始）

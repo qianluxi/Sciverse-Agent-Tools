@@ -1,3 +1,5 @@
+## [1.23.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.23.0...v1.23.1) (2026-11-05)
+
 ## [1.23.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.22.4...v1.23.0) (2026-11-05)
 
 ### Features

@@ -1,3 +1,9 @@
+## [1.24.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.23.1...v1.24.0) (2026-11-05)
+
+### Features
+
+* export traceable project report bundle ([f04515b](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/f04515b3ca2f852eaec6f633d9b6ee16f1674cca))
+
 ## [1.23.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.23.0...v1.23.1) (2026-11-05)
 
 ## [1.23.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.22.4...v1.23.0) (2026-11-05)

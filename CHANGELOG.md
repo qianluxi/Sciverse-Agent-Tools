@@ -1,3 +1,9 @@
+## [1.22.2](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.22.1...v1.22.2) (2026-11-05)
+
+### Bug Fixes
+
+* retry pending failed evidence items and isolate review state ([fb8c818](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/fb8c81834169771be22c5061176c54d709431e29))
+
 ## [1.22.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.22.0...v1.22.1) (2026-11-05)
 
 ### Bug Fixes

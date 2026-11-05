@@ -125,10 +125,12 @@ def test_matrix_page_switches_edit_base_version(monkeypatch, tmp_path):
     findings = next(field for field in app.text_area if field.label == "主要发现")
     assert findings.value == "AI findings"
 
-    findings.set_value("EDITED").run(timeout=30)
+    findings = next(field for field in app.text_area if field.label == "主要发现")
+    findings.set_value("EDITED")
     next(
         button for button in app.button if button.label == "标记最终采用"
-    ).click().run(timeout=30)
+    ).click()
+    app.run(timeout=30)
 
     assert not app.exception
     versions = storage.list_evidence_versions(
@@ -138,6 +140,24 @@ def test_matrix_page_switches_edit_base_version(monkeypatch, tmp_path):
     assert versions[0]["data"]["findings"] == "EDITED"
     assert versions[0]["model"] == "m-base"
     assert versions[0]["prompt_version"] == "evidence-v1"
+
+
+def test_matrix_page_shows_task_selector_with_multiple_tasks(monkeypatch, tmp_path):
+    project_id = _setup(monkeypatch, tmp_path)
+    for index in range(2):
+        storage.create_ai_task(
+            project_id,
+            kind="evidence_matrix",
+            model="test-model",
+            prompt_version="evidence-v1",
+            input_hash=f"task-{index}",
+        )
+    app = _app(project_id)
+
+    assert not app.exception
+    assert any(
+        selectbox.label == "证据矩阵任务" for selectbox in app.selectbox
+    )
 
 
 def test_matrix_page_keeps_matrix_when_no_papers_selected(monkeypatch, tmp_path):

@@ -2707,6 +2707,23 @@ def get_latest_ai_task(project_id: str, kind: str) -> dict[str, Any] | None:
     return dict(row) if row is not None else None
 
 
+def list_ai_tasks_by_kind(
+    project_id: str,
+    kind: str,
+    *,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        rows = connection.execute(
+            """SELECT * FROM ai_task_runs
+               WHERE project_id = ? AND kind = ?
+               ORDER BY created_at DESC, id DESC LIMIT ?""",
+            (project_id, kind, max(1, int(limit))),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def evidence_task_status(
     project_id: str,
     task_id: str,
@@ -2734,6 +2751,51 @@ def evidence_task_status(
     completed = [row["paper_id"] for row in rows if not row["error"]]
     failed = [row["paper_id"] for row in rows if row["error"]]
     return {"completed": completed, "failed": failed, "processed": completed + failed}
+
+
+def evidence_latest_errors(
+    project_id: str,
+    task_id: str,
+    paper_ids: list[str],
+    *,
+    source: str = "ai_raw",
+) -> dict[str, str]:
+    if source not in EVIDENCE_VERSION_SOURCES:
+        raise ValueError("证据版本来源无效。")
+    ids = [str(paper) for paper in paper_ids if str(paper)]
+    if not ids:
+        return {}
+    placeholders = ",".join("?" for _ in ids)
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        rows = connection.execute(
+            f"""SELECT v.paper_id, v.error
+                FROM evidence_item_versions v
+                JOIN (
+                    SELECT paper_id, MAX(version_no) AS max_version
+                    FROM evidence_item_versions
+                    WHERE project_id = ? AND task_id = ? AND source = ?
+                      AND paper_id IN ({placeholders})
+                    GROUP BY paper_id
+                ) mx
+                  ON v.paper_id = mx.paper_id
+                 AND v.version_no = mx.max_version
+                WHERE v.project_id = ? AND v.task_id = ? AND v.source = ?
+                  AND v.paper_id IN ({placeholders})""",
+            (
+                project_id,
+                task_id,
+                source,
+                *ids,
+                project_id,
+                task_id,
+                source,
+                *ids,
+            ),
+        ).fetchall()
+    return {
+        row["paper_id"]: str(row["error"]) for row in rows if row["error"]
+    }
 
 
 def inspect_project_statistics(project_id: str | None = None) -> list[dict[str, Any]]:

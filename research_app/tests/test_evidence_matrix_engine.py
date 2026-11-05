@@ -222,6 +222,40 @@ def test_retry_covers_failed_items_in_pending_batch(monkeypatch, tmp_path):
     assert len(storage.evidence_task_status(project_id, task_id)["completed"]) == 2
 
 
+def test_batch_error_summary_survives_partial_resume(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    project_id, task_id = _project_task()
+    papers = _papers(2)
+    _freeze(project_id, task_id, [_entry(paper) for paper in papers])
+    plan_batches(project_id, task_id, papers, batch_size=2)
+
+    first = run_pending_batches(
+        project_id,
+        task_id,
+        AlwaysFailClient(),
+        retries=0,
+        max_requests=1,
+        backoff_seconds=0,
+    )
+    assert first.failed == 1
+    batch = storage.list_evidence_batches(project_id, task_id)[0]
+    assert "server error" in (batch["error"] or "")
+
+    second = run_pending_batches(
+        project_id, task_id, FakeClient(), backoff_seconds=0
+    )
+    assert second.completed == 1
+
+    batch = storage.list_evidence_batches(project_id, task_id)[0]
+    assert batch["status"] == "completed"
+    assert batch["completed_count"] == 1
+    assert batch["failed_count"] == 1
+    assert "server error" in (batch["error"] or "")
+    assert storage.evidence_task_status(project_id, task_id)["failed"] == [
+        papers[0]["paper_id"]
+    ]
+
+
 def test_partial_failure_records_counts_and_error(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     project_id, task_id = _project_task()

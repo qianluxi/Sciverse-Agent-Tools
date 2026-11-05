@@ -230,6 +230,31 @@ def test_append_evidence_version_validates_task_and_batch(monkeypatch, tmp_path)
         )
 
 
+def test_list_ai_tasks_filters_by_kind(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    project_id, task_id = _project_task()
+    second = storage.create_ai_task(
+        project_id,
+        kind="evidence_matrix",
+        model="test-model",
+        prompt_version="evidence-v1",
+        input_hash="second",
+    )
+    storage.create_ai_task(
+        project_id,
+        kind="screening",
+        model="test-model",
+        prompt_version="screening-v2",
+        input_hash="screening",
+    )
+
+    tasks = storage.list_ai_tasks_by_kind(project_id, "evidence_matrix")
+    task_ids = {item["id"] for item in tasks}
+    assert second in task_ids
+    assert task_id not in task_ids
+    assert all(item["kind"] == "evidence_matrix" for item in tasks)
+
+
 def test_task_inputs_are_frozen(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     project_id, task_id = _project_task()

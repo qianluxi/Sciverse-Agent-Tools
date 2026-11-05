@@ -99,6 +99,21 @@ def _is_transient(error_text: str) -> bool:
     return any(marker in error_text for marker in TRANSIENT_MARKERS)
 
 
+def _batch_error_summary(
+    project_id: str,
+    task_id: str,
+    paper_keys: list[str],
+    failed_papers: set[str],
+) -> str | None:
+    failed = [key for key in paper_keys if key in failed_papers]
+    if not failed:
+        return None
+    errors = storage.evidence_latest_errors(project_id, task_id, failed)
+    return "；".join(
+        f"{key}：{errors.get(key, '失败')}" for key in failed
+    )[:2000]
+
+
 def run_pending_batches(
     project_id: str,
     task_id: str,
@@ -148,15 +163,34 @@ def run_pending_batches(
                 for key in batch["paper_keys"]
                 if key not in completed_papers and key not in failed_papers
             ]
-            if not unprocessed and batch["status"] != "completed":
-                storage.update_evidence_batch(batch["id"], status="completed")
+            if not unprocessed:
+                completed_in_batch = sum(
+                    1
+                    for key in batch["paper_keys"]
+                    if key in completed_papers
+                )
+                failed_in_batch = [
+                    key for key in batch["paper_keys"] if key in failed_papers
+                ]
+                storage.update_evidence_batch(
+                    batch["id"],
+                    status=(
+                        "failed"
+                        if completed_in_batch == 0 and failed_in_batch
+                        else "completed"
+                    ),
+                    completed_count=completed_in_batch,
+                    failed_count=len(failed_in_batch),
+                    error=_batch_error_summary(
+                        project_id, task_id, batch["paper_keys"], failed_papers
+                    ),
+                )
             continue
 
         storage.update_evidence_batch(batch["id"], status="running")
         batch_requests = 0
         batch_completed = 0
         batch_failed = 0
-        batch_errors: list[str] = []
         processed = 0
         interrupted = False
 
@@ -181,7 +215,6 @@ def run_pending_batches(
                 )
                 failed_papers.add(paper_key)
                 batch_failed += 1
-                batch_errors.append(f"{paper_key}：{reason}")
                 result.errors.append(f"{paper_key}：{reason}")
                 processed += 1
                 continue
@@ -206,7 +239,6 @@ def run_pending_batches(
                 )
                 failed_papers.add(paper_key)
                 batch_failed += 1
-                batch_errors.append(f"{paper_key}：{reason}")
                 result.errors.append(f"{paper_key}：{reason}")
                 processed += 1
                 continue
@@ -267,7 +299,6 @@ def run_pending_batches(
                 failed_papers.add(paper_key)
                 completed_papers.discard(paper_key)
                 batch_failed += 1
-                batch_errors.append(f"{paper_key}：{item.get('error')}")
                 result.errors.append(f"{paper_key}：{item.get('error')}")
             else:
                 completed_papers.add(paper_key)
@@ -300,7 +331,9 @@ def run_pending_batches(
             request_count=int(batch.get("request_count") or 0) + batch_requests,
             completed_count=current_completed,
             failed_count=current_failed,
-            error="；".join(batch_errors[:5]) or None,
+            error=_batch_error_summary(
+                project_id, task_id, batch["paper_keys"], failed_papers
+            ),
         )
         if result.paused:
             break

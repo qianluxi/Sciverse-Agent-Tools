@@ -237,7 +237,36 @@ if candidates:
 else:
     st.caption("当前项目还没有候选文献；仍可查看已有证据矩阵。")
 
-task = storage.get_latest_ai_task(project_id, TASK_KIND)
+matrix_tasks = storage.list_ai_tasks_by_kind(project_id, TASK_KIND, limit=10)
+task = matrix_tasks[0] if matrix_tasks else None
+if len(matrix_tasks) > 1:
+    task_labels = {
+        item["id"]: f"{item['id'][:8]} · {item['status']} · {item['created_at']}"
+        for item in matrix_tasks
+    }
+    selected_task_id = st.selectbox(
+        "证据矩阵任务",
+        list(task_labels),
+        format_func=lambda value: task_labels[value],
+        key=f"matrix_task_selector_{project_id}",
+    )
+    task = next(item for item in matrix_tasks if item["id"] == selected_task_id)
+if matrix_tasks:
+    task_rows = []
+    for item in matrix_tasks:
+        task_status = storage.evidence_task_status(project_id, item["id"])
+        task_counts = pending_batches(project_id, item["id"])
+        task_rows.append(
+            {
+                "任务": item["id"][:8],
+                "状态": item["status"],
+                "创建": item["created_at"],
+                "已完成": len(task_status["completed"]),
+                "失败": len(task_status["failed"]),
+                "待处理批次": task_counts["pending"] + task_counts["running"],
+            }
+        )
+    st.dataframe(task_rows, hide_index=True, use_container_width=True)
 batches = storage.list_evidence_batches(project_id, task["id"]) if task else []
 ai_ready = bool(ai_key and base_url and model)
 
@@ -323,6 +352,7 @@ if plan_clicked:
         )
         storage.finish_ai_task(task_id, status="running")
         degraded = sum(1 for item in frozen_items if item["input_source"] != "full_text")
+        st.session_state[f"matrix_task_selector_{project_id}"] = task_id
         st.session_state["matrix_message"] = (
             f"已冻结 {frozen['saved']} 篇输入并规划 {len(papers)} 篇；"
             f"其中 {degraded} 篇使用摘要或无可用文本。点击“运行下一批”开始提取。"

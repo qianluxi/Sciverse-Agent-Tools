@@ -357,6 +357,90 @@ def matrix_rows(matrix: list[dict[str, Any]]) -> list[dict[str, str]]:
     return rows
 
 
+MATRIX_VERSION_COLUMNS = [
+    "paper_id",
+    "title",
+    "year",
+    "source",
+    "version_no",
+    "task_id",
+    "batch_id",
+    "input_source",
+    "input_error",
+    "model",
+    "prompt_version",
+    "reviewer_note",
+    "error",
+    *FIELD_KEYS,
+    "quote_1",
+    "quote_1_section",
+    "quote_1_verification",
+    "quote_2",
+    "quote_2_section",
+    "quote_2_verification",
+    "quote_3",
+    "quote_3_section",
+    "quote_3_verification",
+    "created_at",
+]
+
+
+def matrix_version_rows(matrix: list[dict[str, Any]]) -> list[dict[str, str]]:
+    rows = []
+    for paper in matrix:
+        versions = paper.get("versions") or {}
+        for source in MATRIX_SOURCES:
+            version = versions.get(source)
+            if not version:
+                continue
+            data = normalize_evidence_data(version.get("data"))
+            quotes = data.get("evidence_quotes") or []
+            checks = version.get("quote_checks") or []
+            row = {
+                "paper_id": str(paper.get("paper_id") or ""),
+                "title": str(paper.get("title") or ""),
+                "year": _year_text(paper.get("year")),
+                "source": MATRIX_SOURCE_LABELS.get(source, source),
+                "version_no": str(version.get("version_no") or ""),
+                "task_id": str(version.get("task_id") or ""),
+                "batch_id": str(version.get("batch_id") or ""),
+                "input_source": MATRIX_INPUT_LABELS.get(
+                    str(version.get("input_source") or ""), ""
+                ),
+                "input_error": str(version.get("input_error") or ""),
+                "model": str(version.get("model") or ""),
+                "prompt_version": str(version.get("prompt_version") or ""),
+                "reviewer_note": str(version.get("reviewer_note") or ""),
+                "error": str(version.get("error") or ""),
+                "created_at": str(version.get("created_at") or ""),
+            }
+            row.update({field: data[field] for field in FIELD_KEYS})
+            for index in range(1, 4):
+                position = index - 1
+                if position < len(quotes):
+                    quote = quotes[position]
+                    check = checks[position] if position < len(checks) else {}
+                    row[f"quote_{index}"] = str(quote.get("quote") or "")
+                    row[f"quote_{index}_section"] = str(
+                        quote.get("section") or ""
+                    )
+                    row[f"quote_{index}_verification"] = quote_status(check)
+                else:
+                    row[f"quote_{index}"] = ""
+                    row[f"quote_{index}_section"] = ""
+                    row[f"quote_{index}_verification"] = ""
+            rows.append(row)
+    return rows
+
+
+def export_matrix_versions_csv(matrix: list[dict[str, Any]]) -> bytes:
+    output = io.StringIO(newline="")
+    writer = csv.DictWriter(output, fieldnames=MATRIX_VERSION_COLUMNS)
+    writer.writeheader()
+    write_safe_rows(writer, matrix_version_rows(matrix))
+    return output.getvalue().encode("utf-8-sig")
+
+
 def export_matrix_csv(matrix: list[dict[str, Any]]) -> bytes:
     output = io.StringIO(newline="")
     writer = csv.DictWriter(output, fieldnames=MATRIX_CSV_COLUMNS)

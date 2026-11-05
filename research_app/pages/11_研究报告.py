@@ -64,9 +64,10 @@ st.dataframe(
         {"阶段": "题名/摘要待定", "数量": title_abstract["pending"]},
         {"阶段": "题名/摘要排除", "数量": title_abstract["excluded"]},
         {"阶段": "题名/摘要纳入", "数量": title_abstract["included"]},
-        {"阶段": "全文未获取", "数量": fulltext["not_sought"]},
-        {"阶段": "全文已检索", "数量": fulltext["sought"]},
-        {"阶段": "全文无法获取", "数量": fulltext["not_retrieved"]},
+        {"阶段": "全文尚未寻求获取", "数量": fulltext["not_sought"]},
+        {"阶段": "全文已寻求未获取", "数量": fulltext["not_retrieved"]},
+        {"阶段": "全文已获取待评估", "数量": fulltext["retrieved_pending"]},
+        {"阶段": "全文已检索合计", "数量": fulltext["sought"]},
         {"阶段": "全文已评估", "数量": fulltext["assessed"]},
         {"阶段": "全文排除", "数量": fulltext["excluded"]},
         {"阶段": "全文纳入（最终纳入）", "数量": fulltext["included"]},
@@ -246,8 +247,8 @@ with download_columns[3]:
     )
 
 st.download_button(
-    "下载可追溯成果包 ZIP（报告 + PRISMA + 证据矩阵 + manifest）",
-    data=export_project_bundle(project_id, report),
+    "下载可追溯成果包 ZIP（报告 + PRISMA + 来源/审计 + 三版本证据 + manifest）",
+    data=export_project_bundle(project_id),
     file_name="sciverse-project-bundle.zip",
     mime="application/zip",
     key="download_project_bundle",

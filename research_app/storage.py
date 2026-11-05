@@ -25,7 +25,7 @@ from research_app.screening import (
 )
 
 
-_SCHEMA_VERSION = 16
+_SCHEMA_VERSION = 17
 SCHEMA_VERSION = _SCHEMA_VERSION
 _BACKUP_SCHEMA_VERSION = 2
 _MAX_HISTORY_ENTRIES = 50
@@ -714,6 +714,55 @@ def _migrate(connection: sqlite3.Connection) -> None:
         )
         version = 16
         connection.execute("PRAGMA user_version = 16")
+    if version < 17:
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS screening_fulltext_v17 (
+                project_id TEXT NOT NULL REFERENCES screening_projects(id) ON DELETE CASCADE,
+                candidate_key TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'not_sought'
+                    CHECK (status IN ('not_sought', 'not_retrieved',
+                                      'retrieved_pending', 'included', 'excluded')),
+                exclusion_reason TEXT,
+                notes TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (project_id, candidate_key)
+            );
+            """
+        )
+        for row in connection.execute(
+            """SELECT project_id, candidate_key, status, exclusion_reason,
+                      notes, updated_at FROM screening_fulltext"""
+        ).fetchall():
+            connection.execute(
+                """INSERT OR IGNORE INTO screening_fulltext_v17(
+                       project_id, candidate_key, status, exclusion_reason,
+                       notes, updated_at
+                   ) VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    row["project_id"],
+                    row["candidate_key"],
+                    row["status"],
+                    row["exclusion_reason"],
+                    row["notes"],
+                    row["updated_at"],
+                ),
+            )
+        connection.execute("DROP TABLE screening_fulltext")
+        connection.execute(
+            "ALTER TABLE screening_fulltext_v17 RENAME TO screening_fulltext"
+        )
+        connection.execute(
+            """CREATE INDEX IF NOT EXISTS screening_fulltext_project
+               ON screening_fulltext(project_id, status)"""
+        )
+        connection.execute(
+            """UPDATE screening_fulltext
+               SET status = 'not_retrieved', exclusion_reason = NULL
+               WHERE status = 'excluded' AND exclusion_reason = '无法获取全文'"""
+        )
+        version = 17
+        connection.execute("PRAGMA user_version = 17")
 
 
 @contextmanager
@@ -2011,10 +2060,21 @@ def prisma_counts(project_id: str) -> dict[str, Any]:
         0, included_ta - sum(fulltext_counts.values())
     )
     not_retrieved = fulltext_counts.get("not_retrieved", 0)
+    retrieved_pending = fulltext_counts.get("retrieved_pending", 0)
     fulltext_included = fulltext_counts.get("included", 0)
     fulltext_excluded = fulltext_counts.get("excluded", 0)
-    reports_sought = not_retrieved + fulltext_included + fulltext_excluded
+    reports_sought = (
+        not_retrieved + retrieved_pending + fulltext_included + fulltext_excluded
+    )
     reports_assessed = fulltext_included + fulltext_excluded
+    fulltext_partition = (
+        not_sought
+        + not_retrieved
+        + retrieved_pending
+        + fulltext_included
+        + fulltext_excluded
+    )
+    conservation_ok = fulltext_partition == included_ta
 
     warnings = []
     if included_ta and not fulltext_counts:
@@ -2025,6 +2085,14 @@ def prisma_counts(project_id: str) -> dict[str, Any]:
         warnings.append(f"仍有 {pending_ta} 条题名/摘要待定，PRISMA 计数尚未完成。")
     if not_sought:
         warnings.append(f"有 {not_sought} 条题名/摘要纳入文献尚未记录全文阶段。")
+    if retrieved_pending:
+        warnings.append(
+            f"有 {retrieved_pending} 条已获取全文、待资格评估。"
+        )
+    if not conservation_ok:
+        warnings.append(
+            "全文阶段状态合计与题名/摘要纳入数不一致，请检查全文阶段记录。"
+        )
 
     return {
         "identified": project["identified_count"],
@@ -2040,10 +2108,13 @@ def prisma_counts(project_id: str) -> dict[str, Any]:
             "not_sought": not_sought,
             "sought": reports_sought,
             "not_retrieved": not_retrieved,
+            "retrieved_pending": retrieved_pending,
             "assessed": reports_assessed,
             "included": fulltext_included,
             "excluded": fulltext_excluded,
             "excluded_reasons": fulltext_reasons,
+            "partition_total": fulltext_partition,
+            "conservation_ok": conservation_ok,
         },
         "included_in_review": fulltext_included,
         "warnings": warnings,
@@ -2065,6 +2136,43 @@ def list_screening_duplicates(project_id: str, limit: int = 50) -> list[dict[str
             """SELECT * FROM screening_duplicates WHERE project_id = ?
                ORDER BY id DESC LIMIT ?""",
             (project_id, limit),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_all_candidate_sources(project_id: str) -> list[dict[str, Any]]:
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        rows = connection.execute(
+            """SELECT candidate_key, run_id, discovered_at
+               FROM screening_candidate_sources
+               WHERE project_id = ?
+               ORDER BY candidate_key, discovered_at""",
+            (project_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_all_screening_audit(project_id: str) -> list[dict[str, Any]]:
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        rows = connection.execute(
+            """SELECT * FROM screening_audit
+               WHERE project_id = ?
+               ORDER BY id""",
+            (project_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_all_fulltext_audit(project_id: str) -> list[dict[str, Any]]:
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        rows = connection.execute(
+            """SELECT * FROM screening_fulltext_audit
+               WHERE project_id = ?
+               ORDER BY id""",
+            (project_id,),
         ).fetchall()
     return [dict(row) for row in rows]
 

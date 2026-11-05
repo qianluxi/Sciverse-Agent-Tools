@@ -51,9 +51,13 @@ def test_prisma_counts_separates_title_abstract_and_fulltext(monkeypatch, tmp_pa
     }
     assert counts["fulltext"]["not_sought"] == 0
     assert counts["fulltext"]["sought"] == 2
+    assert counts["fulltext"]["not_retrieved"] == 0
+    assert counts["fulltext"]["retrieved_pending"] == 0
     assert counts["fulltext"]["assessed"] == 2
     assert counts["fulltext"]["included"] == 1
     assert counts["fulltext"]["excluded"] == 1
+    assert counts["fulltext"]["partition_total"] == 2
+    assert counts["fulltext"]["conservation_ok"] is True
     assert counts["fulltext"]["excluded_reasons"] == [
         {"reason": "研究对象不符", "count": 1}
     ]
@@ -75,6 +79,77 @@ def test_prisma_warns_when_fulltext_stage_missing(monkeypatch, tmp_path):
     assert counts["fulltext"]["sought"] == 0
     assert counts["included_in_review"] == 0
     assert any("尚未记录全文阶段" in warning for warning in counts["warnings"])
+
+
+def test_fulltext_status_partition_and_conservation(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    project_id = storage.create_screening_project("Review", "Q", "I", "E")
+    storage.add_screening_candidates(
+        project_id,
+        [
+            {"title": f"Paper {index}", "unique_id": f"paper:{index}"}
+            for index in range(5)
+        ],
+    )
+    for index in range(5):
+        storage.set_screening_decision(
+            project_id, f"uid:paper:{index}", "included"
+        )
+
+    # A: no record (not_sought); B: not_retrieved; C: retrieved_pending;
+    # D: included; E: excluded with reason.
+    storage.set_fulltext_decision(project_id, "uid:paper:1", "not_retrieved")
+    storage.set_fulltext_decision(
+        project_id, "uid:paper:2", "retrieved_pending"
+    )
+    storage.set_fulltext_decision(project_id, "uid:paper:3", "included")
+    storage.set_fulltext_decision(
+        project_id, "uid:paper:4", "excluded", reason="研究对象不符"
+    )
+
+    counts = storage.prisma_counts(project_id)
+    fulltext = counts["fulltext"]
+
+    assert fulltext["not_sought"] == 1
+    assert fulltext["not_retrieved"] == 1
+    assert fulltext["retrieved_pending"] == 1
+    assert fulltext["included"] == 1
+    assert fulltext["excluded"] == 1
+    assert fulltext["sought"] == 4
+    assert fulltext["assessed"] == 2
+    assert fulltext["partition_total"] == 5
+    assert fulltext["conservation_ok"] is True
+    assert counts["included_in_review"] == 1
+    assert fulltext["excluded_reasons"] == [
+        {"reason": "研究对象不符", "count": 1}
+    ]
+    assert any("待资格评估" in warning for warning in counts["warnings"])
+    assert any("尚未记录全文阶段" in warning for warning in counts["warnings"])
+
+
+def test_not_retrieved_is_not_counted_as_fulltext_exclusion(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    project_id = storage.create_screening_project("Review", "Q", "I", "E")
+    storage.add_screening_candidates(
+        project_id, [{"title": "Paper A", "unique_id": "paper:a"}]
+    )
+    storage.set_screening_decision(project_id, "uid:paper:a", "included")
+    storage.set_fulltext_decision(project_id, "uid:paper:a", "not_retrieved")
+
+    counts = storage.prisma_counts(project_id)
+    fulltext = counts["fulltext"]
+
+    assert fulltext["not_retrieved"] == 1
+    assert fulltext["excluded"] == 0
+    assert fulltext["assessed"] == 0
+    assert fulltext["excluded_reasons"] == []
+    assert "无法获取全文" not in {
+        item["reason"] for item in fulltext["excluded_reasons"]
+    }
+    with pytest.raises(ValueError):
+        storage.set_fulltext_decision(
+            project_id, "uid:paper:a", "excluded", reason="无法获取全文"
+        )
 
 
 def test_fulltext_decision_guards_and_audit(monkeypatch, tmp_path):

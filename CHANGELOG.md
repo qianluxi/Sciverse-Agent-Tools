@@ -1,3 +1,9 @@
+## [1.26.5](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.26.4...v1.26.5) (2026-11-06)
+
+### Bug Fixes
+
+* require admin key for collaboration recovery ([8ebf7a5](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/8ebf7a55a9222e0c4c0a43c4e6f05907afce2ac1))
+
 ## [1.26.4](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.26.3...v1.26.4) (2026-11-06)
 
 ### Bug Fixes

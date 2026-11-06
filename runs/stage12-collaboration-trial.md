@@ -1,7 +1,10 @@
 # 阶段 12 双人协作试运行记录
 
 执行时间：2026-11-06
-代码提交：`8ebf7a5`（Schema v22；正式发布版本在验证时为 v1.26.4，修复提交尚未发布）
+代码提交：`8ebf7a5`（Schema v22）
+验证记录提交：`5bc3a3f`（GitHub Actions Test #82 通过，Research app 272 passed）
+正式发布版本：`v1.26.5`（发布提交 `baf4004`，仅版本与派生文件）
+exe：本次未重建；Windows 交付前需重新构建并做干净环境启动验证
 执行方式：在 `~/.sciverse/research-workbench.sqlite3` 的**副本**上运行；不修改生产数据库。
 范围：可选协作模块（单人默认流程不受影响）。
 

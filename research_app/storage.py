@@ -26,7 +26,7 @@ from research_app.screening import (
 )
 
 
-_SCHEMA_VERSION = 17
+_SCHEMA_VERSION = 18
 SCHEMA_VERSION = _SCHEMA_VERSION
 _BACKUP_SCHEMA_VERSION = 2
 _MAX_HISTORY_ENTRIES = 50
@@ -40,6 +40,8 @@ _BACKUP_FORMAT = "sciverse-research-workbench"
 REVIEW_STATUSES = frozenset(
     {"pending", "accepted", "overridden", "resolved_uncertain", "rejected"}
 )
+REVIEWER_ROLES = frozenset({"reviewer", "coordinator", "viewer"})
+BLIND_STATUSES = frozenset({"pending", "included", "excluded"})
 
 
 def _review_status_for(suggestion: str | None, final_status: str) -> str:
@@ -807,6 +809,97 @@ def _migrate(connection: sqlite3.Connection) -> None:
             )
         version = 17
         connection.execute("PRAGMA user_version = 17")
+    if version < 18:
+        if connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' "
+            "AND name = 'screening_audit'"
+        ).fetchone() is not None:
+            audit_columns = {
+                row["name"]
+                for row in connection.execute(
+                    "PRAGMA table_info(screening_audit)"
+                ).fetchall()
+            }
+            if "actor" not in audit_columns:
+                connection.execute(
+                    "ALTER TABLE screening_audit "
+                    "ADD COLUMN actor TEXT NOT NULL DEFAULT ''"
+                )
+        if connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' "
+            "AND name = 'screening_fulltext_audit'"
+        ).fetchone() is not None:
+            fulltext_audit_columns = {
+                row["name"]
+                for row in connection.execute(
+                    "PRAGMA table_info(screening_fulltext_audit)"
+                ).fetchall()
+            }
+            if "actor" not in fulltext_audit_columns:
+                connection.execute(
+                    "ALTER TABLE screening_fulltext_audit "
+                    "ADD COLUMN actor TEXT NOT NULL DEFAULT ''"
+                )
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS reviewers (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                role TEXT NOT NULL
+                    CHECK (role IN ('reviewer', 'coordinator', 'viewer')),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS screening_blind_decisions (
+                project_id TEXT NOT NULL REFERENCES screening_projects(id) ON DELETE CASCADE,
+                candidate_key TEXT NOT NULL,
+                reviewer_id TEXT NOT NULL REFERENCES reviewers(id) ON DELETE CASCADE,
+                status TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending', 'included', 'excluded')),
+                exclusion_reason TEXT,
+                notes TEXT NOT NULL DEFAULT '',
+                revision INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (project_id, candidate_key, reviewer_id)
+            );
+            CREATE INDEX IF NOT EXISTS screening_blind_decisions_project
+                ON screening_blind_decisions(project_id, candidate_key);
+            CREATE TABLE IF NOT EXISTS screening_blind_audit (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id TEXT NOT NULL REFERENCES screening_projects(id) ON DELETE CASCADE,
+                candidate_key TEXT NOT NULL,
+                reviewer_id TEXT NOT NULL,
+                old_status TEXT,
+                new_status TEXT NOT NULL,
+                old_reason TEXT,
+                new_reason TEXT,
+                old_notes TEXT,
+                new_notes TEXT,
+                changed_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS screening_blind_audit_project
+                ON screening_blind_audit(project_id, id DESC);
+            CREATE TABLE IF NOT EXISTS screening_conflict_resolutions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id TEXT NOT NULL REFERENCES screening_projects(id) ON DELETE CASCADE,
+                candidate_key TEXT NOT NULL,
+                resolution_type TEXT NOT NULL
+                    CHECK (resolution_type IN ('conflict', 'agreement')),
+                reviewer_ids_json TEXT NOT NULL,
+                decisions_json TEXT NOT NULL,
+                final_status TEXT NOT NULL,
+                final_reason TEXT,
+                notes TEXT NOT NULL DEFAULT '',
+                coordinator_id TEXT,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS screening_conflict_resolutions_project
+                ON screening_conflict_resolutions(project_id, id DESC);
+            """
+        )
+        version = 18
+        connection.execute("PRAGMA user_version = 18")
 
 
 @contextmanager
@@ -1834,6 +1927,7 @@ def set_screening_decision(
     notes: str = "",
     ai_task_id: str | None = None,
     ai_action: str | None = None,
+    actor: str = "",
 ) -> bool:
     if status not in {"pending", "included", "excluded"}:
         raise ValueError("筛选状态无效。")
@@ -1886,8 +1980,8 @@ def set_screening_decision(
             """INSERT INTO screening_audit(
                    project_id, candidate_key, old_status, new_status,
                    old_reason, new_reason, old_notes, new_notes, changed_at,
-                   ai_task_id, ai_action
-               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   ai_task_id, ai_action, actor
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 project_id,
                 candidate_key_value,
@@ -1900,6 +1994,7 @@ def set_screening_decision(
                 now,
                 ai_task_id,
                 ai_action,
+                str(actor or ""),
             ),
         )
         connection.execute(
@@ -1955,6 +2050,7 @@ def set_fulltext_decision(
     *,
     reason: str | None = None,
     notes: str = "",
+    actor: str = "",
 ) -> bool:
     if status not in FULLTEXT_STATUSES:
         raise ValueError("全文阶段状态无效。")
@@ -2007,8 +2103,8 @@ def set_fulltext_decision(
         connection.execute(
             """INSERT INTO screening_fulltext_audit(
                    project_id, candidate_key, old_status, new_status,
-                   old_reason, new_reason, old_notes, new_notes, changed_at
-               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   old_reason, new_reason, old_notes, new_notes, changed_at, actor
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 project_id,
                 candidate_key_value,
@@ -2019,6 +2115,7 @@ def set_fulltext_decision(
                 old_notes,
                 notes,
                 now,
+                str(actor or ""),
             ),
         )
     return True
@@ -2124,6 +2221,479 @@ def list_fulltext_audit(
             (project_id, limit),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def _reviewer(connection: sqlite3.Connection, reviewer_id: str) -> sqlite3.Row:
+    row = connection.execute(
+        "SELECT * FROM reviewers WHERE id = ?", (str(reviewer_id or ""),)
+    ).fetchone()
+    if row is None:
+        raise ValueError("审核人不存在。")
+    return row
+
+
+def create_reviewer(name: str, role: str) -> str:
+    name = str(name or "").strip()
+    if not name or len(name) > 100:
+        raise ValueError("审核人名称需为 1 至 100 个字符。")
+    if role not in REVIEWER_ROLES:
+        raise ValueError("审核人角色无效。")
+    reviewer_id = uuid.uuid4().hex
+    now = _timestamp()
+    with _connection() as connection:
+        try:
+            connection.execute(
+                """INSERT INTO reviewers(id, name, role, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (reviewer_id, name, role, now, now),
+            )
+        except sqlite3.IntegrityError as error:
+            raise ValueError("审核人名称已存在。") from error
+    return reviewer_id
+
+
+def list_reviewers() -> list[dict[str, Any]]:
+    with _connection() as connection:
+        rows = connection.execute(
+            "SELECT * FROM reviewers ORDER BY role, name COLLATE NOCASE"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_reviewer(reviewer_id: str) -> dict[str, Any] | None:
+    with _connection() as connection:
+        row = connection.execute(
+            "SELECT * FROM reviewers WHERE id = ?", (str(reviewer_id or ""),)
+        ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def _blind_fingerprint(decisions: list[dict[str, Any]]) -> str:
+    payload = sorted(
+        [
+            [
+                str(item.get("reviewer_id") or ""),
+                str(item.get("status") or ""),
+                str(item.get("exclusion_reason") or ""),
+                int(item.get("revision") or 0),
+            ]
+            for item in decisions
+        ]
+    )
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+
+
+def set_blind_decision(
+    project_id: str,
+    candidate_key_value: str,
+    reviewer_id: str,
+    status: str,
+    *,
+    reason: str | None = None,
+    notes: str = "",
+    expected_revision: int | None = None,
+) -> dict[str, Any]:
+    if status not in BLIND_STATUSES:
+        raise ValueError("盲筛状态无效。")
+    if status == "excluded":
+        if reason not in EXCLUSION_REASONS:
+            raise ValueError("盲筛排除时必须选择标准排除原因。")
+    else:
+        reason = None
+    notes = str(notes or "").strip()
+    if len(notes) > 2000:
+        raise ValueError("备注不能超过 2000 个字符。")
+    now = _timestamp()
+    with _connection() as connection:
+        _require_unlocked(connection, project_id)
+        reviewer = _reviewer(connection, reviewer_id)
+        if reviewer["role"] not in {"reviewer", "coordinator"}:
+            raise ValueError("只读角色不能提交盲筛决定。")
+        candidate = connection.execute(
+            """SELECT 1 FROM screening_candidates
+               WHERE project_id = ? AND candidate_key = ?""",
+            (project_id, candidate_key_value),
+        ).fetchone()
+        if candidate is None:
+            raise ValueError("候选文献不存在。")
+        existing = connection.execute(
+            """SELECT status, exclusion_reason, notes, revision
+               FROM screening_blind_decisions
+               WHERE project_id = ? AND candidate_key = ? AND reviewer_id = ?""",
+            (project_id, candidate_key_value, reviewer["id"]),
+        ).fetchone()
+        revision = int(existing["revision"]) if existing else 0
+        if expected_revision is not None:
+            try:
+                expected = int(expected_revision)
+            except (TypeError, ValueError) as error:
+                raise ValueError("盲筛版本号无效。") from error
+            if expected != revision:
+                raise ValueError("盲筛决定已被他人更新，请刷新后重试。")
+        if (
+            existing is not None
+            and existing["status"] == status
+            and (existing["exclusion_reason"] or None) == reason
+            and existing["notes"] == notes
+        ):
+            return {"revision": revision, "created": False}
+        new_revision = revision + 1
+        connection.execute(
+            """INSERT INTO screening_blind_decisions(
+                   project_id, candidate_key, reviewer_id, status,
+                   exclusion_reason, notes, revision, created_at, updated_at
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(project_id, candidate_key, reviewer_id) DO UPDATE SET
+                   status = excluded.status,
+                   exclusion_reason = excluded.exclusion_reason,
+                   notes = excluded.notes,
+                   revision = excluded.revision,
+                   updated_at = excluded.updated_at""",
+            (
+                project_id,
+                candidate_key_value,
+                reviewer["id"],
+                status,
+                reason,
+                notes,
+                new_revision,
+                now,
+                now,
+            ),
+        )
+        connection.execute(
+            """INSERT INTO screening_blind_audit(
+                   project_id, candidate_key, reviewer_id, old_status,
+                   new_status, old_reason, new_reason, old_notes, new_notes,
+                   changed_at
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                project_id,
+                candidate_key_value,
+                reviewer["id"],
+                existing["status"] if existing else None,
+                status,
+                existing["exclusion_reason"] if existing else None,
+                reason,
+                existing["notes"] if existing else None,
+                notes,
+                now,
+            ),
+        )
+    return {"revision": new_revision, "created": True}
+
+
+def list_blind_decisions(
+    project_id: str,
+    *,
+    candidate_key_value: str | None = None,
+    reviewer_id: str | None = None,
+) -> list[dict[str, Any]]:
+    where = "d.project_id = ?"
+    params: list[Any] = [project_id]
+    if candidate_key_value:
+        where += " AND d.candidate_key = ?"
+        params.append(candidate_key_value)
+    if reviewer_id:
+        where += " AND d.reviewer_id = ?"
+        params.append(reviewer_id)
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        rows = connection.execute(
+            f"""SELECT d.*, r.name AS reviewer_name, r.role AS reviewer_role
+                FROM screening_blind_decisions d
+                JOIN reviewers r ON r.id = d.reviewer_id
+                WHERE {where}
+                ORDER BY d.candidate_key, r.name COLLATE NOCASE""",
+            params,
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_blind_audit(
+    project_id: str,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    limit = max(1, min(limit, 1000))
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        rows = connection.execute(
+            """SELECT a.*, r.name AS reviewer_name
+               FROM screening_blind_audit a
+               LEFT JOIN reviewers r ON r.id = a.reviewer_id
+               WHERE a.project_id = ?
+               ORDER BY a.id DESC LIMIT ?""",
+            (project_id, limit),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def blind_screening_summary(project_id: str) -> list[dict[str, Any]]:
+    decisions = list_blind_decisions(project_id)
+    by_key: dict[str, list[dict[str, Any]]] = {}
+    for item in decisions:
+        by_key.setdefault(item["candidate_key"], []).append(item)
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        candidates = connection.execute(
+            """SELECT candidate_key, title, status
+               FROM screening_candidates WHERE project_id = ?
+               ORDER BY title, candidate_key""",
+            (project_id,),
+        ).fetchall()
+    summary = []
+    for candidate in candidates:
+        key = candidate["candidate_key"]
+        items = by_key.get(key, [])
+        active = [
+            item
+            for item in items
+            if item["status"] in {"included", "excluded"}
+        ]
+        statuses = {item["status"] for item in active}
+        if not items:
+            state = "unreviewed"
+        elif any(item["status"] == "pending" for item in items):
+            state = "awaiting"
+        elif len(active) < 2:
+            state = "single"
+        elif len(statuses) == 1:
+            state = "agreed"
+        else:
+            state = "conflict"
+        summary.append(
+            {
+                "candidate_key": key,
+                "title": candidate["title"],
+                "candidate_status": candidate["status"],
+                "state": state,
+                "decisions": items,
+                "fingerprint": _blind_fingerprint(items),
+            }
+        )
+    return summary
+
+
+def _write_resolution(
+    connection: sqlite3.Connection,
+    project_id: str,
+    candidate_key_value: str,
+    coordinator: sqlite3.Row,
+    decisions: list[dict[str, Any]],
+    final_status: str,
+    reason: str | None,
+    notes: str,
+    resolution_type: str,
+    now: str,
+) -> None:
+    candidate = connection.execute(
+        """SELECT status, exclusion_reason, notes FROM screening_candidates
+           WHERE project_id = ? AND candidate_key = ?""",
+        (project_id, candidate_key_value),
+    ).fetchone()
+    if candidate is None:
+        raise ValueError("候选文献不存在。")
+    if candidate["status"] != final_status:
+        fulltext = connection.execute(
+            """SELECT 1 FROM screening_fulltext
+               WHERE project_id = ? AND candidate_key = ?""",
+            (project_id, candidate_key_value),
+        ).fetchone()
+        if fulltext is not None:
+            raise ValueError(
+                "该文献已有全文阶段记录，请先重置全文阶段再修改题摘决定。"
+            )
+    connection.execute(
+        """UPDATE screening_candidates
+           SET status = ?, exclusion_reason = ?, notes = ?, updated_at = ?
+           WHERE project_id = ? AND candidate_key = ?""",
+        (final_status, reason, notes, now, project_id, candidate_key_value),
+    )
+    connection.execute(
+        """INSERT INTO screening_audit(
+               project_id, candidate_key, old_status, new_status,
+               old_reason, new_reason, old_notes, new_notes, changed_at,
+               ai_task_id, ai_action, actor
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)""",
+        (
+            project_id,
+            candidate_key_value,
+            candidate["status"],
+            final_status,
+            candidate["exclusion_reason"],
+            reason,
+            candidate["notes"],
+            notes,
+            now,
+            coordinator["id"],
+        ),
+    )
+    connection.execute(
+        """INSERT INTO screening_conflict_resolutions(
+               project_id, candidate_key, resolution_type, reviewer_ids_json,
+               decisions_json, final_status, final_reason, notes,
+               coordinator_id, created_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            project_id,
+            candidate_key_value,
+            resolution_type,
+            json.dumps(
+                [item["reviewer_id"] for item in decisions], ensure_ascii=False
+            ),
+            json.dumps(
+                [
+                    {
+                        "reviewer_id": item["reviewer_id"],
+                        "reviewer_name": item.get("reviewer_name") or "",
+                        "status": item["status"],
+                        "exclusion_reason": item.get("exclusion_reason"),
+                        "notes": item.get("notes") or "",
+                        "revision": item.get("revision"),
+                    }
+                    for item in decisions
+                ],
+                ensure_ascii=False,
+            ),
+            final_status,
+            reason,
+            notes,
+            coordinator["id"],
+            now,
+        ),
+    )
+
+
+def resolve_blind_conflict(
+    project_id: str,
+    candidate_key_value: str,
+    coordinator_id: str,
+    final_status: str,
+    *,
+    reason: str | None = None,
+    notes: str = "",
+    expected_fingerprint: str | None = None,
+) -> dict[str, Any]:
+    if final_status not in {"included", "excluded"}:
+        raise ValueError("冲突解决必须选择纳入或排除。")
+    if final_status == "excluded":
+        if reason not in EXCLUSION_REASONS:
+            raise ValueError("排除时必须选择标准排除原因。")
+    else:
+        reason = None
+    notes = str(notes or "").strip()
+    if len(notes) > 2000:
+        raise ValueError("备注不能超过 2000 个字符。")
+    with _connection() as connection:
+        _require_unlocked(connection, project_id)
+        coordinator = _reviewer(connection, coordinator_id)
+        if coordinator["role"] != "coordinator":
+            raise ValueError("只有协调者可以解决盲筛冲突。")
+        decisions = list_blind_decisions(
+            project_id, candidate_key_value=candidate_key_value
+        )
+        active = [
+            item for item in decisions if item["status"] in {"included", "excluded"}
+        ]
+        if len(active) < 2 or len({item["status"] for item in active}) < 2:
+            raise ValueError("没有可解决的盲筛冲突。")
+        fingerprint = _blind_fingerprint(decisions)
+        if expected_fingerprint and str(expected_fingerprint) != fingerprint:
+            raise ValueError("盲筛决定已变化，请刷新后重试。")
+        _write_resolution(
+            connection,
+            project_id,
+            candidate_key_value,
+            coordinator,
+            decisions,
+            final_status,
+            reason,
+            notes,
+            "conflict",
+            _timestamp(),
+        )
+    return {"fingerprint": fingerprint, "final_status": final_status}
+
+
+def confirm_blind_agreement(
+    project_id: str,
+    candidate_key_value: str,
+    coordinator_id: str,
+    *,
+    reason: str | None = None,
+    notes: str = "",
+    expected_fingerprint: str | None = None,
+) -> dict[str, Any]:
+    notes = str(notes or "").strip()
+    if len(notes) > 2000:
+        raise ValueError("备注不能超过 2000 个字符。")
+    with _connection() as connection:
+        _require_unlocked(connection, project_id)
+        coordinator = _reviewer(connection, coordinator_id)
+        if coordinator["role"] != "coordinator":
+            raise ValueError("只有协调者可以确认盲筛一致结果。")
+        decisions = list_blind_decisions(
+            project_id, candidate_key_value=candidate_key_value
+        )
+        active = [
+            item for item in decisions if item["status"] in {"included", "excluded"}
+        ]
+        if len(active) < 2 or len({item["status"] for item in active}) != 1:
+            raise ValueError("盲筛决定尚未形成一致结果。")
+        final_status = active[0]["status"]
+        if final_status == "excluded":
+            derived = next(
+                (
+                    item.get("exclusion_reason")
+                    for item in active
+                    if item.get("exclusion_reason") in EXCLUSION_REASONS
+                ),
+                None,
+            )
+            if reason not in EXCLUSION_REASONS:
+                reason = derived or "其他"
+        else:
+            reason = None
+        fingerprint = _blind_fingerprint(decisions)
+        if expected_fingerprint and str(expected_fingerprint) != fingerprint:
+            raise ValueError("盲筛决定已变化，请刷新后重试。")
+        _write_resolution(
+            connection,
+            project_id,
+            candidate_key_value,
+            coordinator,
+            decisions,
+            final_status,
+            reason,
+            notes,
+            "agreement",
+            _timestamp(),
+        )
+    return {"fingerprint": fingerprint, "final_status": final_status}
+
+
+def list_conflict_resolutions(
+    project_id: str,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    limit = max(1, min(limit, 1000))
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        rows = connection.execute(
+            """SELECT * FROM screening_conflict_resolutions
+               WHERE project_id = ?
+               ORDER BY id DESC LIMIT ?""",
+            (project_id, limit),
+        ).fetchall()
+    resolutions = []
+    for row in rows:
+        item = dict(row)
+        item["reviewer_ids"] = json.loads(item.pop("reviewer_ids_json"))
+        item["decisions"] = json.loads(item.pop("decisions_json"))
+        resolutions.append(item)
+    return resolutions
 
 
 def prisma_counts(project_id: str) -> dict[str, Any]:
@@ -3668,6 +4238,7 @@ def apply_screening_review(
     *,
     reason: str | None = None,
     note: str = "",
+    actor: str = "",
 ) -> dict[str, Any]:
     if final_status not in {"pending", "included", "excluded"}:
         raise ValueError("筛选状态无效。")
@@ -3732,8 +4303,8 @@ def apply_screening_review(
                     """INSERT INTO screening_audit(
                            project_id, candidate_key, old_status, new_status,
                            old_reason, new_reason, old_notes, new_notes, changed_at,
-                           ai_task_id, ai_action
-                       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                           ai_task_id, ai_action, actor
+                       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         project_id,
                         candidate_key_value,
@@ -3746,6 +4317,7 @@ def apply_screening_review(
                         now,
                         task_id,
                         review_status,
+                        str(actor or ""),
                     ),
                 )
                 connection.execute(

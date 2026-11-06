@@ -433,6 +433,7 @@ SCREENING_AUDIT_COLUMNS = [
     "changed_at",
     "ai_task_id",
     "ai_action",
+    "actor",
 ]
 FULLTEXT_AUDIT_COLUMNS = [
     "id",
@@ -444,6 +445,7 @@ FULLTEXT_AUDIT_COLUMNS = [
     "old_notes",
     "new_notes",
     "changed_at",
+    "actor",
 ]
 
 

@@ -1,3 +1,9 @@
+## [1.25.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.24.4...v1.25.0) (2026-11-06)
+
+### Features
+
+* add blind dual screening with roles and conflict resolution ([183d9f7](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/183d9f7bafa96cb44bb155bab622c0e7345f0305))
+
 ## [1.24.4](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.24.3...v1.24.4) (2026-11-06)
 
 ## [1.24.3](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.24.2...v1.24.3) (2026-11-06)

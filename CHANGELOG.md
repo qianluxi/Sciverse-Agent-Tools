@@ -1,3 +1,9 @@
+## [1.26.4](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.26.3...v1.26.4) (2026-11-06)
+
+### Bug Fixes
+
+* bootstrap collaboration PINs and unblock legacy reviewers ([bd323dc](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/bd323dc69a5481c8484037d208a473e0a0af041f))
+
 ## [1.26.3](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.26.2...v1.26.3) (2026-11-06)
 
 ### Bug Fixes

@@ -1,3 +1,9 @@
+## [1.26.3](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.26.2...v1.26.3) (2026-11-06)
+
+### Bug Fixes
+
+* harden collaboration identity isolation and concurrency ([042e052](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/042e0529c24584c86b993c0ca04ae7292bfee92e))
+
 ## [1.26.2](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.26.1...v1.26.2) (2026-11-06)
 
 ## [1.26.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.26.0...v1.26.1) (2026-11-06)

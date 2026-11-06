@@ -28,8 +28,9 @@ STATE_LABELS = {
 st.set_page_config(page_title="协作审核 · Sciverse", page_icon="S", layout="wide")
 st.title("协作审核")
 st.caption(
-    "双人盲筛与冲突解决：审核员独立提交决定，协调者查看对比并做最终确认。"
-    "AI 不会参与本页决定，所有操作保留审计。"
+    "可选方法学模块：个人使用可继续走单人筛选，不需要本页。"
+    "双人盲筛与冲突解决中，审核员独立提交决定，协调者查看对比并做最终确认；"
+    "AI 仅提供优先级和预填建议，所有决定由人工确认并保留审计。"
 )
 
 if "collab_message" in st.session_state:

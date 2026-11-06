@@ -3,6 +3,11 @@ from __future__ import annotations
 import streamlit as st
 
 from research_app import storage
+from research_app.ai_screening import CONFIDENCE_LABELS, SUGGESTION_LABELS
+from research_app.collaboration import (
+    export_blind_decisions_csv,
+    export_resolutions_csv,
+)
 from research_app.project_ui import project_selector
 from research_app.screening import EXCLUSION_REASONS, STATUS_LABELS
 
@@ -101,6 +106,103 @@ candidate_map = {
     candidate["candidate_key"]: candidate for candidate in candidates
 }
 
+st.markdown("### AI 辅助优先队列")
+priority = storage.ai_priority_candidates(project_id)
+if priority:
+    st.dataframe(
+        [
+            {
+                "优先级": item["priority_label"],
+                "文献": item["title"] or item["candidate_key"],
+                "AI 建议": SUGGESTION_LABELS.get(
+                    item["ai_suggestion"], item["ai_suggestion"] or "—"
+                ),
+                "置信度": CONFIDENCE_LABELS.get(
+                    item["ai_confidence"], item["ai_confidence"] or "—"
+                ),
+                "盲筛状态": STATE_LABELS.get(item["blind_state"], item["blind_state"]),
+                "候选状态": STATUS_LABELS.get(
+                    item["candidate_status"], item["candidate_status"]
+                ),
+            }
+            for item in priority
+        ],
+        hide_index=True,
+        use_container_width=True,
+    )
+    if current["role"] != "viewer":
+        priority_map = {item["candidate_key"]: item for item in priority}
+        own_keys = {
+            item["candidate_key"]
+            for item in storage.list_blind_decisions(
+                project_id, reviewer_id=current["id"]
+            )
+        }
+        prefill_pool = [
+            item
+            for item in priority
+            if item["ai_suggestion"] in {"include", "exclude"}
+            and item["candidate_key"] not in own_keys
+        ]
+        if prefill_pool:
+            selected_prefill = st.multiselect(
+                "选择要按 AI 建议预填的文献",
+                [item["candidate_key"] for item in prefill_pool],
+                format_func=lambda value: (
+                    f"{priority_map[value]['title'] or value} · "
+                    f"{SUGGESTION_LABELS.get(priority_map[value]['ai_suggestion'], '')}"
+                ),
+                key=f"collab_prefill_{project_id}_{current['id']}",
+            )
+            confirm_prefill = st.checkbox(
+                "我已逐条核对 AI 建议，确认这些盲筛决定由我保存",
+                key=f"collab_prefill_confirm_{project_id}_{current['id']}",
+            )
+            if st.button(
+                "批量保存预填决定",
+                disabled=not selected_prefill or not confirm_prefill,
+                key=f"collab_prefill_save_{project_id}_{current['id']}",
+            ):
+                saved = 0
+                skipped = 0
+                for key in selected_prefill:
+                    item = priority_map[key]
+                    blind_status = (
+                        "included"
+                        if item["ai_suggestion"] == "include"
+                        else "excluded"
+                    )
+                    try:
+                        storage.set_blind_decision(
+                            project_id,
+                            key,
+                            current["id"],
+                            blind_status,
+                            reason="其他" if blind_status == "excluded" else None,
+                            notes="AI 建议预填，已人工确认",
+                            ai_task_id=item["ai_task_id"],
+                            ai_suggestion=item["ai_suggestion"],
+                            ai_confidence=item["ai_confidence"],
+                            ai_assisted=True,
+                        )
+                        saved += 1
+                    except Exception:  # noqa: BLE001
+                        skipped += 1
+                st.session_state["collab_message"] = (
+                    f"已保存 {saved} 条 AI 预填决定"
+                    + (f"，{skipped} 条失败" if skipped else "")
+                    + "；排除原因默认为“其他”，可逐条修改。"
+                )
+                st.rerun()
+        else:
+            st.caption(
+                "没有可批量预填的文献（需有 AI 明确建议且本人尚未提交决定）。"
+            )
+    else:
+        st.caption("只读角色不能使用批量预填。")
+else:
+    st.caption("暂无 AI 筛选建议，无法生成优先队列。")
+
 st.markdown("### 我的盲筛决定")
 selected_key = st.selectbox(
     "选择文献",
@@ -124,6 +226,13 @@ if own:
             else ""
         )
     )
+    if own.get("ai_assisted"):
+        st.caption(
+            "AI 辅助来源："
+            f"{SUGGESTION_LABELS.get(own.get('ai_suggestion') or '', own.get('ai_suggestion') or '—')}"
+            f" · 置信度 {CONFIDENCE_LABELS.get(own.get('ai_confidence') or '', own.get('ai_confidence') or '—')}"
+            f" · 任务 `{own.get('ai_task_id') or '—'}`"
+        )
 else:
     st.caption("尚未提交盲筛决定。")
 
@@ -309,6 +418,7 @@ if blind_audit:
                 "文献": item["candidate_key"],
                 "原状态": STATUS_LABELS.get(item["old_status"] or "", ""),
                 "新状态": STATUS_LABELS.get(item["new_status"], item["new_status"]),
+                "AI 辅助": "是" if item.get("ai_suggestion") else "否",
                 "备注": item["new_notes"] or "",
             }
             for item in blind_audit
@@ -339,4 +449,22 @@ if resolutions:
         ],
         hide_index=True,
         use_container_width=True,
+    )
+
+download_columns = st.columns(2)
+with download_columns[0]:
+    st.download_button(
+        "下载盲筛决定 CSV",
+        data=export_blind_decisions_csv(project_id),
+        file_name="sciverse-blind-decisions.csv",
+        mime="text/csv",
+        key="download_blind_decisions",
+    )
+with download_columns[1]:
+    st.download_button(
+        "下载冲突/一致确认 CSV",
+        data=export_resolutions_csv(project_id),
+        file_name="sciverse-conflict-resolutions.csv",
+        mime="text/csv",
+        key="download_conflict_resolutions",
     )

@@ -26,7 +26,7 @@ from research_app.screening import (
 )
 
 
-_SCHEMA_VERSION = 18
+_SCHEMA_VERSION = 19
 SCHEMA_VERSION = _SCHEMA_VERSION
 _BACKUP_SCHEMA_VERSION = 2
 _MAX_HISTORY_ENTRIES = 50
@@ -900,6 +900,36 @@ def _migrate(connection: sqlite3.Connection) -> None:
         )
         version = 18
         connection.execute("PRAGMA user_version = 18")
+    if version < 19:
+        for table in ("screening_blind_decisions", "screening_blind_audit"):
+            columns = {
+                row["name"]
+                for row in connection.execute(
+                    f"PRAGMA table_info({table})"
+                ).fetchall()
+            }
+            for column, definition in (
+                ("ai_task_id", "TEXT NOT NULL DEFAULT ''"),
+                ("ai_suggestion", "TEXT NOT NULL DEFAULT ''"),
+                ("ai_confidence", "TEXT NOT NULL DEFAULT ''"),
+            ):
+                if column not in columns:
+                    connection.execute(
+                        f"ALTER TABLE {table} ADD COLUMN {column} {definition}"
+                    )
+        decision_columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(screening_blind_decisions)"
+            ).fetchall()
+        }
+        if "ai_assisted" not in decision_columns:
+            connection.execute(
+                "ALTER TABLE screening_blind_decisions "
+                "ADD COLUMN ai_assisted INTEGER NOT NULL DEFAULT 0"
+            )
+        version = 19
+        connection.execute("PRAGMA user_version = 19")
 
 
 @contextmanager
@@ -2294,6 +2324,10 @@ def set_blind_decision(
     reason: str | None = None,
     notes: str = "",
     expected_revision: int | None = None,
+    ai_task_id: str = "",
+    ai_suggestion: str = "",
+    ai_confidence: str = "",
+    ai_assisted: bool = False,
 ) -> dict[str, Any]:
     if status not in BLIND_STATUSES:
         raise ValueError("盲筛状态无效。")
@@ -2305,6 +2339,20 @@ def set_blind_decision(
     notes = str(notes or "").strip()
     if len(notes) > 2000:
         raise ValueError("备注不能超过 2000 个字符。")
+    ai_task_value = str(ai_task_id or "").strip()
+    ai_suggestion_value = str(ai_suggestion or "").strip()
+    if ai_suggestion_value not in {"", "include", "exclude", "uncertain"}:
+        ai_suggestion_value = ""
+    ai_confidence_value = str(ai_confidence or "").strip().casefold()
+    if ai_confidence_value not in {"", "high", "medium", "low"}:
+        ai_confidence_value = ""
+    ai_provided = bool(
+        ai_task_value
+        or ai_suggestion_value
+        or ai_confidence_value
+        or ai_assisted
+    )
+    ai_assisted_value = bool(ai_assisted and ai_suggestion_value)
     now = _timestamp()
     with _connection() as connection:
         _require_unlocked(connection, project_id)
@@ -2319,7 +2367,8 @@ def set_blind_decision(
         if candidate is None:
             raise ValueError("候选文献不存在。")
         existing = connection.execute(
-            """SELECT status, exclusion_reason, notes, revision
+            """SELECT status, exclusion_reason, notes, revision,
+                      ai_task_id, ai_suggestion, ai_confidence, ai_assisted
                FROM screening_blind_decisions
                WHERE project_id = ? AND candidate_key = ? AND reviewer_id = ?""",
             (project_id, candidate_key_value, reviewer["id"]),
@@ -2332,24 +2381,52 @@ def set_blind_decision(
                 raise ValueError("盲筛版本号无效。") from error
             if expected != revision:
                 raise ValueError("盲筛决定已被他人更新，请刷新后重试。")
-        if (
+        same_content = (
             existing is not None
             and existing["status"] == status
             and (existing["exclusion_reason"] or None) == reason
             and existing["notes"] == notes
+        )
+        if ai_provided:
+            new_ai = (
+                ai_task_value,
+                ai_suggestion_value,
+                ai_confidence_value,
+                1 if ai_assisted_value else 0,
+            )
+        elif same_content:
+            new_ai = (
+                existing["ai_task_id"],
+                existing["ai_suggestion"],
+                existing["ai_confidence"],
+                int(existing["ai_assisted"] or 0),
+            )
+        else:
+            new_ai = ("", "", "", 0)
+        if same_content and new_ai == (
+            existing["ai_task_id"],
+            existing["ai_suggestion"],
+            existing["ai_confidence"],
+            int(existing["ai_assisted"] or 0),
         ):
             return {"revision": revision, "created": False}
         new_revision = revision + 1
         connection.execute(
             """INSERT INTO screening_blind_decisions(
                    project_id, candidate_key, reviewer_id, status,
-                   exclusion_reason, notes, revision, created_at, updated_at
-               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   exclusion_reason, notes, revision, ai_task_id,
+                   ai_suggestion, ai_confidence, ai_assisted,
+                   created_at, updated_at
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(project_id, candidate_key, reviewer_id) DO UPDATE SET
                    status = excluded.status,
                    exclusion_reason = excluded.exclusion_reason,
                    notes = excluded.notes,
                    revision = excluded.revision,
+                   ai_task_id = excluded.ai_task_id,
+                   ai_suggestion = excluded.ai_suggestion,
+                   ai_confidence = excluded.ai_confidence,
+                   ai_assisted = excluded.ai_assisted,
                    updated_at = excluded.updated_at""",
             (
                 project_id,
@@ -2359,6 +2436,10 @@ def set_blind_decision(
                 reason,
                 notes,
                 new_revision,
+                new_ai[0],
+                new_ai[1],
+                new_ai[2],
+                new_ai[3],
                 now,
                 now,
             ),
@@ -2367,8 +2448,8 @@ def set_blind_decision(
             """INSERT INTO screening_blind_audit(
                    project_id, candidate_key, reviewer_id, old_status,
                    new_status, old_reason, new_reason, old_notes, new_notes,
-                   changed_at
-               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   changed_at, ai_task_id, ai_suggestion, ai_confidence
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 project_id,
                 candidate_key_value,
@@ -2380,6 +2461,9 @@ def set_blind_decision(
                 existing["notes"] if existing else None,
                 notes,
                 now,
+                new_ai[0],
+                new_ai[1],
+                new_ai[2],
             ),
         )
     return {"revision": new_revision, "created": True}
@@ -2474,6 +2558,54 @@ def blind_screening_summary(project_id: str) -> list[dict[str, Any]]:
             }
         )
     return summary
+
+
+_AI_CONFIDENCE_RANK = {"high": 0, "medium": 1, "low": 2}
+
+
+def ai_priority_candidates(project_id: str) -> list[dict[str, Any]]:
+    saved = load_latest_screening_suggestions(project_id, kind="screening")
+    suggestions: dict[str, dict[str, Any]] = {}
+    task_id = ""
+    if saved:
+        task_id = saved["task"]["id"]
+        for item in saved["suggestions"]:
+            suggestions[item["candidate_key"]] = item
+    rows = []
+    for item in blind_screening_summary(project_id):
+        suggestion = suggestions.get(item["candidate_key"]) or {}
+        ai_suggestion = str(suggestion.get("suggestion") or "")
+        ai_confidence = str(suggestion.get("confidence") or "")
+        if item["state"] == "conflict":
+            rank, label = 0, "盲筛冲突"
+        elif ai_suggestion in {"include", "exclude"} and item["state"] != "agreed":
+            rank, label = 1, "AI 明确建议"
+        elif ai_suggestion == "uncertain":
+            rank, label = 2, "AI 不确定"
+        else:
+            rank, label = 3, "无 AI 建议"
+        rows.append(
+            {
+                "candidate_key": item["candidate_key"],
+                "title": item["title"],
+                "candidate_status": item["candidate_status"],
+                "blind_state": item["state"],
+                "priority_rank": rank,
+                "priority_label": label,
+                "ai_task_id": task_id,
+                "ai_suggestion": ai_suggestion,
+                "ai_confidence": ai_confidence,
+                "decisions": item["decisions"],
+            }
+        )
+    rows.sort(
+        key=lambda row: (
+            row["priority_rank"],
+            _AI_CONFIDENCE_RANK.get(row["ai_confidence"], 3),
+            row["title"] or "",
+        )
+    )
+    return rows
 
 
 def _write_resolution(

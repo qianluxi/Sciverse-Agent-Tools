@@ -58,6 +58,84 @@ def test_collaboration_page_coordinator_resolves_conflict(monkeypatch, tmp_path)
     assert resolutions[0]["resolution_type"] == "conflict"
 
 
+def test_collaboration_page_batch_ai_prefill(monkeypatch, tmp_path):
+    monkeypatch.setattr(storage, "database_path", lambda: tmp_path / "workbench.sqlite3")
+    project_id = storage.create_screening_project("Review", "Q", "I", "E")
+    storage.add_screening_candidates(
+        project_id,
+        [
+            {"title": "Paper B", "unique_id": "paper:b"},
+            {"title": "Paper D", "unique_id": "paper:d"},
+        ],
+    )
+    reviewer = storage.create_reviewer("Alice", "reviewer")
+    task_id = storage.create_ai_task(
+        project_id,
+        kind="screening",
+        model="test-model",
+        prompt_version="screening-v2",
+        input_hash="page-ai",
+    )
+    storage.save_screening_suggestions(
+        project_id,
+        task_id,
+        [
+            {
+                "candidate_key": "uid:paper:b",
+                "paper_id": "paper:b",
+                "title": "Paper B",
+                "suggestion": "include",
+                "criteria": [],
+                "rationale": "",
+                "confidence": "high",
+                "evidence_quotes": [],
+                "quote_checks": [],
+                "invalid_criteria": [],
+            },
+            {
+                "candidate_key": "uid:paper:d",
+                "paper_id": "paper:d",
+                "title": "Paper D",
+                "suggestion": "exclude",
+                "criteria": [],
+                "rationale": "",
+                "confidence": "low",
+                "evidence_quotes": [],
+                "quote_checks": [],
+                "invalid_criteria": [],
+            },
+        ],
+    )
+
+    app = _app(project_id, reviewer)
+    prefill = next(
+        item
+        for item in app.multiselect
+        if item.label == "选择要按 AI 建议预填的文献"
+    )
+    prefill.set_value(["uid:paper:b", "uid:paper:d"])
+    next(
+        item
+        for item in app.checkbox
+        if "我已逐条核对 AI 建议" in item.label
+    ).set_value(True)
+    next(
+        button for button in app.button if button.label == "批量保存预填决定"
+    ).click()
+    app.run(timeout=30)
+
+    assert not app.exception
+    decisions = {
+        item["candidate_key"]: item
+        for item in storage.list_blind_decisions(project_id, reviewer_id=reviewer)
+    }
+    assert decisions["uid:paper:b"]["status"] == "included"
+    assert decisions["uid:paper:d"]["status"] == "excluded"
+    assert decisions["uid:paper:b"]["ai_assisted"] == 1
+    assert decisions["uid:paper:b"]["ai_task_id"] == task_id
+    assert decisions["uid:paper:d"]["ai_suggestion"] == "exclude"
+
+
 def test_collaboration_page_reviewer_cannot_see_coordinator_actions(
     monkeypatch, tmp_path
 ):

@@ -950,7 +950,7 @@ def test_schema_v10_tables_are_created(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     _project()
     with storage._connection() as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 18
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 19
         tables = {
             row[0]
             for row in connection.execute(
@@ -1127,7 +1127,7 @@ def test_v10_database_migrates_review_status_and_locks_benchmark(monkeypatch, tm
     assert storage.get_screening_project("popen")["lock_status"] == "open"
 
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 18
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 19
         suggestion = connection.execute(
             """SELECT suggestion, review_status, review_decision, review_note
                FROM ai_screening_suggestions WHERE task_id = 't1'"""

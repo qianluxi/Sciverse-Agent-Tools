@@ -237,6 +237,140 @@ def test_confirm_agreement_and_fulltext_guard(monkeypatch, tmp_path):
         )
 
 
+def _add_ai_suggestions(project_id):
+    task_id = storage.create_ai_task(
+        project_id,
+        kind="screening",
+        model="test-model",
+        prompt_version="screening-v2",
+        input_hash="collab-ai",
+    )
+    storage.save_screening_suggestions(
+        project_id,
+        task_id,
+        [
+            {
+                "candidate_key": "uid:paper:b",
+                "paper_id": "paper:b",
+                "title": "Paper B",
+                "suggestion": "include",
+                "criteria": [],
+                "rationale": "",
+                "confidence": "high",
+                "evidence_quotes": [],
+                "quote_checks": [],
+                "invalid_criteria": [],
+            },
+            {
+                "candidate_key": "uid:paper:c",
+                "paper_id": "paper:c",
+                "title": "Paper C",
+                "suggestion": "uncertain",
+                "criteria": [],
+                "rationale": "",
+                "confidence": "low",
+                "evidence_quotes": [],
+                "quote_checks": [],
+                "invalid_criteria": [],
+            },
+            {
+                "candidate_key": "uid:paper:d",
+                "paper_id": "paper:d",
+                "title": "Paper D",
+                "suggestion": "exclude",
+                "criteria": [],
+                "rationale": "",
+                "confidence": "low",
+                "evidence_quotes": [],
+                "quote_checks": [],
+                "invalid_criteria": [],
+            },
+        ],
+    )
+    return task_id
+
+
+def test_ai_priority_queue_and_provenance(monkeypatch, tmp_path):
+    ctx = _setup(monkeypatch, tmp_path)
+    project_id = ctx["project_id"]
+    task_id = _add_ai_suggestions(project_id)
+    storage.set_blind_decision(
+        project_id, "uid:paper:a", ctx["reviewer_one"], "included"
+    )
+    storage.set_blind_decision(
+        project_id,
+        "uid:paper:a",
+        ctx["reviewer_two"],
+        "excluded",
+        reason="主题不相关",
+    )
+
+    priority = storage.ai_priority_candidates(project_id)
+    assert [item["candidate_key"] for item in priority] == [
+        "uid:paper:a",
+        "uid:paper:b",
+        "uid:paper:d",
+        "uid:paper:c",
+    ]
+    assert priority[0]["priority_rank"] == 0
+    assert priority[1]["ai_suggestion"] == "include"
+    assert priority[1]["ai_task_id"] == task_id
+    assert priority[2]["ai_suggestion"] == "exclude"
+    assert priority[3]["ai_suggestion"] == "uncertain"
+
+    storage.set_blind_decision(
+        project_id,
+        "uid:paper:b",
+        ctx["reviewer_one"],
+        "included",
+        ai_task_id=task_id,
+        ai_suggestion="include",
+        ai_confidence="high",
+        ai_assisted=True,
+    )
+    decision = next(
+        item
+        for item in storage.list_blind_decisions(
+            project_id, reviewer_id=ctx["reviewer_one"]
+        )
+        if item["candidate_key"] == "uid:paper:b"
+    )
+    assert decision["ai_assisted"] == 1
+    assert decision["ai_suggestion"] == "include"
+    assert decision["ai_confidence"] == "high"
+
+    # Re-saving identical content without AI args keeps provenance.
+    storage.set_blind_decision(
+        project_id, "uid:paper:b", ctx["reviewer_one"], "included"
+    )
+    decision = next(
+        item
+        for item in storage.list_blind_decisions(
+            project_id, reviewer_id=ctx["reviewer_one"]
+        )
+        if item["candidate_key"] == "uid:paper:b"
+    )
+    assert decision["ai_assisted"] == 1
+
+    # Changing the decision manually clears AI provenance.
+    storage.set_blind_decision(
+        project_id,
+        "uid:paper:b",
+        ctx["reviewer_one"],
+        "excluded",
+        reason="主题不相关",
+    )
+    decision = next(
+        item
+        for item in storage.list_blind_decisions(
+            project_id, reviewer_id=ctx["reviewer_one"]
+        )
+        if item["candidate_key"] == "uid:paper:b"
+    )
+    assert decision["ai_assisted"] == 0
+    assert decision["ai_suggestion"] == ""
+
+
 def test_blind_audit_is_append_only(monkeypatch, tmp_path):
     ctx = _setup(monkeypatch, tmp_path)
     project_id = ctx["project_id"]

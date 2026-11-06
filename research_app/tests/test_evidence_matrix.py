@@ -272,7 +272,7 @@ def test_v14_missing_error_column_migrates_to_latest(monkeypatch, tmp_path):
     storage.get_screening_project(project_id)
 
     with sqlite3.connect(db_path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 19
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 20
         columns = {
             row[1]
             for row in connection.execute(
@@ -292,7 +292,7 @@ def test_v14_missing_error_column_migrates_to_latest(monkeypatch, tmp_path):
     # Running initialization again must be a no-op.
     storage.get_screening_project(project_id)
     with sqlite3.connect(db_path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 19
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 20
 
 
 def test_task_inputs_are_frozen(monkeypatch, tmp_path):

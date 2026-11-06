@@ -35,6 +35,7 @@ def _app(project_id, reviewer_id):
     app.session_state["current_project_id"] = project_id
     app.session_state["collab_project_selector"] = project_id
     app.session_state["collab_current_reviewer"] = reviewer_id
+    app.session_state["collab_unlocked_reviewer"] = reviewer_id
     return app.run(timeout=30)
 
 
@@ -56,6 +57,38 @@ def test_collaboration_page_coordinator_resolves_conflict(monkeypatch, tmp_path)
     assert candidates["uid:paper:a"]["status"] == "included"
     resolutions = storage.list_conflict_resolutions(project_id)
     assert resolutions[0]["resolution_type"] == "conflict"
+
+
+def test_collaboration_page_requires_pin_to_unlock(monkeypatch, tmp_path):
+    monkeypatch.setattr(storage, "database_path", lambda: tmp_path / "workbench.sqlite3")
+    project_id = storage.create_screening_project("Review", "Q", "I", "E")
+    storage.add_screening_candidates(
+        project_id, [{"title": "Paper A", "unique_id": "paper:a"}]
+    )
+    reviewer = storage.create_reviewer("Pinned", "reviewer", "2468")
+
+    app = AppTest.from_file(str(PAGE_PATH), default_timeout=30)
+    app.session_state["current_project_id"] = project_id
+    app.session_state["collab_project_selector"] = project_id
+    app.session_state["collab_current_reviewer"] = reviewer
+    app.run(timeout=30)
+
+    assert any("输入 PIN" in info.value for info in app.info)
+
+    pin = next(item for item in app.text_input if item.label == "PIN")
+    pin.set_value("0000")
+    next(
+        button for button in app.button if button.label == "解锁身份"
+    ).click().run(timeout=30)
+    assert any("PIN 不正确" in error.value for error in app.error)
+
+    pin = next(item for item in app.text_input if item.label == "PIN")
+    pin.set_value("2468")
+    next(
+        button for button in app.button if button.label == "解锁身份"
+    ).click().run(timeout=30)
+    assert not app.exception
+    assert any("当前审核人：Pinned" in caption.value for caption in app.caption)
 
 
 def test_collaboration_page_batch_ai_prefill(monkeypatch, tmp_path):

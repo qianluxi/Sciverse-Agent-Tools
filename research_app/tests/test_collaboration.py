@@ -1,3 +1,5 @@
+import threading
+
 import pytest
 
 import research_app.storage as storage
@@ -85,7 +87,11 @@ def test_blind_decision_revision_concurrency(monkeypatch, tmp_path):
     )
     assert first == {"revision": 1, "created": True}
     same = storage.set_blind_decision(
-        project_id, "uid:paper:a", ctx["reviewer_one"], "included"
+        project_id,
+        "uid:paper:a",
+        ctx["reviewer_one"],
+        "included",
+        expected_revision=1,
     )
     assert same == {"revision": 1, "created": False}
     with pytest.raises(ValueError):
@@ -327,6 +333,7 @@ def test_ai_priority_queue_and_provenance(monkeypatch, tmp_path):
         ai_suggestion="include",
         ai_confidence="high",
         ai_assisted=True,
+        expected_revision=0,
     )
     decision = next(
         item
@@ -341,7 +348,11 @@ def test_ai_priority_queue_and_provenance(monkeypatch, tmp_path):
 
     # Re-saving identical content without AI args keeps provenance.
     storage.set_blind_decision(
-        project_id, "uid:paper:b", ctx["reviewer_one"], "included"
+        project_id,
+        "uid:paper:b",
+        ctx["reviewer_one"],
+        "included",
+        expected_revision=1,
     )
     decision = next(
         item
@@ -359,6 +370,7 @@ def test_ai_priority_queue_and_provenance(monkeypatch, tmp_path):
         ctx["reviewer_one"],
         "excluded",
         reason="主题不相关",
+        expected_revision=1,
     )
     decision = next(
         item
@@ -390,3 +402,119 @@ def test_blind_audit_is_append_only(monkeypatch, tmp_path):
     assert audit[0]["old_status"] == "included"
     assert audit[0]["new_status"] == "excluded"
     assert audit[0]["reviewer_name"] == "Alice"
+
+
+def test_reviewer_pin_authentication(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    reviewer = storage.create_reviewer("Pinned", "reviewer", "2468")
+    assert storage.verify_reviewer_pin(reviewer, "2468") is True
+    assert storage.verify_reviewer_pin(reviewer, "0000") is False
+    assert storage.verify_reviewer_pin(reviewer, "") is False
+    legacy = storage.create_reviewer("Legacy", "reviewer")
+    assert storage.verify_reviewer_pin(legacy, "anything") is False
+    storage.set_reviewer_pin(legacy, "1357")
+    assert storage.verify_reviewer_pin(legacy, "1357") is True
+
+
+def test_concurrent_first_submission_has_single_winner(monkeypatch, tmp_path):
+    ctx = _setup(monkeypatch, tmp_path)
+    project_id = ctx["project_id"]
+    reviewer = ctx["reviewer_one"]
+    barrier = threading.Barrier(2)
+    results = []
+
+    def worker(status, reason):
+        barrier.wait()
+        try:
+            storage.set_blind_decision(
+                project_id,
+                "uid:paper:a",
+                reviewer,
+                status,
+                reason=reason,
+                expected_revision=0,
+            )
+            results.append("ok")
+        except ValueError:
+            results.append("rejected")
+
+    threads = [
+        threading.Thread(target=worker, args=("included", None)),
+        threading.Thread(
+            target=worker, args=("excluded", "主题不相关")
+        ),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert sorted(results) == ["ok", "rejected"]
+    decisions = storage.list_blind_decisions(
+        project_id, reviewer_id=reviewer
+    )
+    assert len(decisions) == 1
+    assert decisions[0]["revision"] == 1
+    assert len(storage.list_blind_audit(project_id)) == 1
+
+
+def test_reason_conflict_requires_coordinator_choice(monkeypatch, tmp_path):
+    ctx = _setup(monkeypatch, tmp_path)
+    project_id = ctx["project_id"]
+    storage.set_blind_decision(
+        project_id,
+        "uid:paper:a",
+        ctx["reviewer_one"],
+        "excluded",
+        reason="主题不相关",
+    )
+    storage.set_blind_decision(
+        project_id,
+        "uid:paper:a",
+        ctx["reviewer_two"],
+        "excluded",
+        reason="研究类型不符",
+    )
+    summary = {
+        item["candidate_key"]: item
+        for item in storage.blind_screening_summary(project_id)
+    }
+    assert summary["uid:paper:a"]["state"] == "reason_conflict"
+
+    with pytest.raises(ValueError):
+        storage.confirm_blind_agreement(
+            project_id, "uid:paper:a", ctx["coordinator"]
+        )
+    storage.confirm_blind_agreement(
+        project_id,
+        "uid:paper:a",
+        ctx["coordinator"],
+        reason="其他",
+    )
+    candidates = {
+        item["candidate_key"]: item
+        for item in storage.list_all_screening_candidates(project_id)
+    }
+    assert candidates["uid:paper:a"]["status"] == "excluded"
+    assert candidates["uid:paper:a"]["exclusion_reason"] == "其他"
+
+
+def test_reviewer_priority_hides_global_blind_state(monkeypatch, tmp_path):
+    ctx = _setup(monkeypatch, tmp_path)
+    project_id = ctx["project_id"]
+    storage.set_blind_decision(
+        project_id, "uid:paper:a", ctx["reviewer_one"], "included"
+    )
+    storage.set_blind_decision(
+        project_id,
+        "uid:paper:a",
+        ctx["reviewer_two"],
+        "excluded",
+        reason="主题不相关",
+    )
+    rows = storage.reviewer_priority_candidates(
+        project_id, ctx["reviewer_one"]
+    )
+    assert rows
+    assert all("blind_state" not in row for row in rows)
+    assert all("decisions" not in row for row in rows)

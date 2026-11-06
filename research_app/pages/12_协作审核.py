@@ -22,6 +22,7 @@ STATE_LABELS = {
     "awaiting": "等待其他审核人",
     "single": "仅一人提交",
     "agreed": "一致",
+    "reason_conflict": "原因分歧",
     "conflict": "冲突",
 }
 
@@ -43,11 +44,12 @@ reviewers = storage.list_reviewers()
 with st.sidebar:
     project_id = project_selector("collab_project_selector")
     st.divider()
-    st.markdown("### 审核人")
-    current_id = None
+    st.markdown("### 审核人身份")
+    current = None
+    selected_id = None
     if reviewers:
-        current_id = st.selectbox(
-            "当前审核人",
+        selected_id = st.selectbox(
+            "选择审核人",
             [item["id"] for item in reviewers],
             format_func=lambda value: next(
                 f"{item['name']} · {ROLE_LABELS.get(item['role'], item['role'])}"
@@ -56,14 +58,33 @@ with st.sidebar:
             ),
             key="collab_current_reviewer",
         )
+        unlocked_id = st.session_state.get("collab_unlocked_reviewer")
+        if unlocked_id != selected_id:
+            pin = st.text_input(
+                "PIN",
+                type="password",
+                key=f"collab_pin_{selected_id}",
+            )
+            if st.button("解锁身份", key=f"collab_unlock_{selected_id}"):
+                if storage.verify_reviewer_pin(selected_id, pin):
+                    st.session_state["collab_unlocked_reviewer"] = selected_id
+                    st.rerun()
+                else:
+                    st.error("PIN 不正确，或该审核人尚未设置 PIN。")
+        else:
+            current = storage.get_reviewer(unlocked_id)
+            if st.button("锁定身份", key="collab_lock"):
+                st.session_state.pop("collab_unlocked_reviewer", None)
+                st.rerun()
     else:
-        st.info("还没有审核人，请先创建。")
+        st.info("还没有审核人，请先创建首个协调者并设置 PIN。")
 
-    current = storage.get_reviewer(current_id) if current_id else None
-    can_create = not reviewers or (current and current["role"] == "coordinator")
+    can_create = not reviewers or (
+        current is not None and current["role"] == "coordinator"
+    )
     with st.expander("新建审核人"):
         if not can_create:
-            st.caption("只有协调者可以创建审核人。")
+            st.caption("只有已解锁的协调者可以创建审核人。")
         else:
             name = st.text_input("姓名", key="collab_new_name")
             role = st.selectbox(
@@ -72,10 +93,37 @@ with st.sidebar:
                 format_func=lambda value: ROLE_LABELS.get(value, value),
                 key="collab_new_role",
             )
+            new_pin = st.text_input(
+                "PIN（4–32 个字符）",
+                type="password",
+                key="collab_new_pin",
+            )
             if st.button("创建审核人", key="collab_create_reviewer"):
                 try:
-                    storage.create_reviewer(name, role)
+                    storage.create_reviewer(name, role, new_pin)
                     st.session_state["collab_message"] = "审核人已创建。"
+                    st.rerun()
+                except Exception as error:  # noqa: BLE001
+                    st.error(str(error))
+    if current and current["role"] == "coordinator" and reviewers:
+        with st.expander("设置/重置审核人 PIN"):
+            target = st.selectbox(
+                "审核人",
+                [item["id"] for item in reviewers],
+                format_func=lambda value: next(
+                    item["name"] for item in reviewers if item["id"] == value
+                ),
+                key="collab_pin_target",
+            )
+            reset_pin = st.text_input(
+                "新 PIN（4–32 个字符）",
+                type="password",
+                key="collab_pin_reset",
+            )
+            if st.button("保存 PIN", key="collab_pin_save"):
+                try:
+                    storage.set_reviewer_pin(target, reset_pin)
+                    st.session_state["collab_message"] = "PIN 已更新。"
                     st.rerun()
                 except Exception as error:  # noqa: BLE001
                     st.error(str(error))
@@ -89,7 +137,7 @@ st.markdown(f"### {project['name']}")
 st.write(f"**研究问题：** {project['question']}")
 
 if current is None:
-    st.info("请在左侧创建或选择审核人。")
+    st.info("请在左侧选择审核人并输入 PIN 解锁身份后才能操作。")
     st.stop()
 
 st.caption(
@@ -108,10 +156,15 @@ candidate_map = {
 }
 
 st.markdown("### AI 辅助优先队列")
-priority = storage.ai_priority_candidates(project_id)
-if priority:
-    st.dataframe(
-        [
+if current["role"] == "viewer":
+    st.caption("只读角色不能提交决定或使用批量预填。")
+else:
+    own_priority = storage.reviewer_priority_candidates(
+        project_id, current["id"]
+    )
+    if current["role"] == "coordinator":
+        priority = storage.ai_priority_candidates(project_id)
+        table_rows = [
             {
                 "优先级": item["priority_label"],
                 "文献": item["title"] or item["candidate_key"],
@@ -121,29 +174,43 @@ if priority:
                 "置信度": CONFIDENCE_LABELS.get(
                     item["ai_confidence"], item["ai_confidence"] or "—"
                 ),
-                "盲筛状态": STATE_LABELS.get(item["blind_state"], item["blind_state"]),
+                "盲筛状态": STATE_LABELS.get(
+                    item["blind_state"], item["blind_state"]
+                ),
                 "候选状态": STATUS_LABELS.get(
                     item["candidate_status"], item["candidate_status"]
                 ),
             }
             for item in priority
-        ],
-        hide_index=True,
-        use_container_width=True,
-    )
-    if current["role"] != "viewer":
-        priority_map = {item["candidate_key"]: item for item in priority}
-        own_keys = {
-            item["candidate_key"]
-            for item in storage.list_blind_decisions(
-                project_id, reviewer_id=current["id"]
-            )
+        ]
+    else:
+        priority = own_priority
+        table_rows = [
+            {
+                "优先级": item["priority_label"],
+                "文献": item["title"] or item["candidate_key"],
+                "AI 建议": SUGGESTION_LABELS.get(
+                    item["ai_suggestion"], item["ai_suggestion"] or "—"
+                ),
+                "置信度": CONFIDENCE_LABELS.get(
+                    item["ai_confidence"], item["ai_confidence"] or "—"
+                ),
+                "我的状态": STATUS_LABELS.get(
+                    item["own_status"], item["own_status"]
+                ),
+            }
+            for item in priority
+        ]
+    if priority:
+        st.dataframe(table_rows, hide_index=True, use_container_width=True)
+        priority_map = {
+            item["candidate_key"]: item for item in own_priority
         }
         prefill_pool = [
             item
-            for item in priority
-            if item["ai_suggestion"] in {"include", "exclude"}
-            and item["candidate_key"] not in own_keys
+            for item in own_priority
+            if item["own_status"] == "pending"
+            and item["ai_suggestion"] in {"include", "exclude"}
         ]
         if prefill_pool:
             selected_prefill = st.multiselect(
@@ -181,6 +248,7 @@ if priority:
                             blind_status,
                             reason="其他" if blind_status == "excluded" else None,
                             notes="AI 建议预填，已人工确认",
+                            expected_revision=item["own_revision"],
                             ai_task_id=item["ai_task_id"],
                             ai_suggestion=item["ai_suggestion"],
                             ai_confidence=item["ai_confidence"],
@@ -200,9 +268,7 @@ if priority:
                 "没有可批量预填的文献（需有 AI 明确建议且本人尚未提交决定）。"
             )
     else:
-        st.caption("只读角色不能使用批量预填。")
-else:
-    st.caption("暂无 AI 筛选建议，无法生成优先队列。")
+        st.caption("暂无 AI 筛选建议，无法生成优先队列。")
 
 st.markdown("### 我的盲筛决定")
 selected_key = st.selectbox(
@@ -276,7 +342,7 @@ if current["role"] != "viewer":
                 status,
                 reason=reason if status == "excluded" else None,
                 notes=notes,
-                expected_revision=own["revision"] if own else None,
+                expected_revision=own["revision"] if own else 0,
             )
             st.session_state["collab_message"] = (
                 f"盲筛决定已保存（版本 {result['revision']}）。"
@@ -318,14 +384,22 @@ conflicts = [
 agreements = [
     item for item in summary if item["state"] == "agreed"
 ]
+reason_conflicts = [
+    item for item in summary if item["state"] == "reason_conflict"
+]
 
 
 def _decisions_text(item):
-    return "；".join(
-        f"{decision.get('reviewer_name') or decision['reviewer_id']}: "
-        f"{STATUS_LABELS.get(decision['status'], decision['status'])}"
-        for decision in item["decisions"]
-    )
+    parts = []
+    for decision in item["decisions"]:
+        text = (
+            f"{decision.get('reviewer_name') or decision['reviewer_id']}: "
+            f"{STATUS_LABELS.get(decision['status'], decision['status'])}"
+        )
+        if decision.get("status") == "excluded" and decision.get("exclusion_reason"):
+            text += f"（{decision['exclusion_reason']}）"
+        parts.append(text)
+    return "；".join(parts)
 
 
 if conflicts:
@@ -376,6 +450,43 @@ if conflicts:
             st.error(str(error))
 else:
     st.caption("当前没有待解决的冲突。")
+
+if reason_conflicts:
+    st.markdown("#### 排除原因分歧")
+    reason_key = st.selectbox(
+        "选择原因分歧文献",
+        [item["candidate_key"] for item in reason_conflicts],
+        format_func=lambda value: summary_map[value]["title"] or value,
+        key=f"collab_reason_conflict_{project_id}",
+    )
+    reason_conflict = summary_map[reason_key]
+    st.caption("审核决定：" + _decisions_text(reason_conflict))
+    with st.form(f"reason_form_{reason_key}"):
+        final_reason = st.selectbox(
+            "最终排除原因",
+            EXCLUSION_REASONS,
+            key=f"reason_conflict_reason_{reason_key}",
+        )
+        reason_notes = st.text_area(
+            "协调备注",
+            height=70,
+            key=f"reason_conflict_notes_{reason_key}",
+        )
+        confirmed = st.form_submit_button("确认最终排除原因")
+    if confirmed:
+        try:
+            storage.confirm_blind_agreement(
+                project_id,
+                reason_key,
+                current["id"],
+                reason=final_reason,
+                notes=reason_notes,
+                expected_fingerprint=reason_conflict["fingerprint"],
+            )
+            st.session_state["collab_message"] = "排除原因已确认。"
+            st.rerun()
+        except Exception as error:  # noqa: BLE001
+            st.error(str(error))
 
 if agreements:
     st.markdown("#### 一致结果确认")

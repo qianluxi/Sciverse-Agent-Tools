@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
+import secrets
 import sqlite3
 import stat
 import threading
@@ -26,7 +28,7 @@ from research_app.screening import (
 )
 
 
-_SCHEMA_VERSION = 19
+_SCHEMA_VERSION = 20
 SCHEMA_VERSION = _SCHEMA_VERSION
 _BACKUP_SCHEMA_VERSION = 2
 _MAX_HISTORY_ENTRIES = 50
@@ -930,13 +932,30 @@ def _migrate(connection: sqlite3.Connection) -> None:
             )
         version = 19
         connection.execute("PRAGMA user_version = 19")
+    if version < 20:
+        columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(reviewers)"
+            ).fetchall()
+        }
+        if "pin_salt" not in columns:
+            connection.execute(
+                "ALTER TABLE reviewers ADD COLUMN pin_salt TEXT NOT NULL DEFAULT ''"
+            )
+        if "pin_hash" not in columns:
+            connection.execute(
+                "ALTER TABLE reviewers ADD COLUMN pin_hash TEXT NOT NULL DEFAULT ''"
+            )
+        version = 20
+        connection.execute("PRAGMA user_version = 20")
 
 
 @contextmanager
-def _connection() -> Iterator[sqlite3.Connection]:
+def _connection(*, immediate: bool = False) -> Iterator[sqlite3.Connection]:
     path = database_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(path)
+    connection = sqlite3.connect(path, timeout=10)
     connection.row_factory = sqlite3.Row
     try:
         connection.execute("PRAGMA foreign_keys = ON")
@@ -949,6 +968,9 @@ def _connection() -> Iterator[sqlite3.Connection]:
                 path.chmod(stat.S_IRUSR | stat.S_IWUSR)
             except OSError:
                 pass
+        if immediate:
+            connection.commit()
+            connection.execute("BEGIN IMMEDIATE")
         yield connection
         connection.commit()
     except Exception:
@@ -2262,24 +2284,78 @@ def _reviewer(connection: sqlite3.Connection, reviewer_id: str) -> sqlite3.Row:
     return row
 
 
-def create_reviewer(name: str, role: str) -> str:
+def _pin_hash(pin: str, salt: str) -> str:
+    return hashlib.pbkdf2_hmac(
+        "sha256",
+        pin.encode("utf-8"),
+        bytes.fromhex(salt),
+        120000,
+    ).hex()
+
+
+def _normalized_pin(pin: str) -> str:
+    pin = str(pin or "").strip()
+    if not pin:
+        return ""
+    if not 4 <= len(pin) <= 32:
+        raise ValueError("PIN 需为 4 至 32 个字符。")
+    return pin
+
+
+def create_reviewer(name: str, role: str, pin: str = "") -> str:
     name = str(name or "").strip()
     if not name or len(name) > 100:
         raise ValueError("审核人名称需为 1 至 100 个字符。")
     if role not in REVIEWER_ROLES:
         raise ValueError("审核人角色无效。")
+    pin = _normalized_pin(pin)
+    salt = secrets.token_hex(16) if pin else ""
+    pin_hash = _pin_hash(pin, salt) if pin else ""
     reviewer_id = uuid.uuid4().hex
     now = _timestamp()
     with _connection() as connection:
         try:
             connection.execute(
-                """INSERT INTO reviewers(id, name, role, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (reviewer_id, name, role, now, now),
+                """INSERT INTO reviewers(
+                       id, name, role, pin_salt, pin_hash, created_at, updated_at
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (reviewer_id, name, role, salt, pin_hash, now, now),
             )
         except sqlite3.IntegrityError as error:
             raise ValueError("审核人名称已存在。") from error
     return reviewer_id
+
+
+def set_reviewer_pin(reviewer_id: str, pin: str) -> None:
+    pin = _normalized_pin(pin)
+    if not pin:
+        raise ValueError("PIN 不能为空。")
+    salt = secrets.token_hex(16)
+    pin_hash = _pin_hash(pin, salt)
+    with _connection() as connection:
+        _reviewer(connection, reviewer_id)
+        connection.execute(
+            """UPDATE reviewers
+               SET pin_salt = ?, pin_hash = ?, updated_at = ?
+               WHERE id = ?""",
+            (salt, pin_hash, _timestamp(), reviewer_id),
+        )
+
+
+def verify_reviewer_pin(reviewer_id: str, pin: str) -> bool:
+    pin = str(pin or "").strip()
+    if not pin:
+        return False
+    with _connection() as connection:
+        row = connection.execute(
+            "SELECT pin_salt, pin_hash FROM reviewers WHERE id = ?",
+            (str(reviewer_id or ""),),
+        ).fetchone()
+    if row is None or not row["pin_salt"] or not row["pin_hash"]:
+        return False
+    return hmac.compare_digest(
+        row["pin_hash"], _pin_hash(pin, row["pin_salt"])
+    )
 
 
 def list_reviewers() -> list[dict[str, Any]]:
@@ -2323,7 +2399,7 @@ def set_blind_decision(
     *,
     reason: str | None = None,
     notes: str = "",
-    expected_revision: int | None = None,
+    expected_revision: int | None = 0,
     ai_task_id: str = "",
     ai_suggestion: str = "",
     ai_confidence: str = "",
@@ -2354,7 +2430,7 @@ def set_blind_decision(
     )
     ai_assisted_value = bool(ai_assisted and ai_suggestion_value)
     now = _timestamp()
-    with _connection() as connection:
+    with _connection(immediate=True) as connection:
         _require_unlocked(connection, project_id)
         reviewer = _reviewer(connection, reviewer_id)
         if reviewer["role"] not in {"reviewer", "coordinator"}:
@@ -2374,13 +2450,14 @@ def set_blind_decision(
             (project_id, candidate_key_value, reviewer["id"]),
         ).fetchone()
         revision = int(existing["revision"]) if existing else 0
-        if expected_revision is not None:
-            try:
-                expected = int(expected_revision)
-            except (TypeError, ValueError) as error:
-                raise ValueError("盲筛版本号无效。") from error
-            if expected != revision:
-                raise ValueError("盲筛决定已被他人更新，请刷新后重试。")
+        try:
+            expected = int(
+                0 if expected_revision is None else expected_revision
+            )
+        except (TypeError, ValueError) as error:
+            raise ValueError("盲筛版本号无效。") from error
+        if expected != revision:
+            raise ValueError("盲筛决定已被他人更新，请刷新后重试。")
         same_content = (
             existing is not None
             and existing["status"] == status
@@ -2544,7 +2621,16 @@ def blind_screening_summary(project_id: str) -> list[dict[str, Any]]:
         elif len(active) < 2:
             state = "single"
         elif len(statuses) == 1:
-            state = "agreed"
+            if "excluded" in statuses:
+                reasons = {
+                    str(item.get("exclusion_reason") or "") for item in active
+                }
+                if len(reasons) > 1 or "" in reasons:
+                    state = "reason_conflict"
+                else:
+                    state = "agreed"
+            else:
+                state = "agreed"
         else:
             state = "conflict"
         summary.append(
@@ -2596,6 +2682,63 @@ def ai_priority_candidates(project_id: str) -> list[dict[str, Any]]:
                 "ai_suggestion": ai_suggestion,
                 "ai_confidence": ai_confidence,
                 "decisions": item["decisions"],
+            }
+        )
+    rows.sort(
+        key=lambda row: (
+            row["priority_rank"],
+            _AI_CONFIDENCE_RANK.get(row["ai_confidence"], 3),
+            row["title"] or "",
+        )
+    )
+    return rows
+
+
+def reviewer_priority_candidates(
+    project_id: str,
+    reviewer_id: str,
+) -> list[dict[str, Any]]:
+    """AI priority queue for a single reviewer without global blind state."""
+
+    saved = load_latest_screening_suggestions(project_id, kind="screening")
+    suggestions: dict[str, dict[str, Any]] = {}
+    task_id = ""
+    if saved:
+        task_id = saved["task"]["id"]
+        for item in saved["suggestions"]:
+            suggestions[item["candidate_key"]] = item
+    own = {
+        item["candidate_key"]: item
+        for item in list_blind_decisions(
+            project_id, reviewer_id=reviewer_id
+        )
+    }
+    rows = []
+    for candidate in list_all_screening_candidates(project_id):
+        key = candidate["candidate_key"]
+        decision = own.get(key) or {}
+        own_status = str(decision.get("status") or "pending")
+        suggestion = suggestions.get(key) or {}
+        ai_suggestion = str(suggestion.get("suggestion") or "")
+        ai_confidence = str(suggestion.get("confidence") or "")
+        if own_status == "pending" and ai_suggestion in {"include", "exclude"}:
+            rank, label = 1, "AI ????"
+        elif own_status == "pending" and ai_suggestion == "uncertain":
+            rank, label = 2, "AI ???"
+        else:
+            rank, label = 3, "? AI ??????"
+        rows.append(
+            {
+                "candidate_key": key,
+                "title": candidate.get("title") or "",
+                "candidate_status": candidate["status"],
+                "own_status": own_status,
+                "own_revision": int(decision.get("revision") or 0),
+                "priority_rank": rank,
+                "priority_label": label,
+                "ai_task_id": task_id,
+                "ai_suggestion": ai_suggestion,
+                "ai_confidence": ai_confidence,
             }
         )
     rows.sort(
@@ -2698,6 +2841,22 @@ def _write_resolution(
     )
 
 
+def _blind_decisions_in_connection(
+    connection: sqlite3.Connection,
+    project_id: str,
+    candidate_key_value: str,
+) -> list[dict[str, Any]]:
+    rows = connection.execute(
+        """SELECT d.*, r.name AS reviewer_name, r.role AS reviewer_role
+           FROM screening_blind_decisions d
+           JOIN reviewers r ON r.id = d.reviewer_id
+           WHERE d.project_id = ? AND d.candidate_key = ?
+           ORDER BY r.name COLLATE NOCASE""",
+        (project_id, candidate_key_value),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def resolve_blind_conflict(
     project_id: str,
     candidate_key_value: str,
@@ -2718,13 +2877,13 @@ def resolve_blind_conflict(
     notes = str(notes or "").strip()
     if len(notes) > 2000:
         raise ValueError("备注不能超过 2000 个字符。")
-    with _connection() as connection:
+    with _connection(immediate=True) as connection:
         _require_unlocked(connection, project_id)
         coordinator = _reviewer(connection, coordinator_id)
         if coordinator["role"] != "coordinator":
             raise ValueError("只有协调者可以解决盲筛冲突。")
-        decisions = list_blind_decisions(
-            project_id, candidate_key_value=candidate_key_value
+        decisions = _blind_decisions_in_connection(
+            connection, project_id, candidate_key_value
         )
         active = [
             item for item in decisions if item["status"] in {"included", "excluded"}
@@ -2761,13 +2920,13 @@ def confirm_blind_agreement(
     notes = str(notes or "").strip()
     if len(notes) > 2000:
         raise ValueError("备注不能超过 2000 个字符。")
-    with _connection() as connection:
+    with _connection(immediate=True) as connection:
         _require_unlocked(connection, project_id)
         coordinator = _reviewer(connection, coordinator_id)
         if coordinator["role"] != "coordinator":
             raise ValueError("只有协调者可以确认盲筛一致结果。")
-        decisions = list_blind_decisions(
-            project_id, candidate_key_value=candidate_key_value
+        decisions = _blind_decisions_in_connection(
+            connection, project_id, candidate_key_value
         )
         active = [
             item for item in decisions if item["status"] in {"included", "excluded"}
@@ -2776,16 +2935,21 @@ def confirm_blind_agreement(
             raise ValueError("盲筛决定尚未形成一致结果。")
         final_status = active[0]["status"]
         if final_status == "excluded":
-            derived = next(
-                (
-                    item.get("exclusion_reason")
-                    for item in active
-                    if item.get("exclusion_reason") in EXCLUSION_REASONS
-                ),
-                None,
-            )
-            if reason not in EXCLUSION_REASONS:
-                reason = derived or "其他"
+            reasons = {
+                str(item.get("exclusion_reason") or "") for item in active
+            }
+            if len(reasons) > 1 or "" in reasons:
+                if reason not in EXCLUSION_REASONS:
+                    raise ValueError(
+                        "排除原因不一致，请协调者选择最终原因。"
+                    )
+            else:
+                derived = next(iter(reasons), "")
+                reason = (
+                    reason
+                    if reason in EXCLUSION_REASONS
+                    else (derived or "其他")
+                )
         else:
             reason = None
         fingerprint = _blind_fingerprint(decisions)

@@ -777,11 +777,34 @@ def _migrate(connection: sqlite3.Connection) -> None:
             """CREATE INDEX IF NOT EXISTS screening_fulltext_project
                ON screening_fulltext(project_id, status)"""
         )
+        converted = connection.execute(
+            """SELECT project_id, candidate_key, notes
+               FROM screening_fulltext
+               WHERE status = 'excluded'
+                 AND exclusion_reason = '无法获取全文'"""
+        ).fetchall()
         connection.execute(
             """UPDATE screening_fulltext
                SET status = 'not_retrieved', exclusion_reason = NULL
                WHERE status = 'excluded' AND exclusion_reason = '无法获取全文'"""
         )
+        migration_note = "Schema v17 数据迁移：无法获取全文 → 已寻求未获取"
+        migration_time = _timestamp()
+        for row in converted:
+            connection.execute(
+                """INSERT INTO screening_fulltext_audit(
+                       project_id, candidate_key, old_status, new_status,
+                       old_reason, new_reason, old_notes, new_notes, changed_at
+                   ) VALUES (?, ?, 'excluded', 'not_retrieved',
+                             '无法获取全文', NULL, ?, ?, ?)""",
+                (
+                    row["project_id"],
+                    row["candidate_key"],
+                    row["notes"],
+                    migration_note,
+                    migration_time,
+                ),
+            )
         version = 17
         connection.execute("PRAGMA user_version = 17")
 
@@ -1842,7 +1865,7 @@ def set_screening_decision(
             and row["notes"] == notes
         ):
             return False
-        if status != "included":
+        if row["status"] != status:
             fulltext = connection.execute(
                 """SELECT status FROM screening_fulltext
                    WHERE project_id = ? AND candidate_key = ?""",
@@ -2025,6 +2048,23 @@ def list_fulltext_decisions(
                    ORDER BY candidate_key""",
                 (project_id,),
             ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_stale_fulltext_decisions(project_id: str) -> list[dict[str, Any]]:
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        rows = connection.execute(
+            """SELECT f.*, c.status AS title_abstract_status,
+                      c.title AS candidate_title
+               FROM screening_fulltext f
+               JOIN screening_candidates c
+                 ON c.project_id = f.project_id
+                AND c.candidate_key = f.candidate_key
+               WHERE f.project_id = ? AND c.status != 'included'
+               ORDER BY f.candidate_key""",
+            (project_id,),
+        ).fetchall()
     return [dict(row) for row in rows]
 
 

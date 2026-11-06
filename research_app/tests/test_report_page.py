@@ -39,6 +39,32 @@ def test_report_page_renders_prisma(monkeypatch, tmp_path):
     )
 
 
+def test_report_page_repairs_stale_fulltext(monkeypatch, tmp_path):
+    project_id = _setup(monkeypatch, tmp_path)
+    storage.set_fulltext_decision(project_id, "uid:paper:a", "included")
+    with storage._connection() as connection:
+        connection.execute(
+            """UPDATE screening_candidates SET status = 'excluded'
+               WHERE project_id = ? AND candidate_key = 'uid:paper:a'""",
+            (project_id,),
+        )
+
+    app = _app(project_id)
+    assert not app.exception
+    assert any("历史不一致" in warning.value for warning in app.warning)
+
+    next(
+        button for button in app.button if "重置全部" in button.label
+    ).click().run(timeout=30)
+
+    assert not app.exception
+    assert storage.get_fulltext_decision(project_id, "uid:paper:a") is None
+    assert (
+        storage.set_screening_decision(project_id, "uid:paper:a", "included")
+        is True
+    )
+
+
 def test_report_page_saves_fulltext_decision(monkeypatch, tmp_path):
     project_id = _setup(monkeypatch, tmp_path)
     app = _app(project_id)

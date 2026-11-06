@@ -232,7 +232,14 @@ def test_v16_fulltext_migrates_to_v17(monkeypatch, tmp_path):
         assert rows["uid:missing"] == ("not_retrieved", None)
         assert connection.execute(
             "SELECT COUNT(*) FROM screening_fulltext_audit"
-        ).fetchone()[0] == 2
+        ).fetchone()[0] == 3
+        migration = connection.execute(
+            """SELECT new_status, new_notes FROM screening_fulltext_audit
+               WHERE candidate_key = 'uid:missing'
+               ORDER BY id DESC LIMIT 1"""
+        ).fetchone()
+        assert migration[0] == "not_retrieved"
+        assert "Schema v17" in migration[1]
 
     storage.get_screening_project("p1")
     with sqlite3.connect(path) as connection:
@@ -240,6 +247,52 @@ def test_v16_fulltext_migrates_to_v17(monkeypatch, tmp_path):
         assert connection.execute(
             "SELECT COUNT(*) FROM screening_fulltext"
         ).fetchone()[0] == 3
+        assert connection.execute(
+            "SELECT COUNT(*) FROM screening_fulltext_audit"
+        ).fetchone()[0] == 3
+
+
+def test_legacy_stale_fulltext_cannot_be_reactivated(monkeypatch, tmp_path):
+    project_id = _project_with_candidates(monkeypatch, tmp_path)
+    key = "uid:paper:a"
+    storage.set_screening_decision(project_id, key, "included")
+    storage.set_fulltext_decision(project_id, key, "included")
+
+    # Simulate a legacy database where title/abstract was later excluded while
+    # the fulltext record was left in place.
+    with storage._connection() as connection:
+        connection.execute(
+            """UPDATE screening_candidates SET status = 'excluded'
+               WHERE project_id = ? AND candidate_key = ?""",
+            (project_id, key),
+        )
+
+    stale = storage.list_stale_fulltext_decisions(project_id)
+    assert len(stale) == 1
+    assert stale[0]["candidate_key"] == key
+    assert stale[0]["status"] == "included"
+
+    # Notes-only change while the status is unchanged is still allowed.
+    assert (
+        storage.set_screening_decision(
+            project_id, key, "excluded", reason="主题不相关", notes="legacy"
+        )
+        is True
+    )
+
+    with pytest.raises(ValueError):
+        storage.set_screening_decision(project_id, key, "included")
+
+    assert storage.reset_fulltext_decision(project_id, key) is True
+    assert storage.list_stale_fulltext_decisions(project_id) == []
+    assert storage.set_screening_decision(project_id, key, "included") is True
+    assert storage.get_fulltext_decision(project_id, key) is None
+
+    counts = storage.prisma_counts(project_id)
+    assert counts["included_reports"] == 0
+    assert counts["fulltext"]["not_sought"] == 1
+    audit = storage.list_fulltext_audit(project_id)
+    assert audit[0]["new_status"] == "not_sought"
 
 
 def test_title_abstract_change_requires_fulltext_reset(monkeypatch, tmp_path):

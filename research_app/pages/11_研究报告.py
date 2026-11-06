@@ -89,6 +89,46 @@ if fulltext["excluded_reasons"]:
     )
 
 st.markdown("### 全文阶段记录")
+stale = storage.list_stale_fulltext_decisions(project_id)
+if stale:
+    st.warning(
+        f"发现 {len(stale)} 条历史不一致记录：题名/摘要状态不是纳入，"
+        "但仍保留全文阶段记录。请重置后再修改题摘决定。"
+    )
+    stale_map = {item["candidate_key"]: item for item in stale}
+    stale_key = st.selectbox(
+        "选择历史不一致记录",
+        list(stale_map),
+        format_func=lambda value: stale_map[value].get("candidate_title") or value,
+        key=f"stale_fulltext_{project_id}",
+    )
+    stale_columns = st.columns(2)
+    if stale_columns[0].button(
+        "重置所选历史全文记录",
+        key=f"stale_reset_one_{project_id}",
+    ):
+        try:
+            storage.reset_fulltext_decision(project_id, stale_key)
+            st.session_state["report_message"] = "已重置所选历史全文记录。"
+            st.rerun()
+        except Exception as error:  # noqa: BLE001
+            st.error(str(error))
+    if stale_columns[1].button(
+        f"重置全部 {len(stale)} 条历史记录",
+        key=f"stale_reset_all_{project_id}",
+    ):
+        try:
+            for item in stale:
+                storage.reset_fulltext_decision(
+                    project_id, item["candidate_key"]
+                )
+            st.session_state["report_message"] = (
+                f"已重置 {len(stale)} 条历史全文记录。"
+            )
+            st.rerun()
+        except Exception as error:  # noqa: BLE001
+            st.error(str(error))
+
 included_candidates = [
     candidate
     for candidate in storage.list_all_screening_candidates(project_id)

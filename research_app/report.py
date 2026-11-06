@@ -52,8 +52,10 @@ METRIC_DEFINITIONS = {
     "unique_records": "screening_candidates 当前记录数。",
     "title_abstract": "screening_candidates.status 的当前分布。",
     "fulltext": "screening_fulltext 按状态分组；仅统计题名/摘要纳入的候选。",
-    "included_in_review": "screening_fulltext.status='included' 的数量。",
-    "evidence_matrix": "按论文汇总最新证据版本；引句校验只验证引句是否存在于输入文本。",
+    "included_in_review": "兼容字段，等同 included_reports；按文献记录计数。",
+    "included_reports": "screening_fulltext.status='included' 的文献/报告数量。",
+    "included_studies": "独立研究数量；当前未建立研究-报告关联层，因此为 null。",
+    "evidence_matrix": "按论文汇总最新证据版本；引句校验只验证引句是否存在于输入文本，且统计范围是 AI 原始版本。",
     "trends": "基于项目最近一次检索快照中的论文集合。",
     "citation_network": "引用网络为交互式分析，当前未持久化到项目。",
 }
@@ -70,15 +72,8 @@ def _database_snapshot() -> Iterator[None]:
     try:
         with sqlite3.connect(source) as src, sqlite3.connect(handle.name) as dst:
             src.backup(dst)
-        previous = os.environ.get("SCIVERSE_RESEARCH_DB")
-        os.environ["SCIVERSE_RESEARCH_DB"] = handle.name
-        try:
+        with storage.override_database_path(handle.name):
             yield
-        finally:
-            if previous is None:
-                os.environ.pop("SCIVERSE_RESEARCH_DB", None)
-            else:
-                os.environ["SCIVERSE_RESEARCH_DB"] = previous
     finally:
         with contextlib.suppress(OSError):
             os.unlink(handle.name)
@@ -113,6 +108,7 @@ def _evidence_summary(project_id: str) -> dict[str, Any]:
         "input_sources": dict(input_sources),
         "errors": errors,
         "quote_checks": {"total": quotes_total, "verified": quotes_verified},
+        "quote_checks_scope": "ai_raw",
         "tasks": [
             {
                 "id": task["id"],
@@ -194,7 +190,9 @@ def build_project_report(project_id: str) -> dict[str, Any]:
 def prisma_records(project_id: str) -> list[dict[str, Any]]:
     fulltext = {
         item["candidate_key"]: item
-        for item in storage.list_fulltext_decisions(project_id)
+        for item in storage.list_fulltext_decisions(
+            project_id, active_only=True
+        )
     }
     sources: dict[str, list[str]] = {}
     for item in storage.list_all_candidate_sources(project_id):
@@ -292,7 +290,8 @@ def render_project_report_markdown(report: dict[str, Any]) -> bytes:
         f"| 全文：已评估 | {fulltext['assessed']} |",
         f"| 全文：排除 | {fulltext['excluded']} |",
         f"| 全文：纳入 | {fulltext['included']} |",
-        f"| **最终纳入综述** | **{prisma['included_in_review']}** |",
+        f"| **最终纳入报告数（文献级）** | **{prisma['included_reports']}** |",
+        f"| 最终纳入研究数 | {'—（未建立研究-报告关联层）' if prisma['included_studies'] is None else prisma['included_studies']} |",
         "",
         f"全文阶段状态合计 {fulltext['partition_total']} / 题摘纳入 "
         f"{title_abstract['included']}（守恒：{'是' if fulltext['conservation_ok'] else '否'}）。",

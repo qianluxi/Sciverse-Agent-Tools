@@ -158,7 +158,19 @@ else:
             except Exception as error:  # noqa: BLE001
                 st.error(str(error))
 
-    decisions = storage.list_fulltext_decisions(project_id)
+    if storage.get_fulltext_decision(project_id, selected_key):
+        if st.button(
+            "重置全文阶段（允许修改题名/摘要决定）",
+            key=f"ft_reset_{selected_key}",
+        ):
+            try:
+                storage.reset_fulltext_decision(project_id, selected_key)
+                st.session_state["report_message"] = "已重置全文阶段。"
+                st.rerun()
+            except Exception as error:  # noqa: BLE001
+                st.error(str(error))
+
+    decisions = storage.list_fulltext_decisions(project_id, active_only=True)
     if decisions:
         title_map = {
             item["candidate_key"]: item.get("title") or item["candidate_key"]

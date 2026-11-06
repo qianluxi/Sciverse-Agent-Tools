@@ -5,6 +5,7 @@ import json
 import os
 import sqlite3
 import stat
+import threading
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -62,11 +63,31 @@ def _reclassify_review_status(
     return "resolved_uncertain"
 
 
+_database_override = threading.local()
+
+
 def database_path() -> Path:
+    override = getattr(_database_override, "path", None)
+    if override:
+        return Path(override)
     override = os.environ.get("SCIVERSE_RESEARCH_DB")
     if override:
         return Path(override)
     return Path.home() / ".sciverse" / "research-workbench.sqlite3"
+
+
+@contextmanager
+def override_database_path(path: str | Path) -> Iterator[None]:
+    previous = getattr(_database_override, "path", None)
+    _database_override.path = str(path)
+    try:
+        yield
+    finally:
+        if previous is None:
+            if hasattr(_database_override, "path"):
+                delattr(_database_override, "path")
+        else:
+            _database_override.path = previous
 
 
 def _reject_secrets(value: Any) -> None:
@@ -1821,6 +1842,17 @@ def set_screening_decision(
             and row["notes"] == notes
         ):
             return False
+        if status != "included":
+            fulltext = connection.execute(
+                """SELECT status FROM screening_fulltext
+                   WHERE project_id = ? AND candidate_key = ?""",
+                (project_id, candidate_key_value),
+            ).fetchone()
+            if fulltext is not None:
+                raise ValueError(
+                    "该文献已有全文阶段记录，请先在研究报告页重置全文阶段，"
+                    "再修改题名/摘要决定。"
+                )
         connection.execute(
             """UPDATE screening_candidates
                SET status = ?, exclusion_reason = ?, notes = ?, updated_at = ?
@@ -1969,16 +2001,73 @@ def set_fulltext_decision(
     return True
 
 
-def list_fulltext_decisions(project_id: str) -> list[dict[str, Any]]:
+def list_fulltext_decisions(
+    project_id: str,
+    *,
+    active_only: bool = False,
+) -> list[dict[str, Any]]:
     with _connection() as connection:
         _screening_project(connection, project_id)
-        rows = connection.execute(
-            """SELECT * FROM screening_fulltext
-               WHERE project_id = ?
-               ORDER BY candidate_key""",
-            (project_id,),
-        ).fetchall()
+        if active_only:
+            rows = connection.execute(
+                """SELECT f.* FROM screening_fulltext f
+                   JOIN screening_candidates c
+                     ON c.project_id = f.project_id
+                    AND c.candidate_key = f.candidate_key
+                   WHERE f.project_id = ? AND c.status = 'included'
+                   ORDER BY f.candidate_key""",
+                (project_id,),
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                """SELECT * FROM screening_fulltext
+                   WHERE project_id = ?
+                   ORDER BY candidate_key""",
+                (project_id,),
+            ).fetchall()
     return [dict(row) for row in rows]
+
+
+def reset_fulltext_decision(
+    project_id: str,
+    candidate_key_value: str,
+    *,
+    notes: str = "",
+) -> bool:
+    notes = str(notes or "").strip()
+    if len(notes) > 2000:
+        raise ValueError("备注不能超过 2000 个字符。")
+    now = _timestamp()
+    with _connection() as connection:
+        _require_unlocked(connection, project_id)
+        existing = connection.execute(
+            """SELECT status, exclusion_reason, notes FROM screening_fulltext
+               WHERE project_id = ? AND candidate_key = ?""",
+            (project_id, candidate_key_value),
+        ).fetchone()
+        if existing is None:
+            return False
+        connection.execute(
+            """DELETE FROM screening_fulltext
+               WHERE project_id = ? AND candidate_key = ?""",
+            (project_id, candidate_key_value),
+        )
+        connection.execute(
+            """INSERT INTO screening_fulltext_audit(
+                   project_id, candidate_key, old_status, new_status,
+                   old_reason, new_reason, old_notes, new_notes, changed_at
+               ) VALUES (?, ?, ?, 'not_sought', ?, NULL, ?, ?, ?)""",
+            (
+                project_id,
+                candidate_key_value,
+                existing["status"],
+                existing["exclusion_reason"],
+                existing["notes"],
+                notes or "重置全文阶段",
+                now,
+            ),
+        )
+    return True
 
 
 def list_fulltext_audit(
@@ -2117,6 +2206,9 @@ def prisma_counts(project_id: str) -> dict[str, Any]:
             "conservation_ok": conservation_ok,
         },
         "included_in_review": fulltext_included,
+        "included_reports": fulltext_included,
+        "included_studies": None,
+        "study_level_supported": False,
         "warnings": warnings,
         "traceability": {
             "search_runs": search_run_count,

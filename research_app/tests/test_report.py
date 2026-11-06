@@ -1,8 +1,12 @@
 import hashlib
 import io
 import json
+import sqlite3
 import zipfile
 
+import pytest
+
+import research_app.report as report_module
 from research_app import storage
 from research_app.ai_review import export_matrix_versions_csv
 from research_app.report import (
@@ -67,6 +71,25 @@ def _setup(monkeypatch, tmp_path):
         project_id,
         "uid:paper:a",
         task_id,
+        source="human_corrected",
+        data={
+            "research_question": "Q",
+            "methods": "M",
+            "sample": "S",
+            "findings": "HUMAN findings",
+            "limitations": "L",
+            "evidence_quotes": [],
+        },
+        reviewer_note="human edit",
+        model="test-model",
+        prompt_version="evidence-v1",
+        title="Paper A",
+        year=2024,
+    )
+    storage.append_evidence_version(
+        project_id,
+        "uid:paper:a",
+        task_id,
         source="final_adopted",
         data={
             "research_question": "Q",
@@ -94,14 +117,17 @@ def test_build_project_report_contains_prisma_and_evidence(monkeypatch, tmp_path
     assert report["prisma"]["title_abstract"]["included"] == 1
     assert report["evidence_matrix"]["papers"] == 1
     assert report["evidence_matrix"]["coverage"]["ai_raw"] == 1
+    assert report["evidence_matrix"]["coverage"]["human_corrected"] == 1
     assert report["evidence_matrix"]["coverage"]["final_adopted"] == 1
+    assert report["evidence_matrix"]["quote_checks_scope"] == "ai_raw"
     assert report["evidence_matrix"]["quote_checks"] == {"total": 1, "verified": 1}
     assert report["analysis"]["trends"]["status"] == "generated"
     assert report["analysis"]["citation_network"]["status"] == "not_generated"
 
     markdown = render_project_report_markdown(report).decode("utf-8")
     assert "PRISMA 2020" in markdown
-    assert "最终纳入综述" in markdown
+    assert "最终纳入报告数" in markdown
+    assert "最终纳入研究数" in markdown
     assert "证据矩阵" in markdown
     assert "趋势分析" in markdown
     assert "引用网络" in markdown
@@ -147,6 +173,65 @@ def test_project_bundle_contains_manifest_and_files(monkeypatch, tmp_path):
         assert len(prisma_lines) - 1 == report["prisma"]["unique_records"]
 
 
+def test_override_database_path_is_thread_scoped(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCIVERSE_RESEARCH_DB", str(tmp_path / "a.sqlite3"))
+    project_a = storage.create_screening_project("A", "Q", "I", "E")
+
+    with storage.override_database_path(tmp_path / "b.sqlite3"):
+        project_b = storage.create_screening_project("B", "Q", "I", "E")
+        assert storage.get_screening_project(project_b)["name"] == "B"
+
+    assert storage.get_screening_project(project_a)["name"] == "A"
+    with pytest.raises(ValueError):
+        storage.get_screening_project(project_b)
+
+
+def test_bundle_uses_consistent_database_snapshot(monkeypatch, tmp_path):
+    db_path = tmp_path / "workbench.sqlite3"
+    monkeypatch.setenv("SCIVERSE_RESEARCH_DB", str(db_path))
+    project_id = storage.create_screening_project("Review", "Q", "I", "E")
+    storage.add_screening_candidates(
+        project_id, [{"title": "Paper A", "unique_id": "paper:a"}]
+    )
+    storage.set_screening_decision(project_id, "uid:paper:a", "included")
+    storage.set_fulltext_decision(project_id, "uid:paper:a", "included")
+    before = storage.prisma_counts(project_id)["unique_records"]
+
+    original = report_module.build_project_report
+
+    def wrapper(pid):
+        result = original(pid)
+        # Simulate a concurrent change to the *source* database after the
+        # snapshot was taken; bundle files must still reflect the snapshot.
+        with sqlite3.connect(db_path) as connection:
+            connection.execute(
+                """INSERT INTO screening_candidates(
+                       project_id, candidate_key, paper_id, title, status,
+                       notes, created_at, updated_at, abstract)
+                   VALUES (?, 'uid:extra', 'paper:extra', 'Extra', 'pending',
+                           '', 't', 't', '')""",
+                (pid,),
+            )
+        return result
+
+    monkeypatch.setattr(report_module, "build_project_report", wrapper)
+    data = report_module.export_project_bundle(project_id)
+
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        report_payload = json.loads(archive.read("report.json"))
+        prisma_lines = archive.read("prisma_records.csv").decode(
+            "utf-8-sig"
+        ).strip().splitlines()
+        assert report_payload["prisma"]["unique_records"] == before
+        assert len(prisma_lines) - 1 == before
+
+    with sqlite3.connect(db_path) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM screening_candidates WHERE project_id = ?",
+            (project_id,),
+        ).fetchone()[0] == before + 1
+
+
 def test_matrix_versions_csv_exports_all_sources(monkeypatch, tmp_path):
     project_id = _setup(monkeypatch, tmp_path)
     matrix = storage.load_evidence_matrix(project_id)
@@ -154,10 +239,13 @@ def test_matrix_versions_csv_exports_all_sources(monkeypatch, tmp_path):
     csv_text = export_matrix_versions_csv(matrix).decode("utf-8-sig")
     rows = [line for line in csv_text.splitlines() if "uid:paper:a" in line]
 
-    assert len(rows) == 2
+    assert len(rows) == 3
     assert "AI 原始" in csv_text
+    assert "人工校正" in csv_text
     assert "最终采用" in csv_text
     assert "FINAL findings" in csv_text
+    assert "HUMAN findings" in csv_text
+    assert "human edit" in csv_text
 
 
 def test_prisma_records_csv_includes_fulltext_status(monkeypatch, tmp_path):

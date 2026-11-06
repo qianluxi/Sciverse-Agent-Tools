@@ -1,3 +1,9 @@
+## [1.24.2](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.24.1...v1.24.2) (2026-11-06)
+
+### Bug Fixes
+
+* enforce fulltext consistency and clarify PRISMA report counts ([63d3c7f](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/63d3c7f9e6055dc8cd30118fe41cf9803be2a9da))
+
 ## [1.24.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.24.0...v1.24.1) (2026-11-05)
 
 ### Bug Fixes

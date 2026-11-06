@@ -1,3 +1,5 @@
+## [1.26.6](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.26.5...v1.26.6) (2026-11-06)
+
 ## [1.26.5](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.26.4...v1.26.5) (2026-11-06)
 
 ### Bug Fixes

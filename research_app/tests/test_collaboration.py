@@ -1,3 +1,4 @@
+import sqlite3
 import threading
 
 import pytest
@@ -536,16 +537,28 @@ def test_legacy_reviewers_initialize_pins_once(monkeypatch, tmp_path):
         connection.execute("PRAGMA user_version = 19")
 
     assert storage.legacy_pin_initialization_required() is True
+    storage.configure_collab_admin_key("local-admin-key")
     reviewers = storage.list_reviewers()
-    with pytest.raises(ValueError):
-        storage.initialize_legacy_pins(
-            {reviewers[0]["id"]: "1111"}
-        )
     pins = {
         item["id"]: f"pin{index}42"
         for index, item in enumerate(reviewers)
     }
-    assert storage.initialize_legacy_pins(pins) == len(reviewers)
+    with pytest.raises(ValueError):
+        storage.initialize_legacy_pins(
+            {reviewers[0]["id"]: "1111"},
+            admin_key="wrong-admin-key",
+        )
+    with pytest.raises(ValueError):
+        storage.initialize_legacy_pins(
+            {reviewers[0]["id"]: "1111"},
+            admin_key="local-admin-key",
+        )
+    assert (
+        storage.initialize_legacy_pins(
+            pins, admin_key="local-admin-key"
+        )
+        == len(reviewers)
+    )
     assert storage.legacy_pin_initialization_required() is False
     for item in reviewers:
         assert storage.verify_reviewer_pin(item["id"], pins[item["id"]])
@@ -554,15 +567,141 @@ def test_legacy_reviewers_initialize_pins_once(monkeypatch, tmp_path):
     assert sum(1 for item in audit if item["action"] == "legacy_init") == len(
         reviewers
     )
+    assert all(
+        item["actor_id"] == "local-admin"
+        for item in audit
+        if item["action"] == "legacy_init"
+    )
 
 
-def test_admin_reset_pin_increments_version(monkeypatch, tmp_path):
+def test_admin_reset_pin_requires_admin_key(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     reviewer = storage.create_reviewer("AdminReset", "reviewer", "1111")
+    assert storage.collab_admin_configured() is False
+    storage.configure_collab_admin_key("local-admin-key")
+    assert storage.collab_admin_configured() is True
+    with pytest.raises(ValueError):
+        storage.configure_collab_admin_key("another-admin-key")
+
     before = storage.get_reviewer(reviewer)["pin_version"]
-    storage.admin_reset_reviewer_pin(reviewer, "2222", note="test recovery")
+    with pytest.raises(ValueError):
+        storage.admin_reset_reviewer_pin(
+            reviewer, "2222", admin_key="wrong-admin-key"
+        )
+    assert storage.verify_reviewer_pin(reviewer, "1111") is True
+
+    storage.admin_reset_reviewer_pin(
+        reviewer,
+        "2222",
+        admin_key="local-admin-key",
+        note="test recovery",
+    )
     assert storage.verify_reviewer_pin(reviewer, "2222") is True
     assert storage.verify_reviewer_pin(reviewer, "1111") is False
     assert storage.get_reviewer(reviewer)["pin_version"] == before + 1
     audit = storage.list_reviewer_pin_audit(reviewer)
     assert audit[0]["action"] == "admin_reset"
+    assert audit[0]["actor_id"] == "local-admin"
+
+
+V19_COLLAB_SCHEMA = """
+CREATE TABLE reviewers (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE,
+    role TEXT NOT NULL CHECK (role IN ('reviewer', 'coordinator', 'viewer')),
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE screening_blind_decisions (
+    project_id TEXT NOT NULL, candidate_key TEXT NOT NULL,
+    reviewer_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'included', 'excluded')),
+    exclusion_reason TEXT, notes TEXT NOT NULL DEFAULT '',
+    revision INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (project_id, candidate_key, reviewer_id)
+);
+CREATE TABLE screening_blind_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL,
+    candidate_key TEXT NOT NULL, reviewer_id TEXT NOT NULL,
+    old_status TEXT, new_status TEXT NOT NULL, old_reason TEXT,
+    new_reason TEXT, old_notes TEXT, new_notes TEXT, changed_at TEXT NOT NULL
+);
+PRAGMA user_version = 19;
+"""
+
+
+def test_v19_database_migrates_to_current_schema(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    path = tmp_path / "workbench.sqlite3"
+    with sqlite3.connect(path) as connection:
+        connection.executescript(V19_COLLAB_SCHEMA)
+        connection.executemany(
+            """INSERT INTO reviewers(id, name, role, created_at, updated_at)
+               VALUES (?, ?, ?, 't', 't')""",
+            [
+                ("r1", "Alice", "reviewer"),
+                ("r2", "Carol", "coordinator"),
+            ],
+        )
+        connection.execute(
+            """INSERT INTO screening_blind_decisions(
+                   project_id, candidate_key, reviewer_id, status,
+                   exclusion_reason, notes, revision, created_at, updated_at)
+               VALUES ('p1', 'uid:a', 'r1', 'excluded',
+                       '主题不相关', 'legacy', 2, 't', 't')"""
+        )
+        connection.execute(
+            """INSERT INTO screening_blind_audit(
+                   project_id, candidate_key, reviewer_id, old_status,
+                   new_status, old_reason, new_reason, changed_at)
+               VALUES ('p1', 'uid:a', 'r1', 'pending', 'excluded',
+                       NULL, '主题不相关', 't')"""
+        )
+
+    reviewers = storage.list_reviewers()
+    assert len(reviewers) == 2
+    assert {item["name"]: item["role"] for item in reviewers} == {
+        "Alice": "reviewer",
+        "Carol": "coordinator",
+    }
+    assert storage.legacy_pin_initialization_required() is True
+
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 22
+        columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(reviewers)")
+        }
+        assert {"pin_salt", "pin_hash", "pin_version"} <= columns
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+        assert "reviewer_pin_audit" in tables
+        assert "collab_admin_settings" in tables
+        decision = connection.execute(
+            """SELECT status, exclusion_reason, notes, revision
+               FROM screening_blind_decisions"""
+        ).fetchone()
+        assert decision == ("excluded", "主题不相关", "legacy", 2)
+        assert connection.execute(
+            "SELECT COUNT(*) FROM screening_blind_audit"
+        ).fetchone()[0] == 1
+
+    storage.configure_collab_admin_key("local-admin-key")
+    initialized = storage.initialize_legacy_pins(
+        {"r1": "1111", "r2": "2222"},
+        admin_key="local-admin-key",
+    )
+    assert initialized == 2
+    assert storage.verify_reviewer_pin("r1", "1111") is True
+    assert storage.verify_reviewer_pin("r2", "2222") is True
+
+    storage.list_reviewers()
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 22
+        assert connection.execute(
+            "SELECT COUNT(*) FROM reviewers"
+        ).fetchone()[0] == 2

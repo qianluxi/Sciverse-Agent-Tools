@@ -219,7 +219,7 @@ def test_v16_fulltext_migrates_to_v17(monkeypatch, tmp_path):
     storage.get_screening_project("p1")
 
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 21
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 22
         rows = {
             row[0]: (row[1], row[2])
             for row in connection.execute(
@@ -243,7 +243,7 @@ def test_v16_fulltext_migrates_to_v17(monkeypatch, tmp_path):
 
     storage.get_screening_project("p1")
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 21
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 22
         assert connection.execute(
             "SELECT COUNT(*) FROM screening_fulltext"
         ).fetchone()[0] == 3

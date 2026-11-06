@@ -42,6 +42,7 @@ def _app(project_id, reviewer_id):
     app.session_state["collab_unlocked_version"] = (
         reviewer["pin_version"] if reviewer else 0
     )
+    app.session_state["collab_last_selected_reviewer"] = reviewer_id
     return app.run(timeout=30)
 
 
@@ -215,3 +216,9 @@ def test_collaboration_page_reviewer_cannot_see_coordinator_actions(
 
     assert not app.exception
     assert any("只有协调者" in caption.value for caption in app.caption)
+    assert not any(
+        "盲筛状态" in str(frame.value) for frame in app.dataframe
+    )
+    button_labels = {button.label for button in app.button}
+    assert "执行管理员重置" not in button_labels
+    assert "初始化全部 PIN" not in button_labels

@@ -28,7 +28,7 @@ from research_app.screening import (
 )
 
 
-_SCHEMA_VERSION = 21
+_SCHEMA_VERSION = 22
 SCHEMA_VERSION = _SCHEMA_VERSION
 _BACKUP_SCHEMA_VERSION = 2
 _MAX_HISTORY_ENTRIES = 50
@@ -977,6 +977,20 @@ def _migrate(connection: sqlite3.Connection) -> None:
         )
         version = 21
         connection.execute("PRAGMA user_version = 21")
+    if version < 22:
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS collab_admin_settings (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                key_salt TEXT NOT NULL,
+                key_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            """
+        )
+        version = 22
+        connection.execute("PRAGMA user_version = 22")
 
 
 @contextmanager
@@ -2333,12 +2347,12 @@ def _normalized_pin(pin: str) -> str:
 def create_reviewer(name: str, role: str, pin: str) -> str:
     name = str(name or "").strip()
     if not name or len(name) > 100:
-        raise ValueError("??????? 1 ? 100 ????")
+        raise ValueError("审核人名称需为 1 至 100 个字符。")
     if role not in REVIEWER_ROLES:
-        raise ValueError("????????")
+        raise ValueError("审核人角色无效。")
     pin = _normalized_pin(pin)
     if not pin:
-        raise ValueError("?????????? PIN?")
+        raise ValueError("创建审核人时必须设置 PIN。")
     salt = secrets.token_hex(16)
     pin_hash = _pin_hash(pin, salt)
     reviewer_id = uuid.uuid4().hex
@@ -2353,7 +2367,7 @@ def create_reviewer(name: str, role: str, pin: str) -> str:
                 (reviewer_id, name, role, salt, pin_hash, now, now),
             )
         except sqlite3.IntegrityError as error:
-            raise ValueError("?????????") from error
+            raise ValueError("审核人名称已存在。") from error
         connection.execute(
             """INSERT INTO reviewer_pin_audit(
                    reviewer_id, action, actor_id, note, created_at
@@ -2372,7 +2386,7 @@ def set_reviewer_pin(
 ) -> None:
     pin = _normalized_pin(pin)
     if not pin:
-        raise ValueError("PIN ?????")
+        raise ValueError("PIN 不能为空。")
     salt = secrets.token_hex(16)
     pin_hash = _pin_hash(pin, salt)
     now = _timestamp()
@@ -2412,25 +2426,75 @@ def legacy_pin_initialization_required() -> bool:
     return total > 0 and missing == total
 
 
+def _normalized_admin_key(key: str) -> str:
+    key = str(key or "").strip()
+    if not 8 <= len(key) <= 128:
+        raise ValueError("管理员恢复密钥需为 8 至 128 个字符。")
+    return key
+
+
+def collab_admin_configured() -> bool:
+    with _connection() as connection:
+        row = connection.execute(
+            "SELECT 1 FROM collab_admin_settings WHERE id = 1"
+        ).fetchone()
+    return row is not None
+
+
+def configure_collab_admin_key(key: str) -> None:
+    key = _normalized_admin_key(key)
+    salt = secrets.token_hex(16)
+    now = _timestamp()
+    with _connection(immediate=True) as connection:
+        if connection.execute(
+            "SELECT 1 FROM collab_admin_settings WHERE id = 1"
+        ).fetchone() is not None:
+            raise ValueError("管理员恢复密钥已存在，不能通过此接口覆盖。")
+        connection.execute(
+            """INSERT INTO collab_admin_settings(
+                   id, key_salt, key_hash, created_at, updated_at
+               ) VALUES (1, ?, ?, ?, ?)""",
+            (salt, _pin_hash(key, salt), now, now),
+        )
+
+
+def verify_collab_admin_key(key: str) -> bool:
+    key = str(key or "").strip()
+    if not key:
+        return False
+    with _connection() as connection:
+        row = connection.execute(
+            "SELECT key_salt, key_hash FROM collab_admin_settings WHERE id = 1"
+        ).fetchone()
+    if row is None:
+        return False
+    return hmac.compare_digest(
+        row["key_hash"], _pin_hash(key, row["key_salt"])
+    )
+
+
 def initialize_legacy_pins(
     pins: dict[str, str],
     *,
+    admin_key: str,
     note: str = "",
 ) -> int:
+    if not verify_collab_admin_key(admin_key):
+        raise ValueError("管理员恢复密钥不正确。")
     now = _timestamp()
     with _connection(immediate=True) as connection:
         rows = connection.execute(
             "SELECT id, pin_hash FROM reviewers ORDER BY name"
         ).fetchall()
         if not rows:
-            raise ValueError("??????")
+            raise ValueError("没有审核人。")
         if any(row["pin_hash"] for row in rows):
-            raise ValueError("??????? PIN????????????")
+            raise ValueError("已有审核人设置 PIN，请使用协调者重置流程。")
         normalized = {}
         for row in rows:
             pin = _normalized_pin(pins.get(row["id"], ""))
             if not pin:
-                raise ValueError("????????????? PIN?")
+                raise ValueError("初始化必须为所有审核人设置 PIN。")
             normalized[row["id"]] = pin
         for row in rows:
             pin = normalized[row["id"]]
@@ -2445,8 +2509,12 @@ def initialize_legacy_pins(
             connection.execute(
                 """INSERT INTO reviewer_pin_audit(
                        reviewer_id, action, actor_id, note, created_at
-                   ) VALUES (?, 'legacy_init', '', ?, ?)""",
-                (row["id"], str(note or "Schema v20 ???? PIN ???"), now),
+                   ) VALUES (?, 'legacy_init', 'local-admin', ?, ?)""",
+                (
+                    row["id"],
+                    str(note or "Schema v22 旧审核人 PIN 初始化"),
+                    now,
+                ),
             )
     return len(rows)
 
@@ -2455,11 +2523,14 @@ def admin_reset_reviewer_pin(
     reviewer_id: str,
     pin: str,
     *,
+    admin_key: str,
     note: str = "",
 ) -> None:
+    if not verify_collab_admin_key(admin_key):
+        raise ValueError("管理员恢复密钥不正确。")
     pin = _normalized_pin(pin)
     if not pin:
-        raise ValueError("PIN ?????")
+        raise ValueError("PIN 不能为空。")
     salt = secrets.token_hex(16)
     now = _timestamp()
     with _connection(immediate=True) as connection:
@@ -2474,8 +2545,8 @@ def admin_reset_reviewer_pin(
         connection.execute(
             """INSERT INTO reviewer_pin_audit(
                    reviewer_id, action, actor_id, note, created_at
-               ) VALUES (?, 'admin_reset', '', ?, ?)""",
-            (reviewer_id, str(note or "???????"), now),
+               ) VALUES (?, 'admin_reset', 'local-admin', ?, ?)""",
+            (reviewer_id, str(note or "本机管理员恢复"), now),
         )
 
 
@@ -2880,11 +2951,11 @@ def reviewer_priority_candidates(
         ai_suggestion = str(suggestion.get("suggestion") or "")
         ai_confidence = str(suggestion.get("confidence") or "")
         if own_status == "pending" and ai_suggestion in {"include", "exclude"}:
-            rank, label = 1, "AI ????"
+            rank, label = 1, "AI 明确建议"
         elif own_status == "pending" and ai_suggestion == "uncertain":
-            rank, label = 2, "AI ???"
+            rank, label = 2, "AI 不确定"
         else:
-            rank, label = 3, "? AI ??????"
+            rank, label = 3, "无 AI 建议或已提交"
         rows.append(
             {
                 "candidate_key": key,

@@ -1,3 +1,9 @@
+## [1.26.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.25.0...v1.26.0) (2026-11-06)
+
+### Features
+
+* add AI priority and batch assist to blind screening ([9e0c2fc](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/9e0c2fcab1fad0ce601d8368af71130ca8c9ee6a))
+
 ## [1.25.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.24.4...v1.25.0) (2026-11-06)
 
 ### Features

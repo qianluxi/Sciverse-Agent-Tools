@@ -28,7 +28,7 @@ from research_app.screening import (
 )
 
 
-_SCHEMA_VERSION = 20
+_SCHEMA_VERSION = 21
 SCHEMA_VERSION = _SCHEMA_VERSION
 _BACKUP_SCHEMA_VERSION = 2
 _MAX_HISTORY_ENTRIES = 50
@@ -949,6 +949,34 @@ def _migrate(connection: sqlite3.Connection) -> None:
             )
         version = 20
         connection.execute("PRAGMA user_version = 20")
+    if version < 21:
+        columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(reviewers)"
+            ).fetchall()
+        }
+        if "pin_version" not in columns:
+            connection.execute(
+                "ALTER TABLE reviewers "
+                "ADD COLUMN pin_version INTEGER NOT NULL DEFAULT 0"
+            )
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS reviewer_pin_audit (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                reviewer_id TEXT NOT NULL,
+                action TEXT NOT NULL,
+                actor_id TEXT NOT NULL DEFAULT '',
+                note TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS reviewer_pin_audit_reviewer
+                ON reviewer_pin_audit(reviewer_id, id DESC);
+            """
+        )
+        version = 21
+        connection.execute("PRAGMA user_version = 21")
 
 
 @contextmanager
@@ -2302,44 +2330,174 @@ def _normalized_pin(pin: str) -> str:
     return pin
 
 
-def create_reviewer(name: str, role: str, pin: str = "") -> str:
+def create_reviewer(name: str, role: str, pin: str) -> str:
     name = str(name or "").strip()
     if not name or len(name) > 100:
-        raise ValueError("审核人名称需为 1 至 100 个字符。")
+        raise ValueError("??????? 1 ? 100 ????")
     if role not in REVIEWER_ROLES:
-        raise ValueError("审核人角色无效。")
+        raise ValueError("????????")
     pin = _normalized_pin(pin)
-    salt = secrets.token_hex(16) if pin else ""
-    pin_hash = _pin_hash(pin, salt) if pin else ""
+    if not pin:
+        raise ValueError("?????????? PIN?")
+    salt = secrets.token_hex(16)
+    pin_hash = _pin_hash(pin, salt)
     reviewer_id = uuid.uuid4().hex
     now = _timestamp()
-    with _connection() as connection:
+    with _connection(immediate=True) as connection:
         try:
             connection.execute(
                 """INSERT INTO reviewers(
-                       id, name, role, pin_salt, pin_hash, created_at, updated_at
-                   ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                       id, name, role, pin_salt, pin_hash, pin_version,
+                       created_at, updated_at
+                   ) VALUES (?, ?, ?, ?, ?, 1, ?, ?)""",
                 (reviewer_id, name, role, salt, pin_hash, now, now),
             )
         except sqlite3.IntegrityError as error:
-            raise ValueError("审核人名称已存在。") from error
+            raise ValueError("?????????") from error
+        connection.execute(
+            """INSERT INTO reviewer_pin_audit(
+                   reviewer_id, action, actor_id, note, created_at
+               ) VALUES (?, 'created', ?, '', ?)""",
+            (reviewer_id, reviewer_id, now),
+        )
     return reviewer_id
 
 
-def set_reviewer_pin(reviewer_id: str, pin: str) -> None:
+def set_reviewer_pin(
+    reviewer_id: str,
+    pin: str,
+    *,
+    actor: str = "",
+    note: str = "",
+) -> None:
     pin = _normalized_pin(pin)
     if not pin:
-        raise ValueError("PIN 不能为空。")
+        raise ValueError("PIN ?????")
     salt = secrets.token_hex(16)
     pin_hash = _pin_hash(pin, salt)
-    with _connection() as connection:
+    now = _timestamp()
+    with _connection(immediate=True) as connection:
         _reviewer(connection, reviewer_id)
         connection.execute(
             """UPDATE reviewers
-               SET pin_salt = ?, pin_hash = ?, updated_at = ?
+               SET pin_salt = ?, pin_hash = ?,
+                   pin_version = pin_version + 1, updated_at = ?
                WHERE id = ?""",
-            (salt, pin_hash, _timestamp(), reviewer_id),
+            (salt, pin_hash, now, reviewer_id),
         )
+        connection.execute(
+            """INSERT INTO reviewer_pin_audit(
+                   reviewer_id, action, actor_id, note, created_at
+               ) VALUES (?, 'set', ?, ?, ?)""",
+            (reviewer_id, str(actor or ""), str(note or ""), now),
+        )
+
+
+def reviewers_without_pin() -> list[dict[str, Any]]:
+    with _connection() as connection:
+        rows = connection.execute(
+            "SELECT * FROM reviewers WHERE pin_hash = '' ORDER BY name"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def legacy_pin_initialization_required() -> bool:
+    with _connection() as connection:
+        total = connection.execute(
+            "SELECT COUNT(*) FROM reviewers"
+        ).fetchone()[0]
+        missing = connection.execute(
+            "SELECT COUNT(*) FROM reviewers WHERE pin_hash = ''"
+        ).fetchone()[0]
+    return total > 0 and missing == total
+
+
+def initialize_legacy_pins(
+    pins: dict[str, str],
+    *,
+    note: str = "",
+) -> int:
+    now = _timestamp()
+    with _connection(immediate=True) as connection:
+        rows = connection.execute(
+            "SELECT id, pin_hash FROM reviewers ORDER BY name"
+        ).fetchall()
+        if not rows:
+            raise ValueError("??????")
+        if any(row["pin_hash"] for row in rows):
+            raise ValueError("??????? PIN????????????")
+        normalized = {}
+        for row in rows:
+            pin = _normalized_pin(pins.get(row["id"], ""))
+            if not pin:
+                raise ValueError("????????????? PIN?")
+            normalized[row["id"]] = pin
+        for row in rows:
+            pin = normalized[row["id"]]
+            salt = secrets.token_hex(16)
+            connection.execute(
+                """UPDATE reviewers
+                   SET pin_salt = ?, pin_hash = ?,
+                       pin_version = pin_version + 1, updated_at = ?
+                   WHERE id = ?""",
+                (salt, _pin_hash(pin, salt), now, row["id"]),
+            )
+            connection.execute(
+                """INSERT INTO reviewer_pin_audit(
+                       reviewer_id, action, actor_id, note, created_at
+                   ) VALUES (?, 'legacy_init', '', ?, ?)""",
+                (row["id"], str(note or "Schema v20 ???? PIN ???"), now),
+            )
+    return len(rows)
+
+
+def admin_reset_reviewer_pin(
+    reviewer_id: str,
+    pin: str,
+    *,
+    note: str = "",
+) -> None:
+    pin = _normalized_pin(pin)
+    if not pin:
+        raise ValueError("PIN ?????")
+    salt = secrets.token_hex(16)
+    now = _timestamp()
+    with _connection(immediate=True) as connection:
+        _reviewer(connection, reviewer_id)
+        connection.execute(
+            """UPDATE reviewers
+               SET pin_salt = ?, pin_hash = ?,
+                   pin_version = pin_version + 1, updated_at = ?
+               WHERE id = ?""",
+            (salt, _pin_hash(pin, salt), now, reviewer_id),
+        )
+        connection.execute(
+            """INSERT INTO reviewer_pin_audit(
+                   reviewer_id, action, actor_id, note, created_at
+               ) VALUES (?, 'admin_reset', '', ?, ?)""",
+            (reviewer_id, str(note or "???????"), now),
+        )
+
+
+def list_reviewer_pin_audit(
+    reviewer_id: str | None = None,
+    *,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    limit = max(1, min(limit, 1000))
+    with _connection() as connection:
+        if reviewer_id:
+            rows = connection.execute(
+                """SELECT * FROM reviewer_pin_audit
+                   WHERE reviewer_id = ? ORDER BY id DESC LIMIT ?""",
+                (reviewer_id, limit),
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                "SELECT * FROM reviewer_pin_audit ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def verify_reviewer_pin(reviewer_id: str, pin: str) -> bool:

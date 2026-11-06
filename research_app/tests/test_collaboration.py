@@ -21,10 +21,10 @@ def _setup(monkeypatch, tmp_path):
             {"title": "Paper D", "unique_id": "paper:d"},
         ],
     )
-    reviewer_one = storage.create_reviewer("Alice", "reviewer")
-    reviewer_two = storage.create_reviewer("Bob", "reviewer")
-    coordinator = storage.create_reviewer("Carol", "coordinator")
-    viewer = storage.create_reviewer("Dave", "viewer")
+    reviewer_one = storage.create_reviewer("Alice", "reviewer", "1111")
+    reviewer_two = storage.create_reviewer("Bob", "reviewer", "2222")
+    coordinator = storage.create_reviewer("Carol", "coordinator", "3333")
+    viewer = storage.create_reviewer("Dave", "viewer", "4444")
     return {
         "project_id": project_id,
         "reviewer_one": reviewer_one,
@@ -37,9 +37,9 @@ def _setup(monkeypatch, tmp_path):
 def test_reviewer_roles_and_duplicate_names(monkeypatch, tmp_path):
     ctx = _setup(monkeypatch, tmp_path)
     with pytest.raises(ValueError):
-        storage.create_reviewer("Alice", "reviewer")
+        storage.create_reviewer("Alice", "reviewer", "1111")
     with pytest.raises(ValueError):
-        storage.create_reviewer("Eve", "unknown")
+        storage.create_reviewer("Eve", "unknown", "5555")
 
     with pytest.raises(ValueError):
         storage.set_blind_decision(
@@ -410,10 +410,13 @@ def test_reviewer_pin_authentication(monkeypatch, tmp_path):
     assert storage.verify_reviewer_pin(reviewer, "2468") is True
     assert storage.verify_reviewer_pin(reviewer, "0000") is False
     assert storage.verify_reviewer_pin(reviewer, "") is False
-    legacy = storage.create_reviewer("Legacy", "reviewer")
-    assert storage.verify_reviewer_pin(legacy, "anything") is False
-    storage.set_reviewer_pin(legacy, "1357")
+    legacy = storage.create_reviewer("Legacy", "reviewer", "1357")
     assert storage.verify_reviewer_pin(legacy, "1357") is True
+    storage.set_reviewer_pin(legacy, "2468")
+    assert storage.verify_reviewer_pin(legacy, "2468") is True
+    assert storage.verify_reviewer_pin(legacy, "1357") is False
+    with pytest.raises(ValueError):
+        storage.create_reviewer("NoPin", "reviewer", "")
 
 
 def test_concurrent_first_submission_has_single_winner(monkeypatch, tmp_path):
@@ -518,3 +521,48 @@ def test_reviewer_priority_hides_global_blind_state(monkeypatch, tmp_path):
     assert rows
     assert all("blind_state" not in row for row in rows)
     assert all("decisions" not in row for row in rows)
+
+
+def test_legacy_reviewers_initialize_pins_once(monkeypatch, tmp_path):
+    ctx = _setup(monkeypatch, tmp_path)
+    project_id = ctx["project_id"]
+    storage.set_blind_decision(
+        project_id, "uid:paper:a", ctx["reviewer_one"], "included"
+    )
+    with storage._connection() as connection:
+        connection.execute(
+            "UPDATE reviewers SET pin_salt = '', pin_hash = '', pin_version = 0"
+        )
+        connection.execute("PRAGMA user_version = 19")
+
+    assert storage.legacy_pin_initialization_required() is True
+    reviewers = storage.list_reviewers()
+    with pytest.raises(ValueError):
+        storage.initialize_legacy_pins(
+            {reviewers[0]["id"]: "1111"}
+        )
+    pins = {
+        item["id"]: f"pin{index}42"
+        for index, item in enumerate(reviewers)
+    }
+    assert storage.initialize_legacy_pins(pins) == len(reviewers)
+    assert storage.legacy_pin_initialization_required() is False
+    for item in reviewers:
+        assert storage.verify_reviewer_pin(item["id"], pins[item["id"]])
+    assert len(storage.list_blind_decisions(project_id)) == 1
+    audit = storage.list_reviewer_pin_audit()
+    assert sum(1 for item in audit if item["action"] == "legacy_init") == len(
+        reviewers
+    )
+
+
+def test_admin_reset_pin_increments_version(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    reviewer = storage.create_reviewer("AdminReset", "reviewer", "1111")
+    before = storage.get_reviewer(reviewer)["pin_version"]
+    storage.admin_reset_reviewer_pin(reviewer, "2222", note="test recovery")
+    assert storage.verify_reviewer_pin(reviewer, "2222") is True
+    assert storage.verify_reviewer_pin(reviewer, "1111") is False
+    assert storage.get_reviewer(reviewer)["pin_version"] == before + 1
+    audit = storage.list_reviewer_pin_audit(reviewer)
+    assert audit[0]["action"] == "admin_reset"

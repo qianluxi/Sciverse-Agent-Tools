@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 import streamlit as st
 
 from research_app import storage
@@ -40,6 +42,7 @@ if "collab_error" in st.session_state:
     st.error(st.session_state.pop("collab_error"))
 
 reviewers = storage.list_reviewers()
+IDLE_SECONDS = 30 * 60
 
 with st.sidebar:
     project_id = project_selector("collab_project_selector")
@@ -47,7 +50,49 @@ with st.sidebar:
     st.markdown("### 审核人身份")
     current = None
     selected_id = None
-    if reviewers:
+    if not reviewers:
+        st.info("首次使用：请创建首个协调者并设置 PIN。")
+        name = st.text_input("协调者姓名", key="collab_bootstrap_name")
+        bootstrap_pin = st.text_input(
+            "PIN（4–32 个字符）",
+            type="password",
+            key="collab_bootstrap_pin",
+        )
+        if st.button("创建首个协调者", key="collab_bootstrap_create"):
+            try:
+                reviewer_id = storage.create_reviewer(
+                    name, "coordinator", bootstrap_pin
+                )
+                reviewer = storage.get_reviewer(reviewer_id)
+                st.session_state["collab_unlocked_reviewer"] = reviewer_id
+                st.session_state["collab_unlocked_at"] = time.time()
+                st.session_state["collab_unlocked_version"] = (
+                    reviewer["pin_version"] if reviewer else 0
+                )
+                st.session_state["collab_message"] = "首个协调者已创建并解锁。"
+                st.rerun()
+            except Exception as error:  # noqa: BLE001
+                st.error(str(error))
+    elif storage.legacy_pin_initialization_required():
+        st.warning(
+            "检测到旧版审核人（未设置 PIN）。请一次性为所有审核人初始化 PIN，"
+            "原审核人、决定和审计会保留。"
+        )
+        legacy_pins = {}
+        for item in reviewers:
+            legacy_pins[item["id"]] = st.text_input(
+                f"{item['name']} 的 PIN",
+                type="password",
+                key=f"legacy_pin_{item['id']}",
+            )
+        if st.button("初始化全部 PIN", key="collab_legacy_init"):
+            try:
+                storage.initialize_legacy_pins(legacy_pins)
+                st.session_state["collab_message"] = "审核人 PIN 初始化完成。"
+                st.rerun()
+            except Exception as error:  # noqa: BLE001
+                st.error(str(error))
+    else:
         selected_id = st.selectbox(
             "选择审核人",
             [item["id"] for item in reviewers],
@@ -67,25 +112,43 @@ with st.sidebar:
             )
             if st.button("解锁身份", key=f"collab_unlock_{selected_id}"):
                 if storage.verify_reviewer_pin(selected_id, pin):
+                    reviewer = storage.get_reviewer(selected_id)
                     st.session_state["collab_unlocked_reviewer"] = selected_id
+                    st.session_state["collab_unlocked_at"] = time.time()
+                    st.session_state["collab_unlocked_version"] = (
+                        reviewer["pin_version"] if reviewer else 0
+                    )
                     st.rerun()
                 else:
                     st.error("PIN 不正确，或该审核人尚未设置 PIN。")
         else:
             current = storage.get_reviewer(unlocked_id)
-            if st.button("锁定身份", key="collab_lock"):
+            unlocked_at = float(
+                st.session_state.get("collab_unlocked_at") or 0
+            )
+            unlocked_version = st.session_state.get(
+                "collab_unlocked_version"
+            )
+            if (
+                current is None
+                or time.time() - unlocked_at > IDLE_SECONDS
+                or int(current.get("pin_version") or 0)
+                != int(unlocked_version or -1)
+            ):
                 st.session_state.pop("collab_unlocked_reviewer", None)
-                st.rerun()
-    else:
-        st.info("还没有审核人，请先创建首个协调者并设置 PIN。")
+                st.session_state.pop("collab_unlocked_at", None)
+                st.session_state.pop("collab_unlocked_version", None)
+                st.warning("身份已因空闲超时或 PIN 变更失效，请重新解锁。")
+                current = None
+            else:
+                if st.button("锁定身份", key="collab_lock"):
+                    st.session_state.pop("collab_unlocked_reviewer", None)
+                    st.session_state.pop("collab_unlocked_at", None)
+                    st.session_state.pop("collab_unlocked_version", None)
+                    st.rerun()
 
-    can_create = not reviewers or (
-        current is not None and current["role"] == "coordinator"
-    )
-    with st.expander("新建审核人"):
-        if not can_create:
-            st.caption("只有已解锁的协调者可以创建审核人。")
-        else:
+    if current is not None and current["role"] == "coordinator":
+        with st.expander("新建审核人"):
             name = st.text_input("姓名", key="collab_new_name")
             role = st.selectbox(
                 "角色",
@@ -105,7 +168,6 @@ with st.sidebar:
                     st.rerun()
                 except Exception as error:  # noqa: BLE001
                     st.error(str(error))
-    if current and current["role"] == "coordinator" and reviewers:
         with st.expander("设置/重置审核人 PIN"):
             target = st.selectbox(
                 "审核人",
@@ -122,8 +184,55 @@ with st.sidebar:
             )
             if st.button("保存 PIN", key="collab_pin_save"):
                 try:
-                    storage.set_reviewer_pin(target, reset_pin)
+                    storage.set_reviewer_pin(
+                        target,
+                        reset_pin,
+                        actor=current["id"],
+                    )
                     st.session_state["collab_message"] = "PIN 已更新。"
+                    st.rerun()
+                except Exception as error:  # noqa: BLE001
+                    st.error(str(error))
+
+    if reviewers:
+        with st.expander("本机管理员恢复（忘记 PIN）"):
+            st.caption(
+                "本机管理员可直接重置任一审核人的 PIN，操作会写入 PIN 审计；"
+                "请先自行备份数据库。"
+            )
+            admin_target = st.selectbox(
+                "审核人",
+                [item["id"] for item in reviewers],
+                format_func=lambda value: next(
+                    item["name"] for item in reviewers if item["id"] == value
+                ),
+                key="collab_admin_target",
+            )
+            admin_pin = st.text_input(
+                "新 PIN（4–32 个字符）",
+                type="password",
+                key="collab_admin_pin",
+            )
+            admin_note = st.text_input(
+                "恢复原因",
+                key="collab_admin_note",
+            )
+            admin_confirm = st.checkbox(
+                "我确认执行本机管理员重置",
+                key="collab_admin_confirm",
+            )
+            if st.button(
+                "执行管理员重置",
+                key="collab_admin_reset",
+                disabled=not admin_confirm,
+            ):
+                try:
+                    storage.admin_reset_reviewer_pin(
+                        admin_target,
+                        admin_pin,
+                        note=admin_note,
+                    )
+                    st.session_state["collab_message"] = "PIN 已由管理员重置。"
                     st.rerun()
                 except Exception as error:  # noqa: BLE001
                     st.error(str(error))

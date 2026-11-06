@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 
 from streamlit.testing.v1 import AppTest
@@ -14,9 +15,9 @@ def _setup(monkeypatch, tmp_path):
     storage.add_screening_candidates(
         project_id, [{"title": "Paper A", "unique_id": "paper:a"}]
     )
-    reviewer_one = storage.create_reviewer("Alice", "reviewer")
-    reviewer_two = storage.create_reviewer("Bob", "reviewer")
-    coordinator = storage.create_reviewer("Carol", "coordinator")
+    reviewer_one = storage.create_reviewer("Alice", "reviewer", "1111")
+    reviewer_two = storage.create_reviewer("Bob", "reviewer", "2222")
+    coordinator = storage.create_reviewer("Carol", "coordinator", "3333")
     storage.set_blind_decision(
         project_id, "uid:paper:a", reviewer_one, "included"
     )
@@ -36,6 +37,11 @@ def _app(project_id, reviewer_id):
     app.session_state["collab_project_selector"] = project_id
     app.session_state["collab_current_reviewer"] = reviewer_id
     app.session_state["collab_unlocked_reviewer"] = reviewer_id
+    app.session_state["collab_unlocked_at"] = time.time()
+    reviewer = storage.get_reviewer(reviewer_id)
+    app.session_state["collab_unlocked_version"] = (
+        reviewer["pin_version"] if reviewer else 0
+    )
     return app.run(timeout=30)
 
 
@@ -57,6 +63,35 @@ def test_collaboration_page_coordinator_resolves_conflict(monkeypatch, tmp_path)
     assert candidates["uid:paper:a"]["status"] == "included"
     resolutions = storage.list_conflict_resolutions(project_id)
     assert resolutions[0]["resolution_type"] == "conflict"
+
+
+def test_collaboration_page_bootstraps_first_coordinator(monkeypatch, tmp_path):
+    monkeypatch.setattr(storage, "database_path", lambda: tmp_path / "workbench.sqlite3")
+    project_id = storage.create_screening_project("Review", "Q", "I", "E")
+
+    app = AppTest.from_file(str(PAGE_PATH), default_timeout=30)
+    app.session_state["current_project_id"] = project_id
+    app.session_state["collab_project_selector"] = project_id
+    app.run(timeout=30)
+
+    assert any("首次使用" in info.value for info in app.info)
+    next(
+        item for item in app.text_input if item.label == "协调者姓名"
+    ).set_value("Carol")
+    next(
+        item
+        for item in app.text_input
+        if item.label == "PIN（4–32 个字符）"
+    ).set_value("3333")
+    next(
+        button for button in app.button if button.label == "创建首个协调者"
+    ).click().run(timeout=30)
+
+    assert not app.exception
+    reviewers = storage.list_reviewers()
+    assert len(reviewers) == 1
+    assert reviewers[0]["role"] == "coordinator"
+    assert storage.verify_reviewer_pin(reviewers[0]["id"], "3333")
 
 
 def test_collaboration_page_requires_pin_to_unlock(monkeypatch, tmp_path):
@@ -101,7 +136,7 @@ def test_collaboration_page_batch_ai_prefill(monkeypatch, tmp_path):
             {"title": "Paper D", "unique_id": "paper:d"},
         ],
     )
-    reviewer = storage.create_reviewer("Alice", "reviewer")
+    reviewer = storage.create_reviewer("Alice", "reviewer", "1111")
     task_id = storage.create_ai_task(
         project_id,
         kind="screening",
@@ -152,10 +187,12 @@ def test_collaboration_page_batch_ai_prefill(monkeypatch, tmp_path):
         for item in app.checkbox
         if "我已逐条核对 AI 建议" in item.label
     ).set_value(True)
-    next(
-        button for button in app.button if button.label == "批量保存预填决定"
-    ).click()
     app.run(timeout=30)
+    save_button = next(
+        button for button in app.button if button.label == "批量保存预填决定"
+    )
+    assert not save_button.disabled
+    save_button.click().run(timeout=30)
 
     assert not app.exception
     decisions = {
@@ -173,7 +210,7 @@ def test_collaboration_page_reviewer_cannot_see_coordinator_actions(
     monkeypatch, tmp_path
 ):
     project_id, _ = _setup(monkeypatch, tmp_path)
-    reviewer = storage.create_reviewer("Eve", "reviewer")
+    reviewer = storage.create_reviewer("Eve", "reviewer", "5555")
     app = _app(project_id, reviewer)
 
     assert not app.exception

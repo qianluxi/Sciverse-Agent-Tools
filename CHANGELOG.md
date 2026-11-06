@@ -1,3 +1,9 @@
+## [1.24.3](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.24.2...v1.24.3) (2026-11-06)
+
+### Bug Fixes
+
+* block stale fulltext reactivation and repair legacy records ([523631b](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/523631ba1fce36d9bd8336686c0392969e839877))
+
 ## [1.24.2](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.24.1...v1.24.2) (2026-11-06)
 
 ### Bug Fixes

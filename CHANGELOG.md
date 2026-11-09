@@ -1,3 +1,9 @@
+## [1.29.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.29.0...v1.29.1) (2026-11-09)
+
+### Bug Fixes
+
+* **delivery:** 修复 MCP 静默丢参、版本真源与安装口径不一致 ([d3c9182](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/d3c9182747cae0b3e4fc2c6c52b25be70421add3))
+
 ## [1.29.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.28.0...v1.29.0) (2026-11-09)
 
 ### Features

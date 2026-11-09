@@ -1,6 +1,6 @@
 {
   "name": "sciverse-mcp-server",
-  "version": "1.29.0",
+  "version": "1.29.1",
   "description": "Sciverse MCP server — exposes six academic paper retrieval tools (search_papers / semantic_search / list_catalog / list_paper_relations / read_content / get_resource) to MCP-compatible coding agents (Claude Code, Cursor, Codex CLI, Windsurf, ...).",
   "license": "Apache-2.0",
   "homepage": "https://github.com/qianluxi/Sciverse-Agent-Tools/tree/main/packages/mcp",

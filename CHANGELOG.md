@@ -1,3 +1,9 @@
+## [1.29.2](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.29.1...v1.29.2) (2026-11-09)
+
+### Bug Fixes
+
+* **delivery:** 收尾对外交付的生成器模板与安装口径 ([cf3545b](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/cf3545b65687376a01061a63a6cda4b883f725d3))
+
 ## [1.29.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.29.0...v1.29.1) (2026-11-09)
 
 ### Bug Fixes

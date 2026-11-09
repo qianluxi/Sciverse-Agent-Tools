@@ -2,16 +2,16 @@
 
 > 给 OpenAI Codex CLI 用户的 5 分钟接入指南。
 
-> **先确认版本线（必读）**：下文命令里的 `npx -y sciverse-mcp-server` 拉的是 npm 上的
-> 上游 1.0.1 —— 结构化检索叫 `search_metadata`，`facets` 形状也不同，照本文调
-> `search_papers` 会失败。要用本仓库版本，先在本地构建并指向构建产物：
+> **安装前先构建（必读）**：本文所有配置都指向本仓库构建产物。npm registry 上的
+> `sciverse-mcp-server` 是上游 1.0.1 —— 结构化检索叫 `search_metadata`，`facets`
+> 形状也不同，照本文调 `search_papers` 会失败，不要 `npx` / `npm install -g` 装它。
 >
 > ```bash
 > cd packages/mcp && npm install && npm run build
 > ```
 >
-> 然后把 `command` 改成 `node`、`args` 改成 `packages/mcp/dist/cli.js` 的绝对路径
-> （完整配置见 [docs/INSTALL.md](../INSTALL.md) B 节）。下文所有 `npx` 写法都按同样方式替换。
+> 下面配置里的 `args` 就是 `packages/mcp/dist/cli.js` 的**绝对路径**；完整版本线对照见
+> [docs/INSTALL.md](../INSTALL.md) B 节。
 
 ## 前置条件
 
@@ -25,8 +25,8 @@
 
 ```toml
 [mcp_servers.sciverse]
-command = "npx"
-args = ["-y", "sciverse-mcp-server"]
+command = "node"
+args = ["/绝对路径/Sciverse-Agent-Tools/packages/mcp/dist/cli.js"]
 env = { SCIVERSE_API_TOKEN = "sv-xxx" }
 ```
 
@@ -34,8 +34,8 @@ env = { SCIVERSE_API_TOKEN = "sv-xxx" }
 
 ```toml
 [mcp_servers.sciverse]
-command = "npx"
-args = ["-y", "sciverse-mcp-server"]
+command = "node"
+args = ["/绝对路径/Sciverse-Agent-Tools/packages/mcp/dist/cli.js"]
 env = { SCIVERSE_API_TOKEN = "sv-xxx", SCIVERSE_BASE_URL = "https://api.sciverse.space" }
 ```
 
@@ -75,8 +75,8 @@ Codex 应当调用 `search_papers` 完成结构化检索。
 
 | 现象 | 排查 |
 |---|---|
-| Codex 启动报错说找不到 MCP server | 检查 `command` 路径，确认本机 `node`/`npx` 已在 PATH |
-| 第一次启动卡很久 | `npx -y` 在拉包，正常；之后会走缓存。要避免拉包就用本仓库构建（`node packages/mcp/dist/cli.js`），不要装 npm 上的同名包 |
+| Codex 启动报错说找不到 MCP server | 确认本机 `node` 在 PATH，且 `args` 里的 `dist/cli.js` 绝对路径真实存在 |
+| 启动报 `Cannot find module .../dist/cli.js` | 还没构建或路径写错：先在 `packages/mcp` 跑 `npm run build`，再用 `node <绝对路径>/packages/mcp/dist/cli.js --help` 确认能起 |
 | 401 / `INVALID_API_KEY` | Token 失效或没正确传到 env |
 | TOML 解析报错 | TOML 对引号敏感，env 必须是 `{ KEY = "value" }`，不是 JSON 风格的 `{"KEY":"value"}` |
 | 看不到 sciverse 工具被调 | 把 prompt 写明确："use the sciverse search_papers tool to ..." |

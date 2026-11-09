@@ -2,16 +2,16 @@
 
 > 给 Cursor 用户的 5 分钟接入指南。
 
-> **先确认版本线（必读）**：下文命令里的 `npx -y sciverse-mcp-server` 拉的是 npm 上的
-> 上游 1.0.1 —— 结构化检索叫 `search_metadata`，`facets` 形状也不同，照本文调
-> `search_papers` 会失败。要用本仓库版本，先在本地构建并指向构建产物：
+> **安装前先构建（必读）**：本文所有配置都指向本仓库构建产物。npm registry 上的
+> `sciverse-mcp-server` 是上游 1.0.1 —— 结构化检索叫 `search_metadata`，`facets`
+> 形状也不同，照本文调 `search_papers` 会失败，不要 `npx` / `npm install -g` 装它。
 >
 > ```bash
 > cd packages/mcp && npm install && npm run build
 > ```
 >
-> 然后把 `command` 改成 `node`、`args` 改成 `packages/mcp/dist/cli.js` 的绝对路径
-> （完整配置见 [docs/INSTALL.md](../INSTALL.md) B 节）。下文所有 `npx` 写法都按同样方式替换。
+> 下面配置里的 `args` 就是 `packages/mcp/dist/cli.js` 的**绝对路径**；完整版本线对照见
+> [docs/INSTALL.md](../INSTALL.md) B 节。
 
 ## 前置条件
 
@@ -29,8 +29,8 @@
 {
   "mcpServers": {
     "sciverse": {
-      "command": "npx",
-      "args": ["-y", "sciverse-mcp-server"],
+      "command": "node",
+      "args": ["/绝对路径/Sciverse-Agent-Tools/packages/mcp/dist/cli.js"],
       "env": {
         "SCIVERSE_API_TOKEN": "sv-xxx"
       }
@@ -45,7 +45,7 @@
 
 - Name: `sciverse`
 - Type: `command`
-- Command: `npx -y sciverse-mcp-server`
+- Command: `node /绝对路径/Sciverse-Agent-Tools/packages/mcp/dist/cli.js`
 - Env: `SCIVERSE_API_TOKEN=sv-xxx`
 
 > 如果你的 Cursor 版本菜单位置不同，参阅官方文档：https://docs.cursor.com/context/model-context-protocol
@@ -77,7 +77,7 @@ Cursor 应当连续调用 `semantic_search` → `read_content`，把结果整合
 | MCP 图标显示 `0 tools` | 重启 Cursor；用 `Reload Window` 命令；查看 `Output > MCP Logs` |
 | `Authentication failed` / 401 | Token 失效，回控制台生成新的；env 是否有多余引号/空格 |
 | 配置改完不生效 | Cursor 缓存 MCP server，必须 `Reload MCP Servers` 或重启 |
-| `npx` 拉包慢 | 配置改为 `"command": "sciverse-mcp"`，先在本仓库 `packages/mcp` 里 `npm link`（不要装 npm 上的同名包） |
+| 不想每次写绝对路径 | 先在 `packages/mcp` 里 `npm link`（仍是本地构建，不要装 npm 上的同名包），再把 `command` 改成 `sciverse-mcp` |
 | HTTP 429 | 配额超限，看控制台 |
 
 ## 进阶

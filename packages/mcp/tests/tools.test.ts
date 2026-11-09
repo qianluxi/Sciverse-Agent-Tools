@@ -34,6 +34,70 @@ const SEARCH_ARG_SAMPLES: Record<string, unknown> = {
   facets: { publication_published_year: { size: 10 } },
 };
 
+// 每个参数的 canonical 落点。只断言"body 与空参数不同"挡不住键名映射写错：
+// 把 facets 写成 facets_typo 照样会改变 body，但后端收不到聚合。这里逐个断言
+// 该参数应当产生的精确形状。
+const SEARCH_ARG_EXPECTATIONS: Record<string, (body: any) => void> = {
+  collection: (b) => expect(b.collection).toBe("papers"),
+  query: (b) => expect(b.query).toBe("transformer"),
+  title_contains: (b) =>
+    expect(b.filters).toContainEqual({
+      field: "title",
+      operator: "FILTER_OP_CONTAINS",
+      value: "attention",
+    }),
+  abstract_contains: (b) =>
+    expect(b.filters).toContainEqual({
+      field: "abstract",
+      operator: "FILTER_OP_CONTAINS",
+      value: "graph",
+    }),
+  authors: (b) =>
+    expect(b.filters).toContainEqual({
+      field: "author",
+      operator: "FILTER_OP_IN",
+      value: ["Hinton"],
+    }),
+  year_from: (b) =>
+    expect(b.filters).toContainEqual({
+      field: "publication_published_year",
+      operator: "FILTER_OP_GTE",
+      value: 2020,
+    }),
+  year_to: (b) =>
+    expect(b.filters).toContainEqual({
+      field: "publication_published_year",
+      operator: "FILTER_OP_LTE",
+      value: 2023,
+    }),
+  journals: (b) =>
+    expect(b.filters).toContainEqual({
+      field: "publication_venue_name_unified",
+      operator: "FILTER_OP_IN",
+      value: ["Nature"],
+    }),
+  subjects: (b) =>
+    expect(b.filters).toContainEqual({
+      field: "subjects",
+      operator: "FILTER_OP_IN",
+      value: ["cs.CL"],
+    }),
+  filters_advanced: (b) =>
+    expect(b.filters).toContainEqual({ field: "is_oa", operator: "FILTER_OP_EQ", value: true }),
+  sort_advanced: (b) =>
+    expect(b.sort).toContainEqual({ field: "citation_count", order: "SORT_ORDER_DESC" }),
+  // sort_by_year="none" 的意义就是"不要年份排序"：body 里不应出现 sort
+  sort_by_year: (b) => expect(b.sort).toBeUndefined(),
+  freshness_boost: (b) => expect(b.freshness_boost).toBe("MILD"),
+  impact_boost: (b) => expect(b.impact_boost).toBe("STRONG"),
+  language_affinity: (b) => expect(b.language_affinity).toBe("STRONG"),
+  page: (b) => expect(b.page).toBe(2),
+  page_size: (b) => expect(b.page_size).toBe(5),
+  cursor: (b) => expect(b.cursor).toBe("eyJvZmZzZXQiOjI1fQ=="),
+  fields: (b) => expect(b.fields).toEqual(["unique_id", "title"]),
+  facets: (b) => expect(b.facets).toEqual({ publication_published_year: { size: 10 } }),
+};
+
 interface Captured {
   url: string;
   init: RequestInit;
@@ -311,13 +375,18 @@ describe("tool implementation coverage (guard)", () => {
     await executeTool(CONFIG, "search_papers", {});
     const emptyBody = baseline[0]!.init.body as string;
 
+    expect(Object.keys(SEARCH_ARG_EXPECTATIONS).sort()).toEqual(advertised);
+
     for (const key of advertised) {
       const captured = mockFetch(200, {});
       await executeTool(CONFIG, "search_papers", { [key]: SEARCH_ARG_SAMPLES[key] });
+      const raw = captured[0]!.init.body as string;
       expect(
-        captured[0]!.init.body as string,
+        raw,
         `search_papers 参数 '${key}' 被静默丢弃（schema 广告了但没进后端 body）`,
       ).not.toBe(emptyBody);
+      // 精确落点：键名 / 运算符映射写错（如 facets -> facets_typo）在这里失败
+      SEARCH_ARG_EXPECTATIONS[key]!(JSON.parse(raw));
     }
   });
 });

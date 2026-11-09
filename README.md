@@ -40,19 +40,27 @@ npx skills add https://sciverse.space
 
 This command automatically fetches the skill manifest and registers the tool for your project. Don't forget to configure your API token via the `SCIVERSE_API_TOKEN` environment variable.
 
+> The URL above serves the **online** bundle (the upstream 1.0.1 line). For this
+> repository's bundle, download `web-skill.tgz` from GitHub Releases and extract
+> `.well-known/` — see [docs/INSTALL.md](./docs/INSTALL.md) section C.
+
 ## Quickstart — Claude Code
 
 ```bash
-claude /plugin marketplace add https://github.com/opendatalab/Sciverse-Agent-Tools
+git clone https://github.com/qianluxi/Sciverse-Agent-Tools.git
+claude /plugin marketplace add ./Sciverse-Agent-Tools
 claude /plugin install sciverse
 ```
 
-> The marketplace command above points at the **upstream** repository, so it installs the upstream skill, not this fork's. This fork does not publish its own marketplace yet.
+> This fork's marketplace is the repo itself (`./.claude-plugin/marketplace.json`,
+> `source` → `./skill-claude-code`), so it is added from a local path — there is no
+> public marketplace URL yet. `claude /plugin marketplace add
+> https://github.com/opendatalab/Sciverse-Agent-Tools` installs the **upstream**
+> skill, not this fork's.
 
 The skill is a thin wrapper around the MCP server. Build this repository's server (the registry copy is the older 1.0.1 line, see [docs/INSTALL.md](./docs/INSTALL.md)):
 
 ```bash
-git clone https://github.com/qianluxi/Sciverse-Agent-Tools.git
 cd Sciverse-Agent-Tools/packages/mcp
 npm install && npm run build
 
@@ -405,9 +413,9 @@ uv run pytest tests/    # generator unit tests
 This fork's bundle is named `academic-retrieval` (slug in `clawhub/manifest.json`) and is **not published** yet — the registry entry under the `sciverse` name is the upstream one. Install from the local bundle:
 
 ```bash
-openclaw skills install academic-retrieval   # once published
-# or, from this repo right now:
-openclaw skills install ./clawhub
+openclaw skills install ./clawhub                     # this repo's bundle
+# registry alternative (upstream 1.0.1, not this fork):
+openclaw skills install @sciverse/academic-retrieval
 ```
 
 See [`clawhub/README.md`](./clawhub/README.md) for details.

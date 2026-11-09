@@ -1,6 +1,12 @@
 # sciverse-mcp-server
 
-[![npm](https://img.shields.io/npm/v/sciverse-mcp-server.svg)](https://www.npmjs.com/package/sciverse-mcp-server)
+> This server is not published to the npm registry from this repo. The
+> `sciverse-mcp-server` package on npm is the **upstream 1.0.1 line** (structured
+> search is `search_metadata`, different `facets` shape) — build from source
+> here instead. See [`docs/INSTALL.md`](../../docs/INSTALL.md).
+>
+> 本仓库不向 npm registry 发布这个包。registry 上的同名包是**上游 1.0.1 线**
+> （结构化检索叫 `search_metadata`，`facets` 形状也不同），请从本仓库源码构建。
 
 [English](#english) | [中文](#中文)
 
@@ -8,9 +14,9 @@ Official MCP (Model Context Protocol) server for the Sciverse open platform.
 Exposes six academic-paper retrieval tools to any MCP-compatible coding agent
 — Claude Code, Cursor, Codex CLI, Windsurf, Continue, and more.
 
-> Tools: `search_papers` / `semantic_search` / `read_content` / `list_catalog` / `get_resource`
+> Tools: `search_papers` / `semantic_search` / `list_catalog` / `list_paper_relations` / `read_content` / `get_resource`
 >
-> 工具：`search_papers`（结构化元数据）/ `semantic_search`（语义检索）/ `read_content`（原文切片）/ `list_catalog`（字段 introspection）/ `get_resource`（论文图片二进制）
+> 工具：`search_papers`（结构化元数据）/ `semantic_search`（语义检索）/ `list_catalog`（字段 introspection）/ `list_paper_relations`（引用 / 被引分页）/ `read_content`（原文切片）/ `get_resource`（论文图片二进制）
 
 ---
 
@@ -18,9 +24,14 @@ Exposes six academic-paper retrieval tools to any MCP-compatible coding agent
 
 ### Quick start
 
+Build and run the server from this repo — the npm registry
+`sciverse-mcp-server` is still the upstream 1.0.1 line, whose structured
+search is `search_metadata` (see [`docs/INSTALL.md`](../../docs/INSTALL.md)):
+
 ```bash
 export SCIVERSE_API_TOKEN=sv-xxx   # get one from https://sciverse.space
-npx -y sciverse-mcp-server         # stdio mode; coding agents will spawn this for you
+npm install && npm run build       # inside packages/mcp
+node dist/cli.js                   # stdio mode; coding agents will spawn this for you
 ```
 
 Or skip the env var entirely by running the Python CLI once:
@@ -35,14 +46,14 @@ pip install -e ../python && sciverse auth login
 
 #### Claude Code
 
-Project-level `.mcp.json` (or run `claude mcp add sciverse npx -- -y sciverse-mcp-server`):
+Project-level `.mcp.json` (or run `claude mcp add sciverse --env SCIVERSE_API_TOKEN=sv-xxx -- node /abs/path/packages/mcp/dist/cli.js`):
 
 ```json
 {
   "mcpServers": {
     "sciverse": {
-      "command": "npx",
-      "args": ["-y", "sciverse-mcp-server"],
+      "command": "node",
+      "args": ["/abs/path/to/Sciverse-Agent-Tools/packages/mcp/dist/cli.js"],
       "env": { "SCIVERSE_API_TOKEN": "sv-xxx" }
     }
   }
@@ -61,8 +72,8 @@ If you ran `sciverse auth login`, the `env` block can be omitted entirely.
 
 ```toml
 [mcp_servers.sciverse]
-command = "npx"
-args = ["-y", "sciverse-mcp-server"]
+command = "node"
+args = ["/abs/path/to/Sciverse-Agent-Tools/packages/mcp/dist/cli.js"]
 env = { SCIVERSE_API_TOKEN = "sv-xxx" }
 ```
 
@@ -121,7 +132,7 @@ List the Sciverse fields and the values access_oa_status can take, then find
 npm install
 npm run gen       # derive src/generated/tools.ts from ../../openapi.yaml
 npm run build     # tsc → dist/
-npm test          # vitest (27 tests)
+npm test          # vitest (tool schema + passthrough guards)
 ```
 
 If `npm install` is slow / blocked, switch registry:
@@ -147,9 +158,13 @@ Windsurf、Continue 等。
 
 ### 快速开始
 
+从本仓库构建后运行 —— npm registry 上的 `sciverse-mcp-server` 仍是上游 1.0.1
+线，结构化检索叫 `search_metadata`（对照见 [`docs/INSTALL.md`](../../docs/INSTALL.md)）：
+
 ```bash
 export SCIVERSE_API_TOKEN=sv-xxx   # 从 https://sciverse.space 控制台申请
-npx -y sciverse-mcp-server         # stdio 启动；coding agent 通常会代你 spawn
+npm install && npm run build       # 在 packages/mcp 目录下
+node dist/cli.js                   # stdio 启动；coding agent 通常会代你 spawn
 ```
 
 也可以跑一次 Python CLI 把 token 持久化，之后 env 都不用配：
@@ -164,14 +179,14 @@ pip install -e ../python && sciverse auth login
 
 #### Claude Code
 
-项目级 `.mcp.json`（也可以用 `claude mcp add sciverse npx -- -y sciverse-mcp-server`）：
+项目级 `.mcp.json`（也可以用 `claude mcp add sciverse --env SCIVERSE_API_TOKEN=sv-xxx -- node /绝对路径/packages/mcp/dist/cli.js`）：
 
 ```json
 {
   "mcpServers": {
     "sciverse": {
-      "command": "npx",
-      "args": ["-y", "sciverse-mcp-server"],
+      "command": "node",
+      "args": ["/绝对路径/Sciverse-Agent-Tools/packages/mcp/dist/cli.js"],
       "env": { "SCIVERSE_API_TOKEN": "sv-xxx" }
     }
   }
@@ -190,8 +205,8 @@ pip install -e ../python && sciverse auth login
 
 ```toml
 [mcp_servers.sciverse]
-command = "npx"
-args = ["-y", "sciverse-mcp-server"]
+command = "node"
+args = ["/绝对路径/Sciverse-Agent-Tools/packages/mcp/dist/cli.js"]
 env = { SCIVERSE_API_TOKEN = "sv-xxx" }
 ```
 
@@ -247,7 +262,7 @@ Python/TS SDK、ClawHub skill、OpenAI / Anthropic tool 保持一致。
 npm install
 npm run gen       # 从 ../../openapi.yaml 派生 src/generated/tools.ts
 npm run build     # tsc → dist/
-npm test          # vitest（27 测试）
+npm test          # vitest（tool schema + 参数透传守卫）
 ```
 
 如 `npm install` 因网络源问题失败，换源：

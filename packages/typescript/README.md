@@ -7,9 +7,9 @@ retrieval tools (`searchPapers`, `semanticSearch`, `readContent`, `listCatalog`,
 `listPaperRelations`, `getResource`) behind one fetch-based client + ready-to-use
 `OPENAI_TOOLS` / `ANTHROPIC_TOOLS` constants for direct tool-calling.
 
-> Tools: `searchPapers` (structured metadata) / `semanticSearch` (semantic retrieval) / `readContent` (text by Unicode code-point range) / `listCatalog` (field introspection) / `getResource` (paper figure binary).
+> Tools: `searchPapers` (structured metadata) / `semanticSearch` (semantic retrieval) / `readContent` (text by Unicode code-point range) / `listCatalog` (field introspection) / `listPaperRelations` (paged citations / references) / `getResource` (paper figure binary).
 >
-> 工具：`searchPapers`（结构化元数据）/ `semanticSearch`（语义检索）/ `readContent`（原文切片）/ `listCatalog`（字段 introspection）/ `getResource`（论文图片二进制）
+> 工具：`searchPapers`（结构化元数据）/ `semanticSearch`（语义检索）/ `readContent`（原文切片）/ `listCatalog`（字段 introspection）/ `listPaperRelations`（引用 / 被引分页）/ `getResource`（论文图片二进制）
 
 ---
 
@@ -91,7 +91,11 @@ await c.readContent({ doc_id: "p_xxx", offset: 0, limit: 8192 });
 // 4. Schema introspection — call once to discover field names + enum values
 await c.listCatalog({ include_sample_values: true });
 
-// 5. Fetch a paper figure / table image
+// 5. Paged citations / references for one paper
+//    relation: "CITATIONS" (who cites X) / "REFERENCES" (what X cites) / "RELATED_WORKS"
+await c.listPaperRelations({ unique_id: "W2990000001", relation: "CITATIONS", page_size: 20 });
+
+// 6. Fetch a paper figure / table image
 const { bytes, mimeType } = await c.getResource({ file_name: "dt=xxx/p_yyy/f3.png" });
 // `bytes` is a Uint8Array; `mimeType` is e.g. "image/png"
 ```
@@ -165,7 +169,9 @@ Sciverse 开放平台 TypeScript SDK，6 个学术文献检索 tool（结构化�
 ### 安装
 
 ```bash
-npm install sciverse           # 或 pnpm add / yarn add
+# 在仓库的 packages/typescript 目录下 —— registry 上的 sciverse 是 1.0.1
+# 上游线，结构化检索叫 search_metadata
+npm ci && npm run build && npm pack    # 然后在目标项目里安装产出的 tarball
 ```
 
 要求 Node.js ≥ 18（使用 native fetch）。
@@ -227,7 +233,11 @@ await c.readContent({ doc_id: "p_xxx", offset: 0, limit: 8192 });
 // 4. 字段 introspection —— Agent 接入第一步
 await c.listCatalog({ include_sample_values: true });
 
-// 5. 取文献附属图片（read_content Markdown 中 ![alt](file_name) 占位时）
+// 5. 取某篇论文的引用 / 被引列表（分页）
+//    relation: "CITATIONS"（谁引用了 X）/ "REFERENCES"（X 引用了谁）/ "RELATED_WORKS"
+await c.listPaperRelations({ unique_id: "W2990000001", relation: "CITATIONS", page_size: 20 });
+
+// 6. 取文献附属图片（read_content Markdown 中 ![alt](file_name) 占位时）
 const { bytes, mimeType } = await c.getResource({ file_name: "dt=xxx/p_yyy/f3.png" });
 // `bytes` 是 Uint8Array；`mimeType` 形如 "image/png"
 ```

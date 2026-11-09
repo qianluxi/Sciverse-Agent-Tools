@@ -8,7 +8,7 @@
 
 | 来源 | 版本 | 结构化检索工具名 | 现状 |
 |---|---|---|---|
-| **本仓库源码**（`packages/python`、`packages/mcp`） | 以 `packages/python/pyproject.toml` 为准（当前 1.28.0） | `search_papers` | 唯一与 `openapi.yaml` 一致的实现，本文推荐 |
+| **本仓库源码**（`packages/python`、`packages/mcp`） | 以 `packages/python/pyproject.toml` 为准 | `search_papers` | 唯一与 `openapi.yaml` 一致的实现，本文推荐 |
 | PyPI `sciverse` / npm `sciverse-mcp-server` | 1.0.1 | `search_metadata`（`search_papers` 只是废弃别名） | 上游旧线，字段比你本地少、`facets` 形状也不同 |
 | 本仓库 GitHub Release | tag + `web-skill.tgz` | 随 skill bundle | **不含** SDK 包，也**不含**便携 exe |
 
@@ -49,7 +49,7 @@ Windows 用户也可以直接双击 `research_app/Start-Research-App.bat`，它�
 ```bash
 python -c "import sciverse, pathlib; print(sciverse.__version__, pathlib.Path(sciverse.__file__).parent)"
 # 期望路径：.../Sciverse-Agent-Tools/packages/python/src/sciverse
-# 期望版本：≥ 1.27.0，精确值以 packages/python/pyproject.toml 为准
+# 版本号以 packages/python/pyproject.toml 为准
 ```
 
 **先看路径，再看版本。** 路径落在 `packages/` 下就是对的；版本号会随发版递增，不要拿某个固定数字当判据。
@@ -118,11 +118,13 @@ npm run build
 |---|---|---|
 | well-known 自动发现 | 指向 `https://sciverse.space/.well-known/agent-skills/` | 线上 1.0.1 线的 skill bundle |
 | Skills CLI | `npx skills add https://sciverse.space` | 同上 |
-| Claude Code Marketplace | `claude /plugin marketplace add https://github.com/opendatalab/Sciverse-Agent-Tools` | **上游仓库**，不是本 fork |
-| ClawHub / OpenClaw | `openclaw skills install academic-retrieval` | 本 fork 尚未发布；registry 上 `sciverse` 是上游版本，本地可用 `openclaw skills install ./clawhub` |
+| Claude Code Marketplace（上游） | `claude /plugin marketplace add https://github.com/opendatalab/Sciverse-Agent-Tools` | **上游仓库**，不是本 fork |
+| Claude Code Marketplace（本 fork，本地目录） | `claude /plugin marketplace add /绝对路径/Sciverse-Agent-Tools` | 本仓库：根 `.claude-plugin/marketplace.json`，`source` 指向 `./skill-claude-code` |
+| ClawHub / OpenClaw（registry） | `openclaw skills install @sciverse/academic-retrieval` | registry 上的**上游版本** |
+| ClawHub / OpenClaw（本 fork，本地目录） | `openclaw skills install ./clawhub` | 本仓库 `clawhub/` bundle |
 | GitHub Release | 下载 `web-skill.tgz` | 本仓库当前版本（`tar xzf` 后取 `.well-known`） |
 
-本 fork 尚未发布自己的 marketplace / ClawHub 包，上表后两行装的都是上游实现，与本仓库（`packages/`）的行为有差异，遇到工具名不一致时以本文第 0 节为准。
+本 fork 尚未把 marketplace / ClawHub 包发布到公共 registry：从 registry 装到的都是上游实现，与本仓库（`packages/`）的行为有差异。要用本仓库版本，走上表里两个"本地目录"渠道，或按 B 节自己构建。遇到工具名不一致时以本文第 0 节为准。
 
 ## D. 依赖与构建
 

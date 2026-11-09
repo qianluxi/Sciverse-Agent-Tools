@@ -77,6 +77,23 @@ def test_skill_md_mentions_mcp_server_dep():
     assert "SCIVERSE_API_TOKEN" in md
 
 
+def test_skill_md_teaches_local_build_not_registry():
+    """安装说明必须指向本地构建。
+
+    npm registry 上的 `sciverse-mcp-server` 是上游 1.0.1 线（结构化检索叫
+    `search_metadata`）。模板里一旦写回 `npm install -g` / `npx -y`，生成的
+    SKILL.md 就会教用户装到旧版本——这正是对外交付的阻断项。
+    """
+    md = generate_skill_md(REAL_OPENAPI)
+    assert "packages/mcp/dist/cli.js" in md, "安装说明应指向本地构建产物"
+    assert "npm run build" in md, "安装说明应包含构建步骤"
+    assert "npm install -g sciverse-mcp-server" not in md
+    # 即使提到 npx，也只能出现在"不要用"的语境里
+    for line in md.splitlines():
+        if "npx" in line:
+            assert "not" in line.lower(), f"npx 出现在非否定语境：{line!r}"
+
+
 def test_skill_md_has_required_sections():
     md = generate_skill_md(REAL_OPENAPI)
     assert "## When to use" in md

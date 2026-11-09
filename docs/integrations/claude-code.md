@@ -2,16 +2,16 @@
 
 > 给 Claude Code 用户（`claude` CLI / VS Code 扩展）的 5 分钟接入指南。
 
-> **先确认版本线（必读）**：下文命令里的 `npx -y sciverse-mcp-server` 拉的是 npm 上的
-> 上游 1.0.1 —— 结构化检索叫 `search_metadata`，`facets` 形状也不同，照本文调
-> `search_papers` 会失败。要用本仓库版本，先在本地构建并指向构建产物：
+> **安装前先构建（必读）**：本文所有配置都指向本仓库构建产物。npm registry 上的
+> `sciverse-mcp-server` 是上游 1.0.1 —— 结构化检索叫 `search_metadata`，`facets`
+> 形状也不同，照本文调 `search_papers` 会失败，不要 `npx` / `npm install -g` 装它。
 >
 > ```bash
 > cd packages/mcp && npm install && npm run build
 > ```
 >
-> 然后把 `command` 改成 `node`、`args` 改成 `packages/mcp/dist/cli.js` 的绝对路径
-> （完整配置见 [docs/INSTALL.md](../INSTALL.md) B 节）。下文所有 `npx` 写法都按同样方式替换。
+> 下面配置里的 `args` 就是 `packages/mcp/dist/cli.js` 的**绝对路径**；完整版本线对照见
+> [docs/INSTALL.md](../INSTALL.md) B 节。
 
 ## 前置条件
 
@@ -24,7 +24,7 @@
 ### 用 `claude mcp add` 一行命令
 
 ```bash
-claude mcp add sciverse --env SCIVERSE_API_TOKEN=sv-xxx -- npx -y sciverse-mcp-server
+claude mcp add sciverse --env SCIVERSE_API_TOKEN=sv-xxx -- node /绝对路径/Sciverse-Agent-Tools/packages/mcp/dist/cli.js
 ```
 
 ### 或手动写 `.mcp.json`
@@ -35,8 +35,8 @@ claude mcp add sciverse --env SCIVERSE_API_TOKEN=sv-xxx -- npx -y sciverse-mcp-s
 {
   "mcpServers": {
     "sciverse": {
-      "command": "npx",
-      "args": ["-y", "sciverse-mcp-server"],
+      "command": "node",
+      "args": ["/绝对路径/Sciverse-Agent-Tools/packages/mcp/dist/cli.js"],
       "env": {
         "SCIVERSE_API_TOKEN": "sv-xxx"
       }
@@ -59,13 +59,17 @@ claude mcp add sciverse --env SCIVERSE_API_TOKEN=sv-xxx -- npx -y sciverse-mcp-s
 仓库已派生 Claude Code 官方 skill 形态（[`skill-claude-code/`](../../skill-claude-code/)），它假设 MCP server 已通过方式 A 安装。
 
 ```bash
-# 用户级
+# 用户级：手动复制
 cp -r path/to/Sciverse-Agent-Tools/skill-claude-code ~/.claude/skills/sciverse
 
-# 或 Plugin Marketplace 一键安装
-claude /plugin marketplace add https://github.com/opendatalab/Sciverse-Agent-Tools
+# 或从本仓库的 marketplace 安装（根 .claude-plugin/marketplace.json，
+# source 指向 ./skill-claude-code）
+claude /plugin marketplace add /绝对路径/Sciverse-Agent-Tools
 claude /plugin install sciverse
 ```
+
+> `claude /plugin marketplace add https://github.com/opendatalab/Sciverse-Agent-Tools`
+> 装的是**上游仓库**的插件，不是本 fork。
 
 ## 验证
 
@@ -101,7 +105,7 @@ Claude 会依次调用 `semantic_search` → `read_content` 完成 RAG 回答。
 | HTTP 401 / `INVALID_API_KEY` | Token 错或已撤销，去 https://sciverse.space 重新生成 |
 | HTTP 429 | 当前 Tier 配额已耗尽，看控制台或升级 Tier |
 | `SCIVERSE_BASE_URL must point to *.sciverse.space` | 自定义 URL 必须是 `*.sciverse.space` 子域名（防 token 泄漏） |
-| `npx` 拉包慢 | 加 `--registry https://registry.npmmirror.com`，或在 `packages/mcp` 里执行 `npm link`（仍是本地构建）后把 `command` 改为 `sciverse-mcp` |
+| 不想每次写绝对路径 | 在 `packages/mcp` 里执行 `npm link`（仍是本地构建），再把 `command` 改为 `sciverse-mcp` |
 
 ## 进阶
 

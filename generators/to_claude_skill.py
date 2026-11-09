@@ -7,7 +7,9 @@
 - description 是 model-facing trigger，须明确何时该调用此 skill
 - 正文为 markdown，描述前置条件、能力、典型 composition pattern
 - 同时输出 Plugin Marketplace 入口：`.claude-plugin/marketplace.json`
-- 依赖另一个并行 agent 维护的 `sciverse-mcp-server` npm 包
+- 依赖本仓库 `packages/mcp` 构建出的 MCP server：npm registry 上的
+  `sciverse-mcp-server` 仍是上游 1.0.1 线（结构化检索叫 `search_metadata`），
+  所以安装说明一律指向本地构建产物，不教 `npx` / `npm install -g`
 
 Claude Code 官方 spec 参考：
 - 路径：`~/.claude/skills/<skill-name>/SKILL.md`（用户级）/ `.claude/skills/...`（项目级）
@@ -78,30 +80,37 @@ def generate_skill_md(openapi_path: Path) -> str:
         "",
         "## Prerequisites",
         "",
-        "This skill is a thin wrapper around the `sciverse-mcp-server` MCP server.",
-        "Before invoking any tool, ensure the server is reachable:",
+        "This skill is a thin wrapper around the `sciverse-mcp-server` MCP server",
+        "built from this repository. Build it once and point your agent at the",
+        "build output before invoking any tool.",
         "",
-        "1. Install the MCP server:",
+        "1. Build the server from the repo root:",
         "",
         "   ```bash",
-        "   npm install -g sciverse-mcp-server",
+        "   cd packages/mcp && npm install && npm run build",
         "   ```",
         "",
-        "   Or add it to your project `.mcp.json`:",
+        "2. Register the build output as an MCP server (`.mcp.json`, project scope):",
         "",
         "   ```json",
         "   {",
         '     "mcpServers": {',
         '       "sciverse": {',
-        '         "command": "npx",',
-        '         "args": ["-y", "sciverse-mcp-server"],',
+        '         "command": "node",',
+        '         "args": ["/absolute/path/to/Sciverse-Agent-Tools/packages/mcp/dist/cli.js"],',
         '         "env": { "SCIVERSE_API_TOKEN": "${SCIVERSE_API_TOKEN}" }',
         "       }",
         "     }",
         "   }",
         "   ```",
         "",
-        "2. Obtain an API token from https://sciverse.space and export it:",
+        "   Do **not** use `npx -y sciverse-mcp-server` or `npm install -g",
+        "   sciverse-mcp-server`: the registry still serves the upstream 1.0.1 line,",
+        "   where structured search is `search_metadata` (not `search_papers`) and",
+        "   `facets` has a different shape. See `docs/INSTALL.md` in the",
+        "   Sciverse-Agent-Tools repo for the full version-line comparison.",
+        "",
+        "3. Obtain an API token from https://sciverse.space and export it:",
         "",
         "   ```bash",
         "   export SCIVERSE_API_TOKEN=sv-...",

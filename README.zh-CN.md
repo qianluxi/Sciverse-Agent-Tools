@@ -42,19 +42,25 @@ npx skills add https://sciverse.space
 
 该命令会自动拉取 skill 的 manifest 并为你的项目配置好工具。请记得通过 `SCIVERSE_API_TOKEN` 环境变量配置你的 API Token（可前往 https://sciverse.space 申请）。
 
+> 上面的 URL 提供的是**线上** bundle（上游 1.0.1 线）。要用本仓库版本，请从 GitHub
+> Release 下载 `web-skill.tgz` 并解出 `.well-known/`——见 [docs/INSTALL.md](./docs/INSTALL.md) C 节。
+
 ## 5 分钟接入 —— Claude Code
 
 ```bash
-claude /plugin marketplace add https://github.com/opendatalab/Sciverse-Agent-Tools
+git clone https://github.com/qianluxi/Sciverse-Agent-Tools.git
+claude /plugin marketplace add ./Sciverse-Agent-Tools
 claude /plugin install sciverse
 ```
 
-> 上面的 marketplace 指向 **opendatalab 上游仓库**，装到的是上游 skill，不是本 fork 的版本；本 fork 尚未发布自己的 marketplace。
+> 本 fork 的 marketplace 就在仓库里（`./.claude-plugin/marketplace.json`，`source` 指向
+> `./skill-claude-code`），所以用本地目录添加——目前没有公开的 marketplace URL。
+> `claude /plugin marketplace add https://github.com/opendatalab/Sciverse-Agent-Tools`
+> 装到的是**上游** skill，不是本 fork 的版本。
 
 skill 本身只是 MCP server 的薄封装。请构建**本仓库**的 server（npm 上的同名包是 1.0.1 旧线，见 [docs/INSTALL.md](./docs/INSTALL.md)）：
 
 ```bash
-git clone https://github.com/qianluxi/Sciverse-Agent-Tools.git
 cd Sciverse-Agent-Tools/packages/mcp
 npm install && npm run build
 
@@ -395,9 +401,9 @@ uv run pytest tests/    # 派生器单测
 本 fork 的 bundle 名是 `academic-retrieval`（见 `clawhub/manifest.json` 的 `slug`），**尚未发布**——registry 上 `sciverse` 这个名字是上游的。现在从本地 bundle 安装：
 
 ```bash
-openclaw skills install academic-retrieval   # 发布后
-# 或当前直接从仓库安装：
-openclaw skills install ./clawhub
+openclaw skills install ./clawhub                     # 本仓库 bundle
+# registry 版本（上游 1.0.1，不是本 fork）：
+openclaw skills install @sciverse/academic-retrieval
 ```
 
 详见 [`clawhub/README.md`](./clawhub/README.md)。

@@ -970,7 +970,7 @@ SQLite 仅保存：
 ### P1
 
 - **MCP 静默丢参（本轮最严重）**：`packages/mcp/src/tools.ts` 的 `PASSTHROUGH` 是手工复制的 5 个键，而重新生成后的 schema 已广告 `cursor` / `facets` / 三个 boost。补齐后新增运行时守卫：把 schema 里 `search_papers` 的每个属性逐个送进 `executeTool`，断言出站 body 与空参数不同——历史上“只查 schema 不查 handler”正是漏网原因。并已验证该守卫在删掉 `cursor` 时会失败。
-- **安装口径**：四篇 `docs/integrations/*.md` 顶部加“先确认版本线”块，说明 `npx -y sciverse-mcp-server` 拉的是上游 1.0.1；README / getting-started 的 MCP 安装改为本地构建 `packages/mcp` + `node dist/cli.js`，不再教 `npm install -g`；ClawHub 命令改为 bundle 实际 slug（`openclaw skills install academic-retrieval`）。
+- **安装口径**：四篇 `docs/integrations/*.md` 顶部加版本线提示块，说明 `npx -y sciverse-mcp-server` 拉的是上游 1.0.1；README / getting-started 的 MCP 安装改为本地构建 `packages/mcp` + `node dist/cli.js`，不再教 `npm install -g`。（第三轮复查发现 getting-started 主示例与四篇指南的配置仍是 npx、ClawHub 命令也写成了不带 scope 的 slug，已在 §24 一并更正。）
 - **工具数量**：三个包 README（英文段 + 中文段）与 `packages/mcp/package.json` description 统一为 6，MCP README 工具表补 `list_paper_relations`。
 - **版本真源**：文档不再钉 `1.27.0`，改为“≥ 1.27.0，精确值见 `packages/python/pyproject.toml`”，并强调**先看 `sciverse.__file__` 路径再看版本**。`INSTALL.md` 对上游能力的描述改准：上游 1.0.1 也有 cursor/fields/facets，真正差异是工具名（`search_metadata` vs `search_papers`）与 `facets` 形状（数组 vs 对象）。
 - **锁文件逐版落后**：`uv.lock` 1.27.0 → 1.28.0、`packages/mcp/package-lock.json` 1.27.0 → 1.28.0、`packages/typescript/package-lock.json` 旧包名 `sciverse-agent-tools@0.1.0` → `sciverse@1.28.0`。根因是 bump 脚本只改 5 个 manifest，release 时靠旧版本预装顺手把 lock 写回旧的；现在 `bump-versions.mjs` 增加 `uv lock` / `npm install --package-lock-only`（失败退化为只校正本包自身条目），并把 `packages/typescript/package-lock.json` 加入 release assets。
@@ -1000,3 +1000,36 @@ SQLite 仅保存：
 
 - MCP HTTP 入口请求体上限/超时、TS SDK 的 `AbortController`、retention/prune CLI、`SECURITY.md`、覆盖率门禁——按 `AGENTS.md` 属于**独立安全流**，不与路线图混做。
 - CI 里 `rm -f package-lock.json` 的绕行（rollup native binary / npm cli#4828）保持原样：改成 `npm ci` 需要在真实 runner 上验证，盲改会直接打断 CI。
+
+## 24. 对外交付收尾（第三轮审阅，2026-11-09）
+
+第三轮审阅判定"已无功能性/工程性阻断，剩下生成器模板 + 几处文案"。本节按该清单收尾，目标是对外交付 GO。只改模板、文案与一条测试守卫，不动运行时代码。
+
+### P1（对外交付阻断）
+
+- **生成的 Claude skill 还在教装旧线（最后一个实质阻断）**：`generators/to_claude_skill.py` 模板写死 `npm install -g sciverse-mcp-server` / `npx -y`，于是 `skill-claude-code/SKILL.md` 和插件内 `skills/sciverse/SKILL.md` 都在指导用户安装 1.0.1 旧线。模板改为"先 `cd packages/mcp && npm install && npm run build`，再把 `.mcp.json` 指向 `dist/cli.js` 绝对路径"，`npx` / 全局安装降级为明确的"不要用"。重新派生后两份 SKILL.md 同步更新。新增守卫 `test_skill_md_teaches_local_build_not_registry`：产物必须含本地构建路径、不含 `npm install -g sciverse-mcp-server`，且 `npx` 只能出现在否定语境。
+- **`docs/INSTALL.md` 写死版本**：删掉"（当前 1.28.0）"，版本一律指向 `packages/python/pyproject.toml`；"验证 SDK 装对了"里的 `≥ 1.27.0` 一并去掉，只保留"先看 `sciverse.__file__` 路径"。
+- **"说 6 列 5"**：`packages/mcp/README.md`、`packages/typescript/README.md` 顶部工具清单补 `list_paper_relations`；TS README 的 "Six retrieval tools" 代码块补第 5 条示例（`relation` 取 `CITATIONS` / `REFERENCES` / `RELATED_WORKS`），`get_resource` 顺延为第 6 条；`docs/integrations/README.md` 工具表 5 → 6 并补该工具一行。
+- **Quick start 仍是 registry-first**：`packages/mcp/README.md` 中英双语快速开始改为本地构建 + `node dist/cli.js`，`.mcp.json` / `claude mcp add` / Codex TOML 三处示例改成 `node` + 绝对路径；顶部加"本仓库不向 npm 发布，registry 同名包是上游 1.0.1"，并去掉会显示 1.0.1 的 npm badge。`packages/typescript/README.md` 中文"安装"段原来写 `npm install sciverse`，改为本地 `npm pack`。
+- **getting-started 主示例仍是 npx**：`docs/getting-started.zh-CN.md` 方式 A 改为"先构建、再指向 `dist/cli.js`"，插件安装改本地 marketplace；四篇 `docs/integrations/*.md` 的示例配置一并从 `npx` 换成 `node` + 绝对路径，顶部提示块由"下文 npx 请自行替换"改为"本文配置就是本地构建产物"，FAQ 里 npx 相关条目改写成构建 / 路径类问题。第二轮记录里"getting-started 已改为本地构建"现在与文件一致。
+- **ClawHub 叙事与命令**：`clawhub/README.md` 删除"Published by @sciverse"与 ClawHub badge，改为"本 fork 未发布；registry 上 `@sciverse/academic-retrieval` 是上游 1.0.1"，安装命令给 `openclaw skills install ./clawhub`，工具表补 `list_paper_relations`；`docs/INSTALL.md` C 节命令改为 `@sciverse/academic-retrieval`，并新增"本 fork marketplace 走本地目录"一行。
+- **重复测试**：`research_app/tests/test_maintenance.py` 里 `test_explicit_upgrade_failure_restores_backup`、`test_failed_migration_on_fresh_database_leaves_no_half_file` 各被复制了一份（合并时手工复制的痕迹，430 → 386 行）。删掉副本，并给全新库用例补上"失败后恢复真实 `_migrate` 重试成功、且不留 `-wal` / `-shm`"的断言——原 docstring 说"允许干净重试"但没测。
+
+### P2（顺手做掉）
+
+- **MCP 守卫从"丢弃探测"升级为"精确落点"**：新增 `SEARCH_ARG_EXPECTATIONS`，对 20 个参数逐个断言 canonical 形状（`title_contains` → `filters` 里 `{field:"title", operator:"FILTER_OP_CONTAINS"}`、`facets` → `{publication_published_year:{size:10}}`、`sort_by_year:"none"` → 无 `sort` 等）。变异验证两轮：把 `addFilter("title", ...)` 改成 `title_like` → 2 failed；把 `facets` 键写成 `facets_typo` → 1 failed。旧版"body 与空参数不同"挡不住这类映射错误。
+
+### 未做（保持原判断）
+
+- 全新库"文件已存在但 `user_version=0`"（损坏库）的恢复策略：要产品决策（重建 vs 拒绝启动），不属文案修复。
+- CI `rm -f package-lock.json` + `uv sync` 无 `--locked`：仍需真实 runner 验证。
+- 插件未带 `.mcp.json`：现在插件只做 prompt 编排，MCP server 由用户按 INSTALL 构建；是否内置启动配置待定。
+
+### 验证（本机实测）
+
+| 闸门 | 结果 |
+|---|---|
+| 根测试 | 50 passed, 2 skipped（新增 1 条 skill 模板守卫） |
+| MCP | `tools.test.ts` 21 passed（含精确落点）；两轮变异均按预期变红 |
+| 科研工作台 | `test_maintenance.py` 11 passed, 1 skipped |
+| 派生产物 | 重跑 `to_claude_skill` 后两份 SKILL.md + `plugin.json` + `marketplace.json` 一致，`git status` 只含预期改动 |

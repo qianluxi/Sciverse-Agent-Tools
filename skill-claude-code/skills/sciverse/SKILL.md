@@ -24,30 +24,37 @@ the underlying index only covers peer-reviewed and preprint scientific literatur
 
 ## Prerequisites
 
-This skill is a thin wrapper around the `sciverse-mcp-server` MCP server.
-Before invoking any tool, ensure the server is reachable:
+This skill is a thin wrapper around the `sciverse-mcp-server` MCP server
+built from this repository. Build it once and point your agent at the
+build output before invoking any tool.
 
-1. Install the MCP server:
+1. Build the server from the repo root:
 
    ```bash
-   npm install -g sciverse-mcp-server
+   cd packages/mcp && npm install && npm run build
    ```
 
-   Or add it to your project `.mcp.json`:
+2. Register the build output as an MCP server (`.mcp.json`, project scope):
 
    ```json
    {
      "mcpServers": {
        "sciverse": {
-         "command": "npx",
-         "args": ["-y", "sciverse-mcp-server"],
+         "command": "node",
+         "args": ["/absolute/path/to/Sciverse-Agent-Tools/packages/mcp/dist/cli.js"],
          "env": { "SCIVERSE_API_TOKEN": "${SCIVERSE_API_TOKEN}" }
        }
      }
    }
    ```
 
-2. Obtain an API token from https://sciverse.space and export it:
+   Do **not** use `npx -y sciverse-mcp-server` or `npm install -g
+   sciverse-mcp-server`: the registry still serves the upstream 1.0.1 line,
+   where structured search is `search_metadata` (not `search_papers`) and
+   `facets` has a different shape. See `docs/INSTALL.md` in the
+   Sciverse-Agent-Tools repo for the full version-line comparison.
+
+3. Obtain an API token from https://sciverse.space and export it:
 
    ```bash
    export SCIVERSE_API_TOKEN=sv-...

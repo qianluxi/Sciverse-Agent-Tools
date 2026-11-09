@@ -40,34 +40,36 @@ $env:SCIVERSE_API_TOKEN = "sv-..."
 
 ### 方式 A：在 AI 编程工具中使用（MCP）
 
-适合 Claude Code、Cursor、Codex CLI、Windsurf 等支持 MCP 的 agent。在项目 MCP 配置文件中加入：
+适合 Claude Code、Cursor、Codex CLI、Windsurf 等支持 MCP 的 agent。**先构建本仓库的 MCP server**（npm registry 上的 `sciverse-mcp-server` 是上游 1.0.1 线，结构化检索叫 `search_metadata`，不要直接装）：
+
+```bash
+cd packages/mcp && npm install && npm run build
+```
+
+然后在项目 MCP 配置文件里指向构建产物：
 
 ```json
 {
   "mcpServers": {
     "sciverse": {
-      "command": "npx",
-      "args": ["-y", "sciverse-mcp-server"],
+      "command": "node",
+      "args": ["/绝对路径/Sciverse-Agent-Tools/packages/mcp/dist/cli.js"],
       "env": { "SCIVERSE_API_TOKEN": "${SCIVERSE_API_TOKEN}" }
     }
   }
 }
 ```
 
-各工具的详细配置见 [docs/integrations/](./integrations/)。
+各 agent 的配置文件名见 [docs/integrations/](./integrations/)。
 
-Claude Code 用户也可以直接安装插件：
+Claude Code 用户还可以装插件（插件只提供 prompt 编排，MCP server 仍按上面构建）：
 
 ```bash
-# 插件来自上游 marketplace（本 fork 尚未发布自己的）
-claude /plugin marketplace add https://github.com/opendatalab/Sciverse-Agent-Tools
+claude /plugin marketplace add /绝对路径/Sciverse-Agent-Tools
 claude /plugin install sciverse
-
-# MCP server 用本仓库构建（不要 npm install -g，那是 1.0.1 旧线）
-cd packages/mcp && npm install && npm run build
 ```
 
-> 注意：方式 A 里的 `npx -y sciverse-mcp-server` 以及上面两条 `claude` / `npm install -g` 命令，装到的都是**上游仓库和 1.0.1 线上包**，不是本 fork 的版本。要用本仓库代码，见 [INSTALL.md](./INSTALL.md) 的 B 节（本地构建 MCP server）。
+> 不要用 `npx -y sciverse-mcp-server` / `npm install -g sciverse-mcp-server`，也不要从 GitHub 上的上游仓库装插件 —— 那些都是 1.0.1 旧线，工具名与 `facets` 形状都和本文不一致。完整对照见 [INSTALL.md](./INSTALL.md)。
 
 ### 方式 B：Python SDK（写自己的 Agent）
 

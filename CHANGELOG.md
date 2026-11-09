@@ -1,3 +1,9 @@
+## [1.27.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.26.10...v1.27.0) (2026-11-09)
+
+### Features
+
+* add common AI model presets to model selector ([dfbdf59](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/dfbdf597f0dc4e892ddba06d75074983ce85775b))
+
 ## [1.26.10](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.26.9...v1.26.10) (2026-11-09)
 
 ## [1.26.9](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.26.8...v1.26.9) (2026-11-09)

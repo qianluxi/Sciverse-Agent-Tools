@@ -1,3 +1,9 @@
+## [1.29.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.28.0...v1.29.0) (2026-11-09)
+
+### Features
+
+* **delivery:** 修复选择器回归、补齐 search 入参、统一安装与发布口径 ([1f24e9c](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/1f24e9c33de4773dcc4734d0d351ac0db5956f6a))
+
 ## [1.28.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.27.0...v1.28.0) (2026-11-09)
 
 ### Features

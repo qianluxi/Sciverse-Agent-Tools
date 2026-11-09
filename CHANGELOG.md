@@ -1,3 +1,9 @@
+## [1.28.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.27.0...v1.28.0) (2026-11-09)
+
+### Features
+
+* confirm project creation and add search results to project ([377244b](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/377244b414617c470396563619035be2f8a26927))
+
 ## [1.27.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.26.10...v1.27.0) (2026-11-09)
 
 ### Features

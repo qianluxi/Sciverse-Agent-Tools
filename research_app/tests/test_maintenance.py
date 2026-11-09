@@ -1,4 +1,5 @@
 import os
+from contextlib import closing
 import sqlite3
 import stat
 
@@ -269,3 +270,55 @@ def test_orphan_identifier_is_reported_and_removed(monkeypatch, tmp_path):
             (project_id,),
         ).fetchone()[0]
     assert count == 0
+
+
+def test_failed_migration_restores_pre_migration_backup(monkeypatch, tmp_path):
+    """迁移中途失败必须回滚到迁移前备份，不能留下半迁移的库。
+
+    _migrate 全部用 executescript，而 executescript 执行前会先 COMMIT，
+    所以失败时可能留下“表已建、user_version 还是旧值”的中间态。
+    """
+    _isolate(monkeypatch, tmp_path)
+    storage.create_screening_project("Keep me", "Q", "Include", "Exclude")
+    path = tmp_path / "workbench.sqlite3"
+
+    with closing(sqlite3.connect(path)) as connection:
+        connection.execute("PRAGMA user_version = 21")
+        connection.commit()
+
+    def _explode(connection):
+        connection.execute("CREATE TABLE half_migrated (id INTEGER)")
+        raise RuntimeError("migration exploded")
+
+    monkeypatch.setattr(storage, "_migrate", _explode)
+
+    with pytest.raises(RuntimeError, match="migration exploded"):
+        storage.list_screening_projects()
+
+    with closing(sqlite3.connect(path)) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 21
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+        assert "half_migrated" not in tables
+        assert connection.execute("SELECT COUNT(*) FROM screening_projects").fetchone()[0] == 1
+
+
+def test_upgrade_database_keeps_exactly_one_backup(monkeypatch, tmp_path):
+    """显式升级已经备份过一次，_connection 不应再备份一份。"""
+    _isolate(monkeypatch, tmp_path)
+    storage.create_screening_project("Upgrade", "Q", "Include", "Exclude")
+    path = tmp_path / "workbench.sqlite3"
+
+    with closing(sqlite3.connect(path)) as connection:
+        connection.execute("PRAGMA user_version = 21")
+        connection.commit()
+
+    result = storage.upgrade_database()
+
+    assert result["to_version"] == 22
+    assert result["backup_path"]
+    assert len(list(tmp_path.glob("workbench.sqlite3.bak-*"))) == 1

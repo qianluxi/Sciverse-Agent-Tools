@@ -41,6 +41,9 @@ class SearchPapersArgs(BaseModel):
     language_affinity: str = Field('NONE', description='模糊搜索语言亲和加权：非 query 语言的结果降序、但不排除（仅 query\n非空时生效；传排序时被忽略）。目标语言由服务端从 query 文本判定\n（假名→ja / 谚文→ko / 汉字→zh / 拉丁→en，其他书写系统不生效）；\n语言未知的文献保持中性不降权。MILD: 非目标语言 ×0.5，跨语言强相关\n结果仍可上浮；STRONG: ×0.2，几乎只看目标语言。与 freshness_boost /\nimpact_boost 可叠加；boost 生效时为浅翻页。要硬排除某语言请改用\nfilters_advanced 的 language 字段（如 {"field":"language","value":"en"}，\n软硬两层语义不同：本参数只调序，filter 直接排除）。\n')
     page: int = Field(1, description='')
     page_size: int = Field(25, description='每页条数。省略时为服务端默认 25（SDK / MCP 不注入默认值）；工具层上限 50。')
+    cursor: str | None = Field(None, description='深翻页游标。把上一页响应里的 `next_cursor` 原样回填；为空表示没有更多。\n`page * page_size` 超过 10000 时后端只认 cursor（`total_count` 同时被截到 10000）。\n与 freshness_boost / impact_boost / language_affinity 互斥：boost 生效时是\n浅翻页，不产 `next_cursor`。\n')
+    fields: list[str] | None = Field(None, description='字段投影：只返回列出的字段，减少上下文占用。可用字段见 `list_catalog`\n的 `fields` / `default_fields`；不传则返回默认字段集。\n无界数组字段（citations / references / related_works）不能投影，\n取完整列表请用 list_paper_relations。\n')
+    facets: dict[str, Any] | None = Field(None, description='聚合统计请求。SDK / skill 脚本会原样透传给后端；具体字段与参数取值\n由后端的 facets 定义决定，字段名请先用 `list_catalog` 确认。\n不确定时省略该参数即可。\n')
 
 
 class SearchPapersTool(BaseTool):

@@ -1,0 +1,62 @@
+# 手动构建 Windows 单文件 exe。
+#
+# 为什么是手动：便携包需要一台没装 Python 的干净机器做双击验收，验收前
+# 不能对外宣称“已发布”。本 workflow 只产出 workflow artifact，不自动挂
+# Release；验收通过后由维护者手动决定是否上传。
+name: Build portable exe
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: build-exe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: PyInstaller one-file build
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install local SDK and workbench dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          # SDK 必须来自本仓库：PyPI 上的 sciverse 是 1.0.1 上游旧线
+          python -m pip install -e packages/python
+          python -m pip install -r research_app/requirements.txt
+
+      - name: Build portable executable
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File scripts/build_desktop.ps1
+
+      - name: Verify artifact
+        shell: pwsh
+        run: |
+          $exe = "dist/SciverseResearchWorkbench.exe"
+          if (-not (Test-Path $exe)) { throw "missing $exe" }
+          $size = (Get-Item $exe).Length
+          Write-Host "built $exe ($([math]::Round($size/1MB,1)) MB)"
+          # 单文件包含 streamlit + matplotlib + pandas，正常在 80 MB 以上
+          if ($size -lt 50MB) { throw "artifact looks truncated: $size bytes" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SciverseResearchWorkbench-windows
+          path: dist/SciverseResearchWorkbench.exe
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Clean-machine checklist
+        shell: pwsh
+        run: |
+          Write-Host "下载 artifact 后请在未安装 Python 的 Windows 10/11 上："
+          Write-Host "1. 双击 exe，记录到浏览器打开的时间"
+          Write-Host "2. 跑一次检索并导出 CSV"
+          Write-Host "3. 关闭应用，确认没有残留进程"

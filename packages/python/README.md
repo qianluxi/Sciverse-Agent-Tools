@@ -16,9 +16,12 @@ five retrieval tools (`search_papers`, `semantic_search`, `read_content`,
 ### Install
 
 ```bash
-pip install sciverse
+# from this repo (PyPI `sciverse` is the 1.0.1 upstream line with a different
+# structured-search tool name: search_metadata instead of search_papers)
+pip install -e .
+
 # or, if you only want the CLI:
-pipx install sciverse
+pipx install .
 ```
 
 ### Configure once (no env vars needed afterwards)
@@ -215,15 +218,17 @@ from sciverse.types import SearchPapersRequest, SemanticSearchRequest
 
 ## 中文
 
-Sciverse 开放平台 Python SDK + CLI，提供 5 个学术文献检索 tool（结构化元数据、
-语义检索、原文切片、字段 introspection、论文图片）。
+Sciverse 开放平台 Python SDK + CLI，提供 6 个学术文献检索 tool（结构化元数据、
+语义检索、原文切片、引用关系、字段 introspection、论文图片）。
 
 ### 安装
 
 ```bash
-pip install sciverse
+# 从本仓库安装（PyPI 上的 sciverse 是 1.0.1 上游旧线，结构化检索叫 search_metadata）
+pip install -e .
+
 # 只想用 CLI 时：
-pipx install sciverse
+pipx install .
 ```
 
 ### 登录（只跑一次，后续 SDK 无需再传 token）

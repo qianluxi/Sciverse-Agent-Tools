@@ -41,7 +41,7 @@
 
 ## 验证
 
-打开 Cursor Composer (Cmd/Ctrl+I)，确认右上角 MCP 图标显示 `sciverse: 4 tools`。
+打开 Cursor Composer (Cmd/Ctrl+I)，确认右上角 MCP 图标显示 `sciverse: 6 tools`。
 
 Hello-world prompt（Composer agent mode）：
 

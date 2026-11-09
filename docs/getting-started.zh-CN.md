@@ -2,6 +2,8 @@
 
 本文面向第一次接触本项目的用户，帮助你在 10 分钟内完成接入。完整说明见根目录 [README.zh-CN.md](../README.zh-CN.md)。
 
+> **装之前先看 [INSTALL.md](./INSTALL.md)。** PyPI/npm 上现有的 `sciverse` 是上游 1.0.1 旧线（结构化检索叫 `search_metadata`），与本仓库 1.27.0 的 `search_papers` 不是同一套接口。本文命令默认你已经按 INSTALL.md 从源码装好本仓库 SDK。
+
 ## 1. 这个项目是什么
 
 Sciverse Agent Tools 把 [Sciverse 开放平台](https://sciverse.space) 的学术检索能力封装成 6 个标准工具，供 LLM Agent 调用：
@@ -62,10 +64,14 @@ claude /plugin install sciverse
 npm install -g sciverse-mcp-server
 ```
 
+> 注意：方式 A 里的 `npx -y sciverse-mcp-server` 以及上面两条 `claude` / `npm install -g` 命令，装到的都是**上游仓库和 1.0.1 线上包**，不是本 fork 的版本。要用本仓库代码，见 [INSTALL.md](./INSTALL.md) 的 B 节（本地构建 MCP server）。
+
 ### 方式 B：Python SDK（写自己的 Agent）
 
+从本仓库源码安装（不要用 `pip install sciverse`，那是 1.0.1 旧线）：
+
 ```bash
-pip install sciverse
+python -m pip install -e packages/python
 ```
 
 ```python
@@ -87,7 +93,7 @@ asyncio.run(main())
 
 ### 方式 C：命令行 CLI（快速验证）
 
-安装 `sciverse` 后即可使用：
+按方式 B 装好本仓库 SDK 后即可使用：
 
 ```bash
 sciverse auth login                                  # 交互式保存 token
@@ -139,7 +145,8 @@ Windows 下 `scripts/build.sh` 需在 Git Bash 或 WSL 中执行。
 | 400 | 参数或字段名错误，先调用 `list_catalog` 确认 |
 | 429 | 触发配额 / 限流，稍后重试 |
 | 502 / 503 | 上游服务不可用，稍后重试 |
-| 找不到 `sciverse` 命令 | 确认 `pip install sciverse` 成功且脚本目录在 PATH 中 |
+| 找不到 `sciverse` 命令 | 确认已在仓库根目录执行 `python -m pip install -e packages/python`，且该 Python 的 Scripts 目录在 PATH 中 |
+| 检索报“未知参数”或工具名对不上 | 装到了 PyPI 1.0.1 旧线，按 [INSTALL.md](./INSTALL.md) A-1 重装本仓库 SDK |
 
 更多信息：
 

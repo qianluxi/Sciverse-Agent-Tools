@@ -26,11 +26,11 @@
 | **Skills CLI** | 使用通用 Skills CLI 的项目 | `npx skills add https://sciverse.space` |
 | **Claude Code skill** | Claude Code / VS Code 用户 | 通过 Plugin Marketplace 一行装（见下） |
 | **MCP server** | 任意 MCP-capable coding agent（Cursor / Codex CLI / Windsurf...） | 写到 `.mcp.json` —— [接入指南](./docs/integrations/) |
-| **Python / TypeScript SDK** | 自定义 agent（OpenAI / Anthropic / LangChain / LlamaIndex...） | `pip install sciverse` 或 `npm install sciverse` |
+| **Python / TypeScript SDK** | 自定义 agent（OpenAI / Anthropic / LangChain / LlamaIndex...） | 从本仓库源码安装 —— 见 [docs/INSTALL.md](./docs/INSTALL.md) |
 | **CLI** | shell 脚本 / 快速试用 / 无 agent loop | 随 Python SDK 一起装 —— `sciverse auth login` |
 | **Web well-known URL** | 通过 well-known URI 约定自动发现 skill 的 agent host | 把 agent host 指向 <https://sciverse.space/.well-known/agent-skills/> |
 
-> **包发布状态：** 当前 fork 只发布 GitHub tag/Release 和科研工作台便携 exe。由于没有 PyPI/npm/ClawHub 的包名所有权，包发布暂时停用；已发布的旧版本保持不变。在解决包权限前，请使用 GitHub Release 或从源码安装 SDK。
+> **包发布状态（装之前先看这段）：** 由于本 fork 没有 PyPI/npm/ClawHub 的包名所有权，包发布暂时停用。现在从 PyPI/npm 装到的是 **1.0.1（上游旧线）**，它的结构化检索叫 `search_metadata`；本仓库是 **1.27.0**，叫 `search_papers`。两者签名不同，照本文档写 `search_papers(...)` 会直接报参数错误。请**从本仓库源码安装 SDK**，具体命令见 [docs/INSTALL.md](./docs/INSTALL.md)。GitHub Release 只提供 tag 和 `web-skill.tgz`，**不含** SDK 包，也**不含**便携 exe。
 
 ## 5 分钟接入 —— Skills CLI
 
@@ -49,7 +49,9 @@ claude /plugin marketplace add https://github.com/opendatalab/Sciverse-Agent-Too
 claude /plugin install sciverse
 ```
 
-skill 依赖 `sciverse-mcp-server`，装一次即可：
+> 上面的 marketplace 指向 **opendatalab 上游仓库**，装到的是上游 skill，不是本 fork 的版本；本 fork 尚未发布自己的 marketplace。
+
+skill 依赖 `sciverse-mcp-server`。注意这条命令装的是 1.0.1 线上包；要跑本仓库的 6 工具版本，请构建 `packages/mcp` 并把配置指向其 `dist/cli.js`（见 [docs/INSTALL.md](./docs/INSTALL.md)）：
 
 ```bash
 npm install -g sciverse-mcp-server
@@ -75,6 +77,8 @@ export SCIVERSE_API_TOKEN=sv-...     # 从 https://sciverse.space 控制台申�
 ```
 
 各 agent 详细步骤：
+
+> `npx -y sciverse-mcp-server` 跑的是 1.0.1 线上版本（`search_metadata`）。要用本仓库的 6 工具版本，请构建 `packages/mcp`，把命令换成 `node /path/to/packages/mcp/dist/cli.js`。
 
 | Agent | 指南 |
 |---|---|
@@ -114,15 +118,17 @@ materialise 到本地供模型调用。
 
 ### 2. 安装 SDK
 
-请认准正确的 pip 和 npm 包名，统一为 **`sciverse`**。
+本仓库当前的接口在包管理器上装不到，需要从源码装：
 
 ```bash
-# Python
-pip install sciverse
+# Python —— 在仓库根目录执行
+python -m pip install -e packages/python
 
-# TypeScript / Node.js
-npm install sciverse
+# TypeScript / Node.js —— 在 packages/typescript 下执行
+npm ci && npm run build && npm pack
 ```
+
+`pip install sciverse` / `npm install sciverse` 装到的是 1.0.1 上游旧线，结构化检索叫 `search_metadata`。完整版本对照见 [docs/INSTALL.md](./docs/INSTALL.md)。
 
 ### 3. 配置凭据（三种方式任选）
 
@@ -218,7 +224,7 @@ async with AgentToolsClient() as client:
 
 **SDK 直接调用（自己写 tool calling 回环）：**
 
-- `python_anthropic_rag.py` — Anthropic + 5 tool RAG agent
+- `python_anthropic_rag.py` — Anthropic + 6 tool RAG agent
 - `python_openai_function_call.py` — OpenAI function calling
 - `ts_openai.ts` — TypeScript + OpenAI
 - `ts_langchain_agent.ts` — TypeScript + LangChain
@@ -354,9 +360,10 @@ list_catalog(include_sample_values=true)         # 首次接入调一次 —— 
 ```
 search_papers(authors=[...], year_from=2020)     # 先按结构化条件缩窄
     └─▶ results[].doc_id 列表
-            └─▶ semantic_search(query="...")     # 在缩窄结果里语义检索
-                                                 # （需自行二次过滤 ——
-                                                 #  semantic_search 不支持 doc_id 白名单）
+            └─▶ semantic_search(query="...", filters={"doc_id": [...]})
+                    # 在缩窄结果里语义检索：doc_id 是 semantic_search 的
+                    # 唯一硬约束字段（string 或 string[]，仅 eq/in），
+                    # 传空数组返回空结果，不会退化为全局检索
 ```
 
 **4. 多模态 RAG（含图片）：**

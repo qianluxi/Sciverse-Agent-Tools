@@ -1,11 +1,12 @@
-"""端到端示例：使用 Anthropic + Sciverse 五个 tool 跑一次 RAG。
+"""端到端示例：使用 Anthropic + Sciverse 六个 tool 跑一次 RAG。
 
-`ANTHROPIC_TOOLS` 包含全部 5 个 schema（list_catalog / search_papers /
-semantic_search / read_content / get_resource），dispatch 表必须覆盖
-全部，否则模型一调没接的 tool 就会 fall through。
+`ANTHROPIC_TOOLS` 包含全部 6 个 schema（list_catalog / search_papers /
+semantic_search / list_paper_relations / read_content / get_resource），
+dispatch 表必须覆盖全部，否则模型一调没接的 tool 就会 fall through。
 
-运行：
-    pip install anthropic sciverse
+运行（先按 docs/INSTALL.md 从源码安装本仓库 SDK）：
+    python -m pip install -e packages/python
+    pip install anthropic
     export SCIVERSE_API_TOKEN=...
     export ANTHROPIC_API_KEY=...
     python examples/python_anthropic_rag.py
@@ -29,6 +30,8 @@ async def call_tool(client: AgentToolsClient, name: str, args: dict) -> dict:
         return await client.search_papers(**args)
     if name == "semantic_search":
         return await client.semantic_search(**args)
+    if name == "list_paper_relations":
+        return await client.list_paper_relations(**args)
     if name == "read_content":
         return await client.read_content(**args)
     if name == "get_resource":

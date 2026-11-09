@@ -32,7 +32,7 @@
 
 ## 验证
 
-打开 Cascade 面板，应看到 `sciverse` plugin 已加载（4 个 tool）。
+打开 Cascade 面板，应看到 `sciverse` plugin 已加载（6 个 tool）。
 
 Hello-world prompt：
 

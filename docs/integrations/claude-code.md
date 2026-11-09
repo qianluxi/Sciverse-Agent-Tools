@@ -8,7 +8,7 @@
 - Node.js 18+
 - Claude Code 已安装
 
-## 接入方式 A：MCP server（推荐，五个 tool 全开）
+## 接入方式 A：MCP server（推荐，六个 tool 全开）
 
 ### 用 `claude mcp add` 一行命令
 
@@ -64,7 +64,7 @@ claude /plugin install sciverse
 /mcp
 ```
 
-应能看到 `sciverse` 列出四个 tool：`list_catalog`、`search_papers`、`semantic_search`、`read_content`。
+应能看到 `sciverse` 列出六个 tool：`list_catalog`、`search_papers`、`semantic_search`、`list_paper_relations`、`read_content`、`get_resource`。
 
 Hello-world prompt（RAG 流程）：
 

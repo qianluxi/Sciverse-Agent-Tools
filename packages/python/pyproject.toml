@@ -13,11 +13,11 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/opendatalab/Sciverse-Agent-Tools"
-Repository = "https://github.com/opendatalab/Sciverse-Agent-Tools.git"
-Documentation = "https://github.com/opendatalab/Sciverse-Agent-Tools#readme"
-Changelog = "https://github.com/opendatalab/Sciverse-Agent-Tools/blob/main/CHANGELOG.md"
-Issues = "https://github.com/opendatalab/Sciverse-Agent-Tools/issues"
+Homepage = "https://github.com/qianluxi/Sciverse-Agent-Tools"
+Repository = "https://github.com/qianluxi/Sciverse-Agent-Tools.git"
+Documentation = "https://github.com/qianluxi/Sciverse-Agent-Tools#readme"
+Changelog = "https://github.com/qianluxi/Sciverse-Agent-Tools/blob/main/CHANGELOG.md"
+Issues = "https://github.com/qianluxi/Sciverse-Agent-Tools/issues"
 
 [project.scripts]
 sciverse = "sciverse.cli:main"

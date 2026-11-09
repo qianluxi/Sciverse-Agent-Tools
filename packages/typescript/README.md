@@ -18,7 +18,9 @@ retrieval tools (`searchPapers`, `semanticSearch`, `readContent`, `listCatalog`,
 ### Install
 
 ```bash
-npm install sciverse           # or pnpm add / yarn add
+# from packages/typescript in this repo — the registry package is the 1.0.1
+# upstream line, whose structured-search tool is search_metadata
+npm ci && npm run build && npm pack    # then install the produced tarball
 ```
 
 Node.js ≥ 18 (uses native `fetch`).
@@ -26,7 +28,7 @@ Node.js ≥ 18 (uses native `fetch`).
 ### Configure once via Python CLI (optional but recommended)
 
 ```bash
-pip install sciverse && sciverse auth login
+pip install -e ../python && sciverse auth login
 # - opens https://sciverse.space/tokens in your browser
 # - paste the token you create
 # - saved to ~/.sciverse/credentials.json (file mode 0600)
@@ -171,7 +173,7 @@ npm install sciverse           # 或 pnpm add / yarn add
 ### 通过 Python CLI 登录一次（推荐）
 
 ```bash
-pip install sciverse && sciverse auth login
+pip install -e ../python && sciverse auth login
 # - 浏览器打开 https://sciverse.space/tokens
 # - 复制控制台生成的 token，粘贴回 CLI
 # - 保存到 ~/.sciverse/credentials.json（文件权限 0600）

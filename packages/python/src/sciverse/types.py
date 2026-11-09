@@ -180,6 +180,18 @@ class SearchPapersRequest(BaseModel):
         ge=1,
         le=50,
     )
+    cursor: str | None = Field(
+        None,
+        description="深翻页游标。把上一页响应里的 `next_cursor` 原样回填；为空表示没有更多。\n`page * page_size` 超过 10000 时后端只认 cursor（`total_count` 同时被截到 10000）。\n与 freshness_boost / impact_boost / language_affinity 互斥：boost 生效时是\n浅翻页，不产 `next_cursor`。\n",
+    )
+    fields: list[str] | None = Field(
+        None,
+        description="字段投影：只返回列出的字段，减少上下文占用。可用字段见 `list_catalog`\n的 `fields` / `default_fields`；不传则返回默认字段集。\n无界数组字段（citations / references / related_works）不能投影，\n取完整列表请用 list_paper_relations。\n",
+    )
+    facets: dict[str, Any] | None = Field(
+        None,
+        description="聚合统计请求。SDK / skill 脚本会原样透传给后端；具体字段与参数取值\n由后端的 facets 定义决定，字段名请先用 `list_catalog` 确认。\n不确定时省略该参数即可。\n",
+    )
 
 
 class AuthorItem(BaseModel):

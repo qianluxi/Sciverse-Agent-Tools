@@ -26,7 +26,7 @@ npx -y sciverse-mcp-server         # stdio mode; coding agents will spawn this f
 Or skip the env var entirely by running the Python CLI once:
 
 ```bash
-pip install sciverse && sciverse auth login
+pip install -e ../python && sciverse auth login
 # saves token to ~/.sciverse/credentials.json (file mode 0600)
 # the MCP server will pick it up automatically next time it starts
 ```
@@ -154,7 +154,7 @@ npx -y sciverse-mcp-server         # stdio 启动；coding agent 通常会代你
 也可以跑一次 Python CLI 把 token 持久化，之后 env 都不用配：
 
 ```bash
-pip install sciverse && sciverse auth login
+pip install -e ../python && sciverse auth login
 # 保存到 ~/.sciverse/credentials.json（文件权限 0600）
 # MCP server 启动时自动 fallback 读取
 ```

@@ -20,15 +20,19 @@
 如果双击启动器不成功，也可以在项目目录打开 PowerShell，运行：
 
 ```powershell
+python -m pip install -e packages/python
 python -m pip install -r research_app/requirements.txt
 python -m streamlit run research_app/app.py
 ```
 
 浏览器地址通常是 <http://localhost:8501>。
 
+> SDK 必须来自本仓库源码（`packages/python`）。PyPI 上的 `sciverse` 是上游 1.0.1 旧线，结构化检索叫 `search_metadata`，装错会在检索时直接报参数错误。详见 [安装说明](../docs/INSTALL.md)。
+
 ### macOS / Linux
 
 ```bash
+python3 -m pip install -e packages/python
 python3 -m pip install -r research_app/requirements.txt
 python3 -m streamlit run research_app/app.py
 ```
@@ -233,7 +237,7 @@ OpenCode Go 推荐模型为 `glm-5.3-flash`、`deepseek-v4.1-flash` 或其他走
 
 ## Windows 便携版 exe
 
-需要构建便携版时，在仓库根目录运行：
+仓库**不随 Release 发布 exe 二进制**，需要在本机构建。在仓库根目录运行：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/build_desktop.ps1

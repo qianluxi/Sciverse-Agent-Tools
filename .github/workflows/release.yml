@@ -20,10 +20,38 @@ permissions:
   issues: write
   pull-requests: write
 
+# 同一分支同时只跑一个 release，避免两个 job 抢着 bump / 打 tag
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  # 门禁：测试红就不许打 tag。曾出现过“工作台测试失败仍打出 v1.28.0”的情况，
+  # 这里把最小可用门禁（生成器 + 工作台）放在 release 之前。
+  gate:
+    name: Test gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - name: Python 3.13
+        run: uv python install 3.13
+      - name: Install root deps
+        run: uv sync
+      - name: Generator tests
+        run: uv run pytest tests/ -v
+      - name: Research app tests (against local SDK)
+        run: |
+          uv pip install --python .venv/bin/python \
+            "streamlit>=1.40" "matplotlib>=3.8" --editable ./packages/python
+          .venv/bin/python -m pytest research_app/tests/ -q
+
   release:
     name: semantic-release
+    needs: gate
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # 跳过 semantic-release 自己 push 的 commit（commit message 含 [skip ci]）
     if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
     steps:

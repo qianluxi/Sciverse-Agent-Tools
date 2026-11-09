@@ -207,6 +207,28 @@ export interface components {
        * @default 25
        */
       page_size?: number;
+      /**
+       * @description 深翻页游标。把上一页响应里的 `next_cursor` 原样回填；为空表示没有更多。
+       * `page * page_size` 超过 10000 时后端只认 cursor（`total_count` 同时被截到 10000）。
+       * 与 freshness_boost / impact_boost / language_affinity 互斥：boost 生效时是
+       * 浅翻页，不产 `next_cursor`。
+       */
+      cursor?: string;
+      /**
+       * @description 字段投影：只返回列出的字段，减少上下文占用。可用字段见 `list_catalog`
+       * 的 `fields` / `default_fields`；不传则返回默认字段集。
+       * 无界数组字段（citations / references / related_works）不能投影，
+       * 取完整列表请用 list_paper_relations。
+       */
+      fields?: string[];
+      /**
+       * @description 聚合统计请求。SDK / skill 脚本会原样透传给后端；具体字段与参数取值
+       * 由后端的 facets 定义决定，字段名请先用 `list_catalog` 确认。
+       * 不确定时省略该参数即可。
+       */
+      facets?: {
+        [key: string]: unknown;
+      };
     };
     SearchPapersResponse: {
       /** @description 命中论文列表（后端字段名为 results，非 hits）。 */

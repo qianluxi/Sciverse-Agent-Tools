@@ -16,3 +16,21 @@ build/
 dist/SciverseResearchWorkbench.exe
 dist/SciverseResearchWorkbench/
 SciverseResearchWorkbench.spec
+
+# 本地工具缓存（slidep / Agent 工作区记忆）
+.slidep/
+.workbuddy/
+
+# 本地运行时数据：检索快照、基准评估导出、审计报告都属于用户数据，
+# 不进版本库（已跟踪的历史文件不受影响）。
+runs/
+benchmarks/
+
+# 演示文稿等本地交付物
+科研文献助手新手指引/
+
+# dist/ 只放构建产物，随手丢进去的文档不要被提交
+dist/*.doc
+dist/*.docx
+dist/*.xlsx
+dist/*.pdf

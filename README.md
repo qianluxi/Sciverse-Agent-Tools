@@ -24,11 +24,11 @@ All six tools share the same Bearer-Token authentication and are exposed identic
 | **Skills CLI** | Projects using the generic Skills CLI | `npx skills add https://sciverse.space` |
 | **Claude Code skill** | Anyone using Claude Code / VS Code | One-line install via Plugin Marketplace (below) |
 | **MCP server** | Any MCP-capable coding agent (Cursor, Codex CLI, Windsurf, …) | Add to `.mcp.json` — [integration guides](./docs/integrations/) |
-| **Python / TypeScript SDK** | Custom agents (OpenAI / Anthropic / LangChain / LlamaIndex / …) | `pip install sciverse` or `npm install sciverse` |
+| **Python / TypeScript SDK** | Custom agents (OpenAI / Anthropic / LangChain / LlamaIndex / …) | Install from this repo's source — see [docs/INSTALL.md](./docs/INSTALL.md) |
 | **CLI** | Shell scripts, quick exploration, no agent loop | Comes with the Python SDK — `sciverse auth login` |
 | **Web well-known URL** | Agent hosts that auto-discover skills via the well-known URI convention | Point your agent host at <https://sciverse.space/.well-known/agent-skills/> |
 
-> **Package release status:** This fork currently publishes GitHub tags/releases and the portable research workbench exe. PyPI/npm/ClawHub publishing is temporarily paused because the fork does not own those package names; the existing published packages remain at their previous version. Use GitHub Releases or install the SDK from source until package ownership is resolved.
+> **Release status (read this before installing):** PyPI/npm/ClawHub publishing is paused because this fork does not own those package names. The packages currently on PyPI/npm are **1.0.1, an older upstream line** where structured search is called `search_metadata`; this repository is **1.27.0** and uses `search_papers`. Installing from the registry therefore gives you a different API than the one documented here. Install the SDK from this repository's source instead — see [docs/INSTALL.md](./docs/INSTALL.md). GitHub Releases ship tags plus a `web-skill.tgz` bundle; they do **not** ship SDK packages or a portable exe.
 
 ## Quickstart — Skills CLI
 
@@ -47,7 +47,9 @@ claude /plugin marketplace add https://github.com/opendatalab/Sciverse-Agent-Too
 claude /plugin install sciverse
 ```
 
-The skill depends on `sciverse-mcp-server`; install it once:
+> The marketplace command above points at the **upstream** repository, so it installs the upstream skill, not this fork's. This fork does not publish its own marketplace yet.
+
+The skill depends on `sciverse-mcp-server`; install it once. Note that this pulls the 1.0.1 registry line — to run this repo's MCP server instead, build `packages/mcp` and point the config at its `dist/cli.js` (see [docs/INSTALL.md](./docs/INSTALL.md)):
 
 ```bash
 npm install -g sciverse-mcp-server
@@ -73,6 +75,8 @@ Drop this snippet into your agent's MCP config (`.mcp.json` for Claude Code / Cu
 ```
 
 Per-agent step-by-step guides:
+
+> `npx -y sciverse-mcp-server` runs the 1.0.1 registry build (`search_metadata`). For this repo's 6-tool server, build `packages/mcp` and replace the command with `node /path/to/packages/mcp/dist/cli.js`.
 
 | Agent | Guide |
 |---|---|
@@ -113,15 +117,17 @@ Sign in to the [Sciverse Developer Console](https://sciverse.space) and create a
 
 ### 2. Install the SDK
 
-The official and correct package name for both pip and npm is **`sciverse`**.
+There is no registry install that matches this repository right now. Install from source:
 
 ```bash
-# Python
-pip install sciverse
+# Python — from the repo root
+python -m pip install -e packages/python
 
-# TypeScript / Node.js
-npm install sciverse
+# TypeScript / Node.js — from packages/typescript
+npm ci && npm run build && npm pack
 ```
+
+`pip install sciverse` / `npm install sciverse` resolve to the 1.0.1 upstream line, whose structured-search tool is `search_metadata`. See [docs/INSTALL.md](./docs/INSTALL.md) for the full version matrix.
 
 ### 3. Configure credentials (any one of the three)
 
@@ -218,7 +224,7 @@ End-to-end examples (full tool-calling loop) live in [`examples/`](./examples/):
 
 **Direct SDK use (you own the tool-calling loop):**
 
-- `python_anthropic_rag.py` — Anthropic + 5-tool RAG agent
+- `python_anthropic_rag.py` — Anthropic + 6-tool RAG agent
 - `python_openai_function_call.py` — OpenAI function calling
 - `ts_openai.ts` — TypeScript + OpenAI
 - `ts_langchain_agent.ts` — TypeScript + LangChain

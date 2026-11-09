@@ -289,6 +289,25 @@ async def test_search_papers_freshness_boost_passthrough():
 
 
 @pytest.mark.asyncio
+@respx.mock
+async def test_search_papers_cursor_and_facets_passthrough():
+    """深翻页游标与聚合请求必须原样透传。
+
+    `_PASSTHROUGH` 曾经漏掉 cursor / facets，SDK 会把它们静默丢掉，
+    agent 于是无法深翻页（page*page_size 超 10000 后只能靠 cursor）。
+    """
+    route = respx.post("https://api.example/meta-search").mock(
+        return_value=Response(200, json={"results": [], "total_count": 0, "page": 1, "page_size": 10})
+    )
+    async with AgentToolsClient(base_url="https://api.example", token="t") as c:
+        await c.search_papers(query="x", cursor="abc", facets={"year": {}})
+    import json as _json
+    parsed = _json.loads(route.calls.last.request.read())
+    assert parsed["cursor"] == "abc"
+    assert parsed["facets"] == {"year": {}}
+
+
+@pytest.mark.asyncio
 async def test_search_papers_freshness_boost_invalid_value_rejected():
     """非法 freshness_boost 值在 SDK 层校验阶段就被拒（不打到后端）。"""
     async with AgentToolsClient(base_url="https://api.example", token="t") as c:

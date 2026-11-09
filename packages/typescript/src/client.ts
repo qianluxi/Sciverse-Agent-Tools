@@ -20,7 +20,7 @@ const PLATFORM = process.platform;
 const SOURCE = `${PLATFORM}-${CHANNEL}`;
 
 const PASSTHROUGH = [
-  "query", "page", "page_size", "fields", "collection",
+  "query", "page", "page_size", "fields", "cursor", "facets", "collection",
   // 软加权档位（NONE/MILD/STRONG，可叠加）：新鲜度 / 影响力 / 语言亲和
   "freshness_boost", "impact_boost", "language_affinity",
 ] as const;

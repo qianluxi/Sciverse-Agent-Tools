@@ -1,3 +1,9 @@
-sciverse>=0.14.3
+# 科研工作台的第三方依赖。
+#
+# Sciverse SDK 不在这里：它必须取自本仓库源码，先执行
+#     python -m pip install -e packages/python
+# PyPI 上的 sciverse 是上游 1.0.1 旧线（结构化检索叫 search_metadata），
+# 与本仓库 1.27.0 的 search_papers 签名不同，装错会在检索时直接报参数错误。
+# 详见 docs/INSTALL.md。
 streamlit>=1.40
 matplotlib>=3.8

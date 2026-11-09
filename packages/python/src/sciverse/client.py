@@ -14,7 +14,7 @@ _SOURCE = f"{_PLATFORM}-{_CHANNEL}"
 
 
 _PASSTHROUGH = (
-    "query", "page", "page_size", "fields", "collection",
+    "query", "page", "page_size", "fields", "cursor", "facets", "collection",
     "freshness_boost", "impact_boost", "language_affinity",
 )
 # 三个软加权档位共用同一枚举值域（NONE/MILD/STRONG）。

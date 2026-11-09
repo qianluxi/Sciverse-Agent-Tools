@@ -508,7 +508,7 @@ SQLite 仅保存：
 - `.releaserc.yaml` 已移除 `publishCmd`；不再自动发布 PyPI/npm/ClawHub。
 - `Republish` workflow 和 `scripts/publish.sh` 保留，供以后拿到包权限时手动补发。
 - 现有 `v1.9.0`/`v1.9.1` tag 保留；对应 GitHub Release 页面已手动补建。
-- 工作台继续通过 GitHub Release 和便携 exe 分发；SDK 用户可暂时从源码安装。
+- 工作台的 exe 二进制不入库、也不挂 Release（`.gitignore` 忽略，且无构建流水线），用户需按 `scripts/build_desktop.ps1` 自行构建；SDK 用户请从 `packages/python` 源码安装，不要用 PyPI 1.0.1 旧线（详见 `docs/INSTALL.md`）。
 
 恢复自动发布的条件：获得相应包名权限并配置可信发布或有效 token；届时先手动 `Republish` 最新版本，确认成功后再恢复 `publishCmd`。
 
@@ -936,4 +936,29 @@ SQLite 仅保存：
 - “研究项目”创建成功后弹出“创建成功”对话框，显示项目名和项目 ID，并自动选中新项目；关闭对话框即可开始使用。
 - 文献检索结果每篇新增“加入项目”按钮，可直接加入左侧当前项目；列表底部保留批量入口，可按已选文献或当前页全部结果加入。无需先进入“系统综述筛选”。
 - 导入沿用检索来源快照、去重和强标识符冲突统计；未选择项目或项目已冻结时显示对应提示，不执行导入。
-- 测试：`pytest research_app/tests/ -v`：276 passed、2 skipped（新增项目创建弹窗流程和检索结果直接入项目测试）。
+- 测试：`pytest research_app/tests/ -v`：279 passed、2 skipped（含项目创建弹窗流程、检索结果直接入项目和选择器状态回归测试）。
+
+## 22. 交付加固（2026-11-09）
+
+按第三方只读审计的 P0/P1 清单逐项修复，目标是让“内部自用交付”成立、并为对外发布扫清阻断。
+
+### P0
+
+- **修复项目选择器回归**：`research_app/project_ui.py` 的 selectbox 状态会覆盖外部写入的 `current_project_id`，导致新建项目后选择器仍为空、页面继续提示“请选择或创建一个研究项目”。改为用 `key::seen` 记录上次渲染值来区分“用户改选择”与“外部改状态”，新建后正确选中，项目被删除后回退到空选项而不是崩溃。新增 2 个回归用例 + 1 组断言；`pytest research_app/tests`：**279 passed、2 skipped**（此前 276 条记录在 HEAD 上实际是 1 failed，已更正）。
+- **安装真源统一**：新增 `docs/INSTALL.md`，说明三条版本线的差异（本仓库源码 1.27.0 用 `search_papers`；PyPI/npm 线上 1.0.1 用 `search_metadata`；Release 只有 tag + `web-skill.tgz`）。`research_app/requirements.txt` 移除 `sciverse`（避免装到 PyPI 旧线），`Start-Research-App.bat` 改为校验 `sciverse.__file__` 落在 `packages/` 下再启动；README / getting-started / 三个包 README 的安装命令同步改写。
+- **便携 exe 声明修正**：README、ROADMAP 不再声称 Release 分发 exe；新增 `Build portable exe` 工作流（`workflow_dispatch`，产物为 artifact，需干净机器验收后才决定是否对外分发）。
+- **重写 CONTRIBUTING**：说明 `origin` 是 fork、`upstream` 只读、合入 `main` 不会发布任何包，并给出当前真实验证命令与派生产物禁改清单。
+
+### P1
+
+- **ClawHub 脚本**：`search_papers.mjs` 补 `toMetaSearchPayload`（authors/year_from/journals/subjects/filters_advanced/sort_advanced/sort_by_year 逐条对齐 SDK），此前这些参数会被后端静默丢弃；`read_content.mjs` 补 `offset=0 / limit=4096` 默认值，避免不传 offset 时返回整篇全文。web skill 的 `read_content.mjs` 同步修复，并新增 `tests/test_skill_scripts.py` 守卫两份 bundle。
+- **OpenAPI 补齐 agent 能力**：`SearchPapersRequest` 增加 `cursor`（深翻页）、`fields`（字段投影）、`facets`（聚合），重新派生全部产物；SDK `_PASSTHROUGH`／skill 脚本同步补 `cursor`、`facets`，不再静默丢弃。新增 `tests/test_search_request_contract.py` 与 Python SDK 透传用例。
+- **发布门禁**：`release.yml` 增加 `gate` job（生成器测试 + 工作台全量测试）作为 `release` 的 `needs`，并加 `concurrency` 与 `timeout-minutes`，避免测试红仍打 tag。
+- **存储迁移可恢复**：`_migrate` 全走 `executescript`（执行前会 COMMIT），中途失败会留下“表已建、`user_version` 卡住”的中间态。现在迁移失败时自动用迁移前备份整库回滚；`upgrade_database` 显式备份后不再让 `_connection` 重复备份（单次升级只留一份 .bak）。新增 2 个用例。
+- **依赖与元数据**：`packages/python/uv.lock` 版本对齐 1.27.0；三个包 `homepage/bugs/repository` 指向 fork；`.gitignore` 覆盖 `.slidep/`、`.workbuddy/`、`runs/`、`benchmarks/`、演示文稿目录与 `dist/*.doc(x)`。
+- **文档一致性**：示例补第 6 个 tool（`list_paper_relations`）；工具数量统一为 6；修正中文 README 关于 `semantic_search` 不支持 `doc_id` 的错误说法（`doc_id` 是唯一硬约束字段）。
+
+### 仍未处理（留待单独排期）
+
+- CI 里 8 处 `rm -f package-lock.json` + `npm install`、`uv sync` 未加 `--locked`：属于 rollup/npm 平台 binary 的已知绕行，需在真实 runner 上验证后再改，避免盲动打断 CI。
+- MCP HTTP 入口请求体上限/超时、TS SDK 的 AbortController、retention/prune CLI、SECURITY.md 与覆盖率门禁（审计 P2）。

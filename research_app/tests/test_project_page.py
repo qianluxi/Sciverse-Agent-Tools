@@ -27,6 +27,10 @@ def test_project_creation_shows_dialog_and_selects_project(monkeypatch, tmp_path
     assert [project["name"] for project in projects] == ["New dialog project"]
     assert app.session_state["current_project_id"] == projects[0]["id"]
     assert "project_created" not in app.session_state
+    # 选择器必须真的停在新项目上：旧实现会把 widget 旧值写回并 pop 掉状态键。
+    selector = next(box for box in app.selectbox if box.label == "当前研究项目")
+    assert selector.value == projects[0]["id"]
+    assert not any("请选择或创建一个研究项目" in info.value for info in app.info)
 
 
 def test_project_overview_renders_selected_project(monkeypatch, tmp_path):
@@ -71,3 +75,22 @@ def test_project_page_restores_saved_search_snapshot(monkeypatch, tmp_path):
     assert not app.exception
     assert app.session_state["papers"] == papers
     assert app.session_state["current_search_run_id"]
+
+
+def test_project_selector_falls_back_after_selected_project_deleted(monkeypatch, tmp_path):
+    monkeypatch.setattr(storage, "database_path", lambda: tmp_path / "workbench.sqlite3")
+    project_id = storage.create_screening_project("Temp project", "Q", "I", "E")
+
+    app = AppTest.from_file(str(PAGE_PATH), default_timeout=30)
+    app.session_state["current_project_id"] = project_id
+    app.session_state["overview_project_selector"] = project_id
+    app.run(timeout=30)
+    assert not app.exception
+
+    storage.delete_screening_project(project_id)
+    app.run(timeout=30)
+
+    # widget 里残留的已删除项目 ID 不能让页面崩溃，也不能继续当作当前项目。
+    assert not app.exception
+    assert "current_project_id" not in app.session_state
+    assert any("请选择或创建一个研究项目" in info.value for info in app.info)

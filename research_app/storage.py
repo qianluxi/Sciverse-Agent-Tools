@@ -5,6 +5,7 @@ import hmac
 import json
 import os
 import secrets
+import shutil
 import sqlite3
 import stat
 import threading
@@ -994,17 +995,38 @@ def _migrate(connection: sqlite3.Connection) -> None:
 
 
 @contextmanager
-def _connection(*, immediate: bool = False) -> Iterator[sqlite3.Connection]:
+def _connection(
+    *,
+    immediate: bool = False,
+    migrate_backup: bool = True,
+) -> Iterator[sqlite3.Connection]:
     path = database_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(path, timeout=10)
     connection.row_factory = sqlite3.Row
+    backup_path: Path | None = None
+    closed = False
     try:
         connection.execute("PRAGMA foreign_keys = ON")
         current_version = connection.execute("PRAGMA user_version").fetchone()[0]
-        if 0 < current_version < _SCHEMA_VERSION:
-            _backup_database(path)
-        _migrate(connection)
+        if migrate_backup and 0 < current_version < _SCHEMA_VERSION:
+            backup_path = _backup_database(path)
+        try:
+            _migrate(connection)
+        except Exception:
+            # 迁移全部走 executescript，而 executescript 会先 COMMIT 再执行脚本：
+            # 中途失败会留下“表已建、user_version 还卡在旧值”的不可恢复中间态。
+            # 既然迁移前刚做过整库备份，失败时直接回滚到那份备份。
+            connection.close()
+            closed = True
+            if backup_path is not None and backup_path.exists():
+                shutil.copyfile(backup_path, path)
+                if os.name != "nt":
+                    try:
+                        path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+                    except OSError:
+                        pass
+            raise
         if os.name != "nt":
             try:
                 path.chmod(stat.S_IRUSR | stat.S_IWUSR)
@@ -1016,10 +1038,12 @@ def _connection(*, immediate: bool = False) -> Iterator[sqlite3.Connection]:
         yield connection
         connection.commit()
     except Exception:
-        connection.rollback()
+        if not closed:
+            connection.rollback()
         raise
     finally:
-        connection.close()
+        if not closed:
+            connection.close()
 
 
 @contextmanager
@@ -1247,7 +1271,8 @@ def upgrade_database() -> dict[str, Any]:
     if current_version > _SCHEMA_VERSION:
         raise RuntimeError("数据库版本高于当前应用支持范围，不能自动升级。")
     backup_path = _backup_database(path)
-    with _connection() as connection:
+    # 已经显式备份过，别让 _connection 再备份一份（每次升级只留一个 .bak）。
+    with _connection(migrate_backup=False) as connection:
         new_version = connection.execute("PRAGMA user_version").fetchone()[0]
     return {
         "upgraded": True,

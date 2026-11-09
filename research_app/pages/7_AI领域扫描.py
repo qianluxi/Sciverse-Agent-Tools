@@ -9,6 +9,7 @@ import streamlit as st
 from research_app import storage
 from research_app.ai import OpenAICompatibleClient
 from research_app.ai_settings import default_profile
+from research_app.ai_ui import model_selector
 from research_app.field_scan import (
     CATEGORY_LABELS,
     FIELD_SCAN_PROMPT_VERSION,
@@ -49,12 +50,10 @@ with st.sidebar:
         help="只在当前浏览器会话使用，不写入本地数据库。",
     )
     st.session_state["ai_key_session"] = entered_key
-    entered_model = st.text_input(
-        "模型名",
-        value=st.session_state.get("ai_model", _default_profile["model"]),
-        key="scan_model_input",
+    st.session_state["ai_model"] = model_selector(
+        "scan_model_input",
+        st.session_state.get("ai_model", _default_profile["model"]),
     )
-    st.session_state["ai_model"] = entered_model.strip()
 
 if not project_id:
     st.info("请先在“研究项目”页创建或选择一个项目。")

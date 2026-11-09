@@ -35,6 +35,7 @@ from research_app.ai_settings import (
     list_ai_profiles,
     record_ai_profile,
 )
+from research_app.ai_ui import model_selector
 from research_app.service import call_api
 
 
@@ -70,6 +71,8 @@ def _on_base_url_change() -> None:
     for profile in _profiles:
         if profile["base_url"] == selected and profile.get("model"):
             st.session_state["ai_model"] = profile["model"]
+            st.session_state["ai_model__choice"] = profile["model"]
+            st.session_state["ai_model__custom"] = profile["model"]
             break
 
 
@@ -105,10 +108,9 @@ with st.sidebar:
         help="只在当前浏览器会话使用，不写入本地数据库；切换页面不会丢失。",
     )
     st.session_state["ai_key_session"] = ai_key
-    model = st.text_input(
-        "模型名",
-        key="ai_model",
-        help="OpenCode Go 推荐 glm-5.3-flash 等非推理模型；推理模型可能耗尽输出预算。",
+    model = model_selector(
+        "ai_model",
+        st.session_state.get("ai_model", _default_profile["model"]),
     )
     st.caption("Base URL 和模型会记录在本机；API Key 只在当前浏览器会话保留。")
     if st.button(

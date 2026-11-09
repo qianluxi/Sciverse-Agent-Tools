@@ -20,6 +20,7 @@ from research_app.ai_review import (
     quote_status,
 )
 from research_app.ai_settings import default_profile
+from research_app.ai_ui import model_selector
 from research_app.evidence_matrix import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_MAX_REQUESTS,
@@ -87,12 +88,10 @@ with st.sidebar:
         help="只在当前浏览器会话使用，不写入本地数据库。",
     )
     st.session_state["ai_key_session"] = entered_key
-    entered_model = st.text_input(
-        "模型名",
-        value=st.session_state.get("ai_model", _default_profile["model"]),
-        key="matrix_model",
+    st.session_state["ai_model"] = model_selector(
+        "matrix_model",
+        st.session_state.get("ai_model", _default_profile["model"]),
     )
-    st.session_state["ai_model"] = entered_model.strip()
 
 if not project_id:
     st.info("请先在“研究项目”页创建或选择一个项目。")

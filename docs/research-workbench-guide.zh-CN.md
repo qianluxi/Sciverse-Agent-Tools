@@ -24,7 +24,7 @@
 
 1. 双击 `dist\SciverseResearchWorkbench.exe`（或运行 `research_app/Start-Research-App.bat`）。
 2. 左侧输入 Sciverse API Token（不是 AI Key），点击连接/检索。
-3. AI 功能需要另外填 OpenAI 兼容服务的 Base URL、API Key 和模型名；没有 AI Key 不影响检索、筛选和报告。
+3. AI 功能需要另外填 OpenAI 兼容服务的 Base URL、API Key 和模型名；模型名可从常用下拉（如 `deepseek-v4.1-flash`、`glm-5.3-flash`）选择，也可自定义输入。没有 AI Key 不影响检索、筛选和报告。
 
 ### 步骤 2：新建项目
 
@@ -71,7 +71,7 @@
 
 进入“AI 筛选建议”：
 
-1. 左侧填 AI Key 和模型（示例用 `glm-5.3-flash`）。
+1. 左侧填 AI Key，模型下拉选 `deepseek-v4.1-flash`（也可选其他常用模型或自定义）。
 2. 选择 6 篇，点击“生成 AI 筛选建议”。
 3. AI 会给出“建议纳入/建议排除/需人工判断”、命中标准、理由和原文引句。
 4. 可以点“采纳此 AI 建议”，或修改后保存；也可以“全部按 AI 建议预填”，再逐条核对后点“保存全部当前决定”。
@@ -138,6 +138,7 @@
 ## 5. 常见问题
 
 - **需要几个 Key？** Sciverse Token 用于检索和读全文；AI Key 只用于翻译、筛选建议、证据提取等 AI 功能。两者都不是必填项（AI 功能可不用）。
+- **模型名可以保存吗？** 常用模型（如 `deepseek-v4.1-flash`、`glm-5.3-flash`）常驻下拉；自定义模型使用后会记录到 `~/.sciverse/ai-settings.json`，最多保留 20 个，下次优先显示。
 - **Token/Key 会保存吗？** Token 读环境变量或 `~/.sciverse/credentials.json`；AI Key 只在当前浏览器会话，不写数据库。
 - **为什么检索总数显示“上限”？** 接口 `total_count` 最多 10000，达到上限时不要当作精确总数。
 - **为什么报告里最终纳入是 0？** 只记录题名/摘要纳入还不够，必须在“研究报告”里记录全文阶段；未记录时系统会明确警告。

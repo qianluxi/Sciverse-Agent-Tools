@@ -5,6 +5,7 @@ from streamlit.testing.v1 import AppTest
 import research_app.ai_settings as ai_settings
 import research_app.storage as storage
 import sciverse.credentials
+from research_app.ai_ui import CUSTOM_MODEL_LABEL
 
 
 PAGE_PATH = Path(__file__).parents[1] / "pages" / "6_AI证据与提纲.py"
@@ -38,7 +39,7 @@ def test_ai_page_renders_without_key(monkeypatch, tmp_path):
     base_url = next(field for field in app.selectbox if field.label == "Base URL")
     assert base_url.value == "https://opencode.ai/zen/go/v1"
     next(field for field in app.text_input if field.label == "API Key").set_value("test-key")
-    next(field for field in app.text_input if field.label == "模型名").set_value(
+    next(field for field in app.selectbox if field.label == "模型名").set_value(
         "deepseek-v4.1-flash"
     )
     app.run(timeout=30)
@@ -47,7 +48,7 @@ def test_ai_page_renders_without_key(monkeypatch, tmp_path):
         "https://opencode.ai/zen/go/v1"
     )
     assert next(field for field in app.text_input if field.label == "API Key").value == "test-key"
-    assert next(field for field in app.text_input if field.label == "模型名").value == (
+    assert next(field for field in app.selectbox if field.label == "模型名").value == (
         "deepseek-v4.1-flash"
     )
 
@@ -63,7 +64,7 @@ def test_ai_page_uses_recorded_base_url_and_model(monkeypatch, tmp_path):
     base_url = next(field for field in app.selectbox if field.label == "Base URL")
     assert base_url.value == "https://api.example.com/v1"
     assert "https://api.example.com/v1" in base_url.options
-    assert next(field for field in app.text_input if field.label == "模型名").value == (
+    assert next(field for field in app.selectbox if field.label == "模型名").value == (
         "example-model"
     )
 
@@ -171,6 +172,29 @@ def test_ai_page_shows_editable_evidence_and_exports(monkeypatch, tmp_path):
     )
 
 
+def test_ai_page_model_dropdown_supports_custom_model(monkeypatch, tmp_path):
+    _isolate_settings(monkeypatch, tmp_path)
+    monkeypatch.setattr(sciverse.credentials, "resolve_token", lambda *_args: None)
+
+    app = AppTest.from_file(str(PAGE_PATH), default_timeout=30).run(timeout=30)
+    model_box = next(field for field in app.selectbox if field.label == "模型名")
+    assert "deepseek-v4.1-flash" in model_box.options
+
+    model_box.set_value(CUSTOM_MODEL_LABEL).run(timeout=30)
+    next(field for field in app.text_input if field.label == "自定义模型名").set_value(
+        "my-custom-model"
+    ).run(timeout=30)
+
+    assert not app.exception
+    assert next(field for field in app.selectbox if field.label == "模型名").value == (
+        CUSTOM_MODEL_LABEL
+    )
+    assert next(field for field in app.text_input if field.label == "自定义模型名").value == (
+        "my-custom-model"
+    )
+    assert "my-custom-model" in ai_settings.model_options()
+
+
 def test_ai_page_switching_base_url_loads_its_last_model(monkeypatch, tmp_path):
     _isolate_settings(monkeypatch, tmp_path)
     ai_settings.record_ai_profile("https://api.example.com/v1", "older-model")
@@ -186,6 +210,6 @@ def test_ai_page_switching_base_url_loads_its_last_model(monkeypatch, tmp_path):
     assert next(field for field in app.selectbox if field.label == "Base URL").value == (
         "https://api.example.com/v1"
     )
-    assert next(field for field in app.text_input if field.label == "模型名").value == (
+    assert next(field for field in app.selectbox if field.label == "模型名").value == (
         "older-model"
     )

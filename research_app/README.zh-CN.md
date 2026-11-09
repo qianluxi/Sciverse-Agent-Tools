@@ -117,9 +117,10 @@ python -m research_app.maintenance rebuild-stats --project-id <项目ID> --apply
 
 ## AI 证据与提纲
 
-“AI 证据与提纲”页面需要用户自备 OpenAI 兼容服务。默认 Base URL 为 OpenCode Go（`https://opencode.ai/zen/go/v1`）；填写 API Key 和模型名后，可对最多 5 篇论文提取结构化证据并生成 Markdown 提纲。也可选择“自定义 URL”连接其他服务。
+“AI 证据与提纲”页面需要用户自备 OpenAI 兼容服务。默认 Base URL 为 OpenCode Go（`https://opencode.ai/zen/go/v1`）；填写 API Key 并从模型下拉选择常用模型（或自定义模型名）后，可对最多 5 篇论文提取结构化证据并生成 Markdown 提纲。也可选择“自定义 URL”连接其他服务。
 
 - Base URL 和模型名会记录在本机 `~/.sciverse/ai-settings.json`，下次从下拉列表选择；选择历史 URL 会自动带出其上次使用的模型。
+- 模型下拉内置 `deepseek-v4.1-flash`、`glm-5.3-flash`、`gpt-4o-mini`、`gpt-4.1-mini`、`qwen-plus` 等常用项；也可选“自定义模型（手动输入）”，自定义模型使用后会记录，最多保留 20 个。
 - 检索结果和筛选队列的 AI 标题翻译按模型和提示词版本缓存到 `~/.sciverse/title-translations.json`；摘要翻译缓存到 `~/.sciverse/abstract-translations.json`。翻译结果会标注为 AI 生成，不修改论文原始元数据。
 - API Key 只在当前浏览器会话使用，不写入本地数据库、配置文件或源码；在会话未关闭时切换页面不需要重新输入，刷新或关闭浏览器后需重新输入。
 - 每条证据保留论文 ID、模型、提示词版本和生成时间；引句会自动与输入文本比对，未匹配项会明确提示。
@@ -128,7 +129,7 @@ python -m research_app.maintenance rebuild-stats --project-id <项目ID> --apply
 - 提纲直接生成 Markdown；若模型仍返回 JSON 包装或输出被截断，应用会自动提取其中的 Markdown 正文，避免下载到原始 JSON。
 - AI 失败按论文隔离，不阻塞其他论文；响应因输出长度被截断时，客户端会在有界预算内重试更大输出。不会自动写入 Zotero 或生成最终论文。
 
-OpenCode Go 推荐模型为 `glm-5.3-flash` 或其他走 `/chat/completions` 的非推理模型 ID（不要加 `opencode-go/` 前缀）。客户端会自动发送稳定的 `x-opencode-session` 会话头和专用 User-Agent。若反复出现 `finish_reason=length` 和空内容，说明推理过程耗尽了输出预算，应换用非推理模型。
+OpenCode Go 推荐模型为 `glm-5.3-flash`、`deepseek-v4.1-flash` 或其他走 `/chat/completions` 的非推理模型 ID（不要加 `opencode-go/` 前缀）。客户端会自动发送稳定的 `x-opencode-session` 会话头和专用 User-Agent。若反复出现 `finish_reason=length` 和空内容，说明推理过程耗尽了输出预算，应换用非推理模型。
 
 ## AI 领域扫描
 
@@ -238,7 +239,7 @@ OpenCode Go 推荐模型为 `glm-5.3-flash` 或其他走 `/chat/completions` 的
 powershell -ExecutionPolicy Bypass -File scripts/build_desktop.ps1
 ```
 
-构建结果位于 `dist/SciverseResearchWorkbench.exe`。双击后会启动本地服务并自动打开浏览器；不需要命令行。首次构建需要安装 PyInstaller，耗时和体积取决于当前 Python 环境。当前产物为 106,533,490 字节（约 106 MB）；本机最新构建首次启动实测约 7.6 秒，干净 Windows 机器可能更慢。onefile 首次启动需要解压，请等待浏览器自动打开。
+构建结果位于 `dist/SciverseResearchWorkbench.exe`。双击后会启动本地服务并自动打开浏览器；不需要命令行。首次构建需要安装 PyInstaller，耗时和体积取决于当前 Python 环境。当前产物为 106,559,031 字节（约 106 MB）；本机最新构建首次启动实测约 7.6 秒，干净 Windows 机器可能更慢。onefile 首次启动需要解压，请等待浏览器自动打开。
 
 AI 页面的 API Key 只在当前会话输入，不写入 exe 或本地数据库；Base URL 和模型名保存在本机 `~/.sciverse/ai-settings.json`。Sciverse Token 仍按原有方式从环境变量或凭据文件读取。
 

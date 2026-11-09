@@ -15,3 +15,4 @@ def test_guide_page_renders_concrete_example():
     assert "RC 柱抗震加固-示例" in content
     assert "seismic retrofit reinforced concrete column" in content
     assert "题名/摘要纳入" in content
+    assert "中心论文" in content

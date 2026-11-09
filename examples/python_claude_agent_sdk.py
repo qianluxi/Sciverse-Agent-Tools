@@ -6,33 +6,42 @@
 - 本示例用 `claude-agent-sdk`，通过 `mcp_servers` 配置直接挂 sciverse-mcp-server，
   Claude Code 风格的 agent loop 由 SDK 全权处理 —— 这是 coding-agent 风格应用的主流方式
 
-运行：
+运行（MCP server 用本仓库构建，不要装 npm 上的同名包——那是 1.0.1 旧线，
+工具名是 search_metadata）：
     pip install claude-agent-sdk
-    npm install -g sciverse-mcp-server  # 或省略，由 SDK 通过 npx 拉
+    cd packages/mcp && npm install && npm run build
     export SCIVERSE_API_TOKEN=...
     export ANTHROPIC_API_KEY=...
     python examples/python_claude_agent_sdk.py
 """
-import anyio
 import os
+from pathlib import Path
 
+import anyio
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
+
+# 本仓库构建出来的 MCP server（`cd packages/mcp && npm run build`）。
+# 用环境变量可覆盖，便于放到别的位置。
+MCP_ENTRY = os.environ.get(
+    "SCIVERSE_MCP_ENTRY",
+    str(Path(__file__).resolve().parent.parent / "packages" / "mcp" / "dist" / "cli.js"),
+)
 
 
 async def main() -> None:
     options = ClaudeAgentOptions(
-        # mcp_servers：直接挂 sciverse-mcp-server，Claude Code agent loop
+        # mcp_servers：直接挂本仓库构建的 MCP server，Claude Code agent loop
         # 自动 spawn 进程、转发 tool list / call。
         mcp_servers={
             "sciverse": {
-                "command": "npx",
-                "args": ["-y", "sciverse-mcp-server"],
+                "command": "node",
+                "args": [MCP_ENTRY],
                 "env": {
                     "SCIVERSE_API_TOKEN": os.environ["SCIVERSE_API_TOKEN"],
                 },
             },
         },
-        # 显式允许 sciverse 暴露的 3 个 tool；默认 Claude Code 会请求确认，
+        # 显式允许要用的 tool（server 一共暴露 6 个）；默认 Claude Code 会请求确认，
         # agent 场景下用 allowed_tools 跳过 prompt。
         allowed_tools=[
             "mcp__sciverse__search_papers",

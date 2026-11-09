@@ -945,7 +945,7 @@ SQLite 仅保存：
 ### P0
 
 - **修复项目选择器回归**：`research_app/project_ui.py` 的 selectbox 状态会覆盖外部写入的 `current_project_id`，导致新建项目后选择器仍为空、页面继续提示“请选择或创建一个研究项目”。改为用 `key::seen` 记录上次渲染值来区分“用户改选择”与“外部改状态”，新建后正确选中，项目被删除后回退到空选项而不是崩溃。新增 2 个回归用例 + 1 组断言；`pytest research_app/tests`：**279 passed、2 skipped**（此前 276 条记录在 HEAD 上实际是 1 failed，已更正）。
-- **安装真源统一**：新增 `docs/INSTALL.md`，说明三条版本线的差异（本仓库源码 1.27.0 用 `search_papers`；PyPI/npm 线上 1.0.1 用 `search_metadata`；Release 只有 tag + `web-skill.tgz`）。`research_app/requirements.txt` 移除 `sciverse`（避免装到 PyPI 旧线），`Start-Research-App.bat` 改为校验 `sciverse.__file__` 落在 `packages/` 下再启动；README / getting-started / 三个包 README 的安装命令同步改写。
+- **安装真源统一**：新增 `docs/INSTALL.md`，说明三条版本线的差异（本仓库源码当时为 1.27.0，用 `search_papers`；PyPI/npm 线上 1.0.1 用 `search_metadata`；Release 只有 tag + `web-skill.tgz`）。`research_app/requirements.txt` 移除 `sciverse`（避免装到 PyPI 旧线），`Start-Research-App.bat` 改为校验 `sciverse.__file__` 落在 `packages/` 下再启动；README / getting-started / 三个包 README 的安装命令同步改写。
 - **便携 exe 声明修正**：README、ROADMAP 不再声称 Release 分发 exe；新增 `Build portable exe` 工作流（`workflow_dispatch`，产物为 artifact，需干净机器验收后才决定是否对外分发）。
 - **重写 CONTRIBUTING**：说明 `origin` 是 fork、`upstream` 只读、合入 `main` 不会发布任何包，并给出当前真实验证命令与派生产物禁改清单。
 
@@ -955,10 +955,48 @@ SQLite 仅保存：
 - **OpenAPI 补齐 agent 能力**：`SearchPapersRequest` 增加 `cursor`（深翻页）、`fields`（字段投影）、`facets`（聚合），重新派生全部产物；SDK `_PASSTHROUGH`／skill 脚本同步补 `cursor`、`facets`，不再静默丢弃。新增 `tests/test_search_request_contract.py` 与 Python SDK 透传用例。
 - **发布门禁**：`release.yml` 增加 `gate` job（生成器测试 + 工作台全量测试）作为 `release` 的 `needs`，并加 `concurrency` 与 `timeout-minutes`，避免测试红仍打 tag。
 - **存储迁移可恢复**：`_migrate` 全走 `executescript`（执行前会 COMMIT），中途失败会留下“表已建、`user_version` 卡住”的中间态。现在迁移失败时自动用迁移前备份整库回滚；`upgrade_database` 显式备份后不再让 `_connection` 重复备份（单次升级只留一份 .bak）。新增 2 个用例。
-- **依赖与元数据**：`packages/python/uv.lock` 版本对齐 1.27.0；三个包 `homepage/bugs/repository` 指向 fork；`.gitignore` 覆盖 `.slidep/`、`.workbuddy/`、`runs/`、`benchmarks/`、演示文稿目录与 `dist/*.doc(x)`。
+- **依赖与元数据**：`packages/python/uv.lock` 版本对齐当时的 1.27.0（后续发版由 bump 脚本接管）；三个包 `homepage/bugs/repository` 指向 fork；`.gitignore` 覆盖 `.slidep/`、`.workbuddy/`、`runs/`、`benchmarks/`、演示文稿目录与 `dist/*.doc(x)`。
 - **文档一致性**：示例补第 6 个 tool（`list_paper_relations`）；工具数量统一为 6；修正中文 README 关于 `semantic_search` 不支持 `doc_id` 的错误说法（`doc_id` 是唯一硬约束字段）。
 
 ### 仍未处理（留待单独排期）
 
 - CI 里 8 处 `rm -f package-lock.json` + `npm install`、`uv sync` 未加 `--locked`：属于 rollup/npm 平台 binary 的已知绕行，需在真实 runner 上验证后再改，避免盲动打断 CI。
 - MCP HTTP 入口请求体上限/超时、TS SDK 的 AbortController、retention/prune CLI、SECURITY.md 与覆盖率门禁（审计 P2）。
+
+## 23. 交付收尾（第二轮审阅）
+
+对第二轮审阅提出的“收尾一致性 + 1 个静默丢弃 bug”逐项处理。核心是：**schema 广告的参数必须真的到达后端**，以及**版本号只有一个真源**。
+
+### P1
+
+- **MCP 静默丢参（本轮最严重）**：`packages/mcp/src/tools.ts` 的 `PASSTHROUGH` 是手工复制的 5 个键，而重新生成后的 schema 已广告 `cursor` / `facets` / 三个 boost。补齐后新增运行时守卫：把 schema 里 `search_papers` 的每个属性逐个送进 `executeTool`，断言出站 body 与空参数不同——历史上“只查 schema 不查 handler”正是漏网原因。并已验证该守卫在删掉 `cursor` 时会失败。
+- **安装口径**：四篇 `docs/integrations/*.md` 顶部加“先确认版本线”块，说明 `npx -y sciverse-mcp-server` 拉的是上游 1.0.1；README / getting-started 的 MCP 安装改为本地构建 `packages/mcp` + `node dist/cli.js`，不再教 `npm install -g`；ClawHub 命令改为 bundle 实际 slug（`openclaw skills install academic-retrieval`）。
+- **工具数量**：三个包 README（英文段 + 中文段）与 `packages/mcp/package.json` description 统一为 6，MCP README 工具表补 `list_paper_relations`。
+- **版本真源**：文档不再钉 `1.27.0`，改为“≥ 1.27.0，精确值见 `packages/python/pyproject.toml`”，并强调**先看 `sciverse.__file__` 路径再看版本**。`INSTALL.md` 对上游能力的描述改准：上游 1.0.1 也有 cursor/fields/facets，真正差异是工具名（`search_metadata` vs `search_papers`）与 `facets` 形状（数组 vs 对象）。
+- **锁文件逐版落后**：`uv.lock` 1.27.0 → 1.28.0、`packages/mcp/package-lock.json` 1.27.0 → 1.28.0、`packages/typescript/package-lock.json` 旧包名 `sciverse-agent-tools@0.1.0` → `sciverse@1.28.0`。根因是 bump 脚本只改 5 个 manifest，release 时靠旧版本预装顺手把 lock 写回旧的；现在 `bump-versions.mjs` 增加 `uv lock` / `npm install --package-lock-only`（失败退化为只校正本包自身条目），并把 `packages/typescript/package-lock.json` 加入 release assets。
+- **迁移回滚覆盖完整**：`_connection` 增加 `restore_from` 参数，`upgrade_database` 把显式备份交给它（此前显式升级路径失败不恢复）；全新库（`user_version=0` 且文件原本不存在）迁移失败时删除半成品，允许干净重试。新增 2 个用例。
+- **发布门禁覆盖全闸门**：`gate` 从 2 项扩到 7 项（生成器 / Python SDK / 工作台 / TS typecheck+test / MCP build+test / spectral / 派生产物漂移），任一项红都不打 tag。
+
+### P2
+
+- **Claude Code 插件缺清单**：新增生成 `skill-claude-code/.claude-plugin/plugin.json`，并把 SKILL.md 同时输出到 `skill-claude-code/skills/sciverse/SKILL.md`（插件形态下 Claude Code 只扫 `skills/<name>/`），marketplace `source` 不变。
+- **示例统一**：`python_openai_function_call.py`、`ts_openai.ts` 补第 6 个 tool；MCP 类示例（`python_claude_agent_sdk.py`、`ts_openai_agents.ts`）改为启动本仓库构建的 `dist/cli.js`，不再 `npx` 拉上游包；TS 示例安装说明改为 `npm pack` 本地 tgz。
+- **测试守卫从字符串升级为行为**：`tests/test_skill_scripts.py` 重写为真的跑脚本（`node --import` 预加载 fetch 桩，捕获出站请求），断言便捷字段不泄漏、filters/sort 正确、`cursor/facets/boosts` 到达后端、`read_content` 默认 `offset=0&limit=4096`，并与 Python SDK `_to_backend_payload` 逐字段对账。已验证旧实现（原样透传）会让它失败。
+- **TS 补用例**：`packages/typescript/tests/client.test.ts` 增加 `cursor/facets/boosts` 透传断言。
+
+### 验证（本机实测）
+
+| 闸门 | 结果 |
+|---|---|
+| 根测试（含新行为型 skill 守卫） | 49 passed, 2 skipped |
+| Python SDK | 56 passed, 1 skipped |
+| TypeScript | typecheck 通过；client 13 + tools/credentials 13 |
+| MCP | build 通过（6 tools）；tools 21 + config/credentials 21 + cli-http 11 |
+| 科研工作台 | 281 passed, 2 skipped |
+| spectral | 0 error, 1 warning（原有 contact） |
+| 派生产物 | 重跑全部生成器后 `git diff` 为空 |
+
+### 仍未处理
+
+- MCP HTTP 入口请求体上限/超时、TS SDK 的 `AbortController`、retention/prune CLI、`SECURITY.md`、覆盖率门禁——按 `AGENTS.md` 属于**独立安全流**，不与路线图混做。
+- CI 里 `rm -f package-lock.json` 的绕行（rollup native binary / npm cli#4828）保持原样：改成 `npm ci` 需要在真实 runner 上验证，盲改会直接打断 CI。

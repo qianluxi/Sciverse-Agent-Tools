@@ -25,7 +25,16 @@ interface FilterEntry {
   value: unknown;
 }
 
-const PASSTHROUGH = ["query", "page", "page_size", "fields", "collection"] as const;
+// 原样透传给后端的字段。必须与 generated/tools.ts 里 search_papers 的
+// inputSchema 保持一致：schema 广告了但这里没有的字段，会被静默丢弃
+// （tests/tools.test.ts 的 "search_papers 参数全部到达后端" 守卫会拦住）。
+// 与 packages/typescript/src/client.ts、packages/python/src/sciverse/client.py
+// 的同名常量保持同步（三处复制，见文件头说明）。
+const PASSTHROUGH = [
+  "query", "page", "page_size", "fields", "cursor", "facets", "collection",
+  // 软加权档位（NONE/MILD/STRONG，可叠加）：新鲜度 / 影响力 / 语言亲和
+  "freshness_boost", "impact_boost", "language_affinity",
+] as const;
 
 function toBackendPayload(args: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};

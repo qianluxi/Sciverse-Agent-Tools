@@ -999,24 +999,28 @@ def _connection(
     *,
     immediate: bool = False,
     migrate_backup: bool = True,
+    restore_from: Path | None = None,
 ) -> Iterator[sqlite3.Connection]:
     path = database_path()
     path.parent.mkdir(parents=True, exist_ok=True)
+    # 全新库（文件本来不存在）失败时可以直接删掉半成品；已有库必须靠备份恢复。
+    existed_before = path.exists()
     connection = sqlite3.connect(path, timeout=10)
     connection.row_factory = sqlite3.Row
-    backup_path: Path | None = None
+    backup_path: Path | None = restore_from
     closed = False
     try:
         connection.execute("PRAGMA foreign_keys = ON")
         current_version = connection.execute("PRAGMA user_version").fetchone()[0]
-        if migrate_backup and 0 < current_version < _SCHEMA_VERSION:
+        if backup_path is None and migrate_backup and 0 < current_version < _SCHEMA_VERSION:
             backup_path = _backup_database(path)
         try:
             _migrate(connection)
         except Exception:
             # 迁移全部走 executescript，而 executescript 会先 COMMIT 再执行脚本：
             # 中途失败会留下“表已建、user_version 还卡在旧值”的不可恢复中间态。
-            # 既然迁移前刚做过整库备份，失败时直接回滚到那份备份。
+            # 迁移前做过整库备份（或调用方显式传入）就回滚到那份备份；
+            # 全新库没有历史数据，直接删掉半成品，让用户能干净重试。
             connection.close()
             closed = True
             if backup_path is not None and backup_path.exists():
@@ -1026,6 +1030,8 @@ def _connection(
                         path.chmod(stat.S_IRUSR | stat.S_IWUSR)
                     except OSError:
                         pass
+            elif not existed_before:
+                path.unlink(missing_ok=True)
             raise
         if os.name != "nt":
             try:
@@ -1271,8 +1277,9 @@ def upgrade_database() -> dict[str, Any]:
     if current_version > _SCHEMA_VERSION:
         raise RuntimeError("数据库版本高于当前应用支持范围，不能自动升级。")
     backup_path = _backup_database(path)
-    # 已经显式备份过，别让 _connection 再备份一份（每次升级只留一个 .bak）。
-    with _connection(migrate_backup=False) as connection:
+    # 已经显式备份过，别让 _connection 再备份一份（每次升级只留一个 .bak），
+    # 但要把这份备份交给它——否则显式升级路径失败时没人恢复。
+    with _connection(migrate_backup=False, restore_from=backup_path) as connection:
         new_version = connection.execute("PRAGMA user_version").fetchone()[0]
     return {
         "upgraded": True,

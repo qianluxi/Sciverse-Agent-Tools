@@ -320,6 +320,26 @@ def generate_marketplace_json(openapi_path: Path) -> dict:
     }
 
 
+def generate_plugin_json(openapi_path: Path) -> dict:
+    """生成插件清单 (`skill-claude-code/.claude-plugin/plugin.json`)。
+
+    没有这个文件时，`claude /plugin marketplace add` 能读到 marketplace.json，
+    但安装插件会失败——Claude Code 要求插件根目录带 `.claude-plugin/plugin.json`。
+    """
+    spec = load_openapi(openapi_path)
+    version = spec["info"].get("x-sciverse-tools-version", spec["info"]["version"])
+
+    return {
+        "name": SKILL_NAME,
+        "description": SKILL_DESCRIPTION,
+        "version": version,
+        "author": {"name": PLUGIN_OWNER_NAME, "url": PLUGIN_HOMEPAGE},
+        "homepage": PLUGIN_HOMEPAGE,
+        "license": "Apache-2.0",
+        "keywords": ["academic", "papers", "literature", "retrieval", "rag", "mcp"],
+    }
+
+
 def main() -> None:
     root = Path(__file__).resolve().parent.parent
     openapi = root / "openapi.yaml"
@@ -332,7 +352,25 @@ def main() -> None:
     skill_md_path.write_text(skill_md, encoding="utf-8")
     print(f"wrote {skill_md_path.relative_to(root)}")
 
-    # 2. 生成 plugin marketplace 入口
+    # 1b. 插件形态下 Claude Code 只扫描 <plugin>/skills/<name>/SKILL.md，
+    #     根目录的 SKILL.md 供"手动复制到 ~/.claude/skills/"的用户使用。
+    #     两处内容同源，都由本函数产出，不会漂移。
+    plugin_skill_path = skill_dir / "skills" / SKILL_NAME / "SKILL.md"
+    plugin_skill_path.parent.mkdir(parents=True, exist_ok=True)
+    plugin_skill_path.write_text(skill_md, encoding="utf-8")
+    print(f"wrote {plugin_skill_path.relative_to(root)}")
+
+    # 2. 生成插件清单（插件安装的硬性要求）
+    plugin_manifest_dir = skill_dir / ".claude-plugin"
+    plugin_manifest_dir.mkdir(parents=True, exist_ok=True)
+    plugin_manifest_path = plugin_manifest_dir / "plugin.json"
+    plugin_manifest_path.write_text(
+        json.dumps(generate_plugin_json(openapi), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    print(f"wrote {plugin_manifest_path.relative_to(root)}")
+
+    # 3. 生成 plugin marketplace 入口
     marketplace_dir = root / ".claude-plugin"
     marketplace_dir.mkdir(parents=True, exist_ok=True)
     marketplace = generate_marketplace_json(openapi)

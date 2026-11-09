@@ -2,10 +2,10 @@
 
 [English](#english) | [中文](#中文)
 
-Sciverse open-platform TypeScript SDK for academic paper retrieval. Wraps five
+Sciverse open-platform TypeScript SDK for academic paper retrieval. Wraps six
 retrieval tools (`searchPapers`, `semanticSearch`, `readContent`, `listCatalog`,
-`getResource`) behind one fetch-based client + ready-to-use `OPENAI_TOOLS` /
-`ANTHROPIC_TOOLS` constants for direct tool-calling.
+`listPaperRelations`, `getResource`) behind one fetch-based client + ready-to-use
+`OPENAI_TOOLS` / `ANTHROPIC_TOOLS` constants for direct tool-calling.
 
 > Tools: `searchPapers` (structured metadata) / `semanticSearch` (semantic retrieval) / `readContent` (text by Unicode code-point range) / `listCatalog` (field introspection) / `getResource` (paper figure binary).
 >
@@ -61,7 +61,7 @@ const c = new AgentToolsClient({
 });
 ```
 
-### Five retrieval tools
+### Six retrieval tools
 
 ```ts
 // 1. Structured metadata search (Boolean filters + sort + pagination)
@@ -159,8 +159,8 @@ try {
 
 ## 中文
 
-Sciverse 开放平台 TypeScript SDK，5 个学术文献检索 tool（结构化元数据、
-语义检索、原文切片、字段 introspection、论文图片）。
+Sciverse 开放平台 TypeScript SDK，6 个学术文献检索 tool（结构化元数据、
+语义检索、原文切片、字段 introspection、引用关系、论文图片）。
 
 ### 安装
 
@@ -205,7 +205,7 @@ const c = new AgentToolsClient({
 });
 ```
 
-### 5 个检索 tool
+### 6 个检索 tool
 
 ```ts
 // 1. 结构化元数据查询（布尔过滤 + 排序 + 分页）

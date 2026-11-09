@@ -2,6 +2,17 @@
 
 > 给 Claude Code 用户（`claude` CLI / VS Code 扩展）的 5 分钟接入指南。
 
+> **先确认版本线（必读）**：下文命令里的 `npx -y sciverse-mcp-server` 拉的是 npm 上的
+> 上游 1.0.1 —— 结构化检索叫 `search_metadata`，`facets` 形状也不同，照本文调
+> `search_papers` 会失败。要用本仓库版本，先在本地构建并指向构建产物：
+>
+> ```bash
+> cd packages/mcp && npm install && npm run build
+> ```
+>
+> 然后把 `command` 改成 `node`、`args` 改成 `packages/mcp/dist/cli.js` 的绝对路径
+> （完整配置见 [docs/INSTALL.md](../INSTALL.md) B 节）。下文所有 `npx` 写法都按同样方式替换。
+
 ## 前置条件
 
 - Sciverse API Token：从 https://sciverse.space 控制台申请
@@ -90,7 +101,7 @@ Claude 会依次调用 `semantic_search` → `read_content` 完成 RAG 回答。
 | HTTP 401 / `INVALID_API_KEY` | Token 错或已撤销，去 https://sciverse.space 重新生成 |
 | HTTP 429 | 当前 Tier 配额已耗尽，看控制台或升级 Tier |
 | `SCIVERSE_BASE_URL must point to *.sciverse.space` | 自定义 URL 必须是 `*.sciverse.space` 子域名（防 token 泄漏） |
-| `npx` 拉包慢 | 加 `--registry https://registry.npmmirror.com`，或预装 `npm install -g sciverse-mcp-server` 后把 `command` 改为 `sciverse-mcp` |
+| `npx` 拉包慢 | 加 `--registry https://registry.npmmirror.com`，或在 `packages/mcp` 里执行 `npm link`（仍是本地构建）后把 `command` 改为 `sciverse-mcp` |
 
 ## 进阶
 

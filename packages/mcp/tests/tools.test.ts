@@ -1,12 +1,37 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executeTool } from "../src/tools.js";
-import { ENDPOINTS } from "../src/generated/tools.js";
+import { ENDPOINTS, TOOLS } from "../src/generated/tools.js";
 import type { Config } from "../src/config.js";
 
 const CONFIG: Config = {
   token: "sv-test",
   baseUrl: "https://api.sciverse.space",
   channel: "mcp",
+};
+
+// search_papers 每个 schema 参数的抽样值，用于"参数是否真的到达后端"的逐个验证。
+// 键集必须与 openapi 生成的 schema 完全一致（少键 = 守卫偷懒，多键 = schema 已删但没清理）。
+const SEARCH_ARG_SAMPLES: Record<string, unknown> = {
+  collection: "papers",
+  query: "transformer",
+  title_contains: "attention",
+  abstract_contains: "graph",
+  authors: ["Hinton"],
+  year_from: 2020,
+  year_to: 2023,
+  journals: ["Nature"],
+  subjects: ["cs.CL"],
+  filters_advanced: [{ field: "is_oa", operator: "FILTER_OP_EQ", value: true }],
+  sort_advanced: [{ field: "citation_count", order: "SORT_ORDER_DESC" }],
+  sort_by_year: "none",
+  freshness_boost: "MILD",
+  impact_boost: "STRONG",
+  language_affinity: "STRONG",
+  page: 2,
+  page_size: 5,
+  cursor: "eyJvZmZzZXQiOjI1fQ==",
+  fields: ["unique_id", "title"],
+  facets: { publication_published_year: { size: 10 } },
 };
 
 interface Captured {
@@ -268,6 +293,31 @@ describe("tool implementation coverage (guard)", () => {
         continue;
       }
       expect(text, `tool '${name}' must have an executeTool branch`).not.toContain("unhandled tool");
+    }
+  });
+
+  // 守卫：openapi 广告的每个 search_papers 参数都必须真的进到出站 body。
+  // 只查 schema 不查 handler 是历史漏网原因——cursor / facets / 三个 boost
+  // 曾在 schema 里存在但被 PASSTHROUGH 静默丢掉，MCP 上表现为 no-op。
+  it("search_papers: schema 广告的每个参数都真的到达后端", async () => {
+    const schema = TOOLS.find((t) => t.name === "search_papers")!.inputSchema as {
+      properties: Record<string, unknown>;
+    };
+    const advertised = Object.keys(schema.properties).sort();
+    expect(advertised).toEqual(Object.keys(SEARCH_ARG_SAMPLES).sort());
+
+    // 基线：空参数的 body（sort_by_year 默认 auto，纯结构化查询会补年份降序）。
+    const baseline = mockFetch(200, {});
+    await executeTool(CONFIG, "search_papers", {});
+    const emptyBody = baseline[0]!.init.body as string;
+
+    for (const key of advertised) {
+      const captured = mockFetch(200, {});
+      await executeTool(CONFIG, "search_papers", { [key]: SEARCH_ARG_SAMPLES[key] });
+      expect(
+        captured[0]!.init.body as string,
+        `search_papers 参数 '${key}' 被静默丢弃（schema 广告了但没进后端 body）`,
+      ).not.toBe(emptyBody);
     }
   });
 });

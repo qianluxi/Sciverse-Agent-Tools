@@ -3,11 +3,12 @@
 [English](#english) | [中文](#中文)
 
 Sciverse open-platform Python SDK + CLI for academic paper retrieval. Wraps
-five retrieval tools (`search_papers`, `semantic_search`, `read_content`,
-`list_catalog`, `get_resource`) behind one async client + ready-to-use
-`OPENAI_TOOLS` / `ANTHROPIC_TOOLS` constants for direct tool-calling.
+six retrieval tools (`search_papers`, `semantic_search`, `read_content`,
+`list_catalog`, `list_paper_relations`, `get_resource`) behind one async client
++ ready-to-use `OPENAI_TOOLS` / `ANTHROPIC_TOOLS` constants for direct
+tool-calling.
 
-> 工具：`search_papers`（结构化元数据）/ `semantic_search`（语义检索）/ `read_content`（原文切片）/ `list_catalog`（字段 introspection）/ `get_resource`（论文图片二进制）
+> 工具：`search_papers`（结构化元数据）/ `semantic_search`（语义检索）/ `read_content`（原文切片）/ `list_catalog`（字段 introspection）/ `list_paper_relations`（引用与被引分页）/ `get_resource`（论文图片二进制）
 
 ---
 
@@ -104,7 +105,7 @@ finally:
     await client.aclose()    # release the underlying httpx connection pool
 ```
 
-### Five retrieval tools
+### Six retrieval tools
 
 ```python
 # 1. Structured metadata search (Boolean filters + sort + pagination)
@@ -312,7 +313,7 @@ finally:
     await client.aclose()    # 显式关闭底层 httpx 连接池
 ```
 
-### 5 个检索 tool
+### 6 个检索 tool
 
 ```python
 # 1. 结构化元数据查询（布尔过滤 + 排序 + 分页）

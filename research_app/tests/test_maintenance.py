@@ -322,3 +322,109 @@ def test_upgrade_database_keeps_exactly_one_backup(monkeypatch, tmp_path):
     assert result["to_version"] == 22
     assert result["backup_path"]
     assert len(list(tmp_path.glob("workbench.sqlite3.bak-*"))) == 1
+
+
+def test_explicit_upgrade_failure_restores_backup(monkeypatch, tmp_path):
+    """upgrade_database 显式备份后，迁移失败也必须回滚到那份备份。
+
+    之前只有自动打开路径会把备份交给 _connection，显式升级路径失败时
+    备份被丢在一边、库留在半迁移状态。
+    """
+    _isolate(monkeypatch, tmp_path)
+    storage.create_screening_project("Explicit", "Q", "Include", "Exclude")
+    path = tmp_path / "workbench.sqlite3"
+
+    with closing(sqlite3.connect(path)) as connection:
+        connection.execute("PRAGMA user_version = 21")
+        connection.commit()
+
+    def _explode(connection):
+        connection.execute("CREATE TABLE half_migrated (id INTEGER)")
+        raise RuntimeError("explicit upgrade exploded")
+
+    monkeypatch.setattr(storage, "_migrate", _explode)
+
+    with pytest.raises(RuntimeError, match="explicit upgrade exploded"):
+        storage.upgrade_database()
+
+    with closing(sqlite3.connect(path)) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 21
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+        assert "half_migrated" not in tables
+        assert connection.execute("SELECT COUNT(*) FROM screening_projects").fetchone()[0] == 1
+
+
+def test_failed_migration_on_fresh_database_leaves_no_half_file(monkeypatch, tmp_path):
+    """全新库没有历史数据可回滚：迁移失败时要删掉半成品，允许干净重试。"""
+    _isolate(monkeypatch, tmp_path)
+    path = tmp_path / "workbench.sqlite3"
+    assert not path.exists()
+
+    def _explode(connection):
+        connection.execute("CREATE TABLE half_migrated (id INTEGER)")
+        raise RuntimeError("fresh migration exploded")
+
+    monkeypatch.setattr(storage, "_migrate", _explode)
+
+    with pytest.raises(RuntimeError, match="fresh migration exploded"):
+        storage.list_screening_projects()
+
+    assert not path.exists()
+
+
+def test_explicit_upgrade_failure_restores_backup(monkeypatch, tmp_path):
+    """upgrade_database 显式备份后，迁移失败也必须回滚到那份备份。
+
+    之前只有自动打开路径会把备份交给 _connection，显式升级路径失败时
+    备份被丢在一边、库留在半迁移状态。
+    """
+    _isolate(monkeypatch, tmp_path)
+    storage.create_screening_project("Explicit", "Q", "Include", "Exclude")
+    path = tmp_path / "workbench.sqlite3"
+
+    with closing(sqlite3.connect(path)) as connection:
+        connection.execute("PRAGMA user_version = 21")
+        connection.commit()
+
+    def _explode(connection):
+        connection.execute("CREATE TABLE half_migrated (id INTEGER)")
+        raise RuntimeError("explicit upgrade exploded")
+
+    monkeypatch.setattr(storage, "_migrate", _explode)
+
+    with pytest.raises(RuntimeError, match="explicit upgrade exploded"):
+        storage.upgrade_database()
+
+    with closing(sqlite3.connect(path)) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 21
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+        assert "half_migrated" not in tables
+        assert connection.execute("SELECT COUNT(*) FROM screening_projects").fetchone()[0] == 1
+
+
+def test_failed_migration_on_fresh_database_leaves_no_half_file(monkeypatch, tmp_path):
+    """全新库没有历史数据可回滚：迁移失败时要删掉半成品，允许干净重试。"""
+    _isolate(monkeypatch, tmp_path)
+    path = tmp_path / "workbench.sqlite3"
+    assert not path.exists()
+
+    def _explode(connection):
+        connection.execute("CREATE TABLE half_migrated (id INTEGER)")
+        raise RuntimeError("fresh migration exploded")
+
+    monkeypatch.setattr(storage, "_migrate", _explode)
+
+    with pytest.raises(RuntimeError, match="fresh migration exploded"):
+        storage.list_screening_projects()
+
+    assert not path.exists()

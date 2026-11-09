@@ -30,7 +30,7 @@
 | **CLI** | shell 脚本 / 快速试用 / 无 agent loop | 随 Python SDK 一起装 —— `sciverse auth login` |
 | **Web well-known URL** | 通过 well-known URI 约定自动发现 skill 的 agent host | 把 agent host 指向 <https://sciverse.space/.well-known/agent-skills/> |
 
-> **包发布状态（装之前先看这段）：** 由于本 fork 没有 PyPI/npm/ClawHub 的包名所有权，包发布暂时停用。现在从 PyPI/npm 装到的是 **1.0.1（上游旧线）**，它的结构化检索叫 `search_metadata`；本仓库是 **1.27.0**，叫 `search_papers`。两者签名不同，照本文档写 `search_papers(...)` 会直接报参数错误。请**从本仓库源码安装 SDK**，具体命令见 [docs/INSTALL.md](./docs/INSTALL.md)。GitHub Release 只提供 tag 和 `web-skill.tgz`，**不含** SDK 包，也**不含**便携 exe。
+> **包发布状态（装之前先看这段）：** 由于本 fork 没有 PyPI/npm/ClawHub 的包名所有权，包发布暂时停用。现在从 PyPI/npm 装到的是 **1.0.1（上游旧线）**，它的结构化检索叫 `search_metadata`；本仓库叫 `search_papers`（版本以 `packages/python/pyproject.toml` 为准）。两者签名不同，照本文档写 `search_papers(...)` 会直接报参数错误。请**从本仓库源码安装 SDK**，具体命令见 [docs/INSTALL.md](./docs/INSTALL.md)。GitHub Release 只提供 tag 和 `web-skill.tgz`，**不含** SDK 包，也**不含**便携 exe。
 
 ## 5 分钟接入 —— Skills CLI
 
@@ -51,10 +51,13 @@ claude /plugin install sciverse
 
 > 上面的 marketplace 指向 **opendatalab 上游仓库**，装到的是上游 skill，不是本 fork 的版本；本 fork 尚未发布自己的 marketplace。
 
-skill 依赖 `sciverse-mcp-server`。注意这条命令装的是 1.0.1 线上包；要跑本仓库的 6 工具版本，请构建 `packages/mcp` 并把配置指向其 `dist/cli.js`（见 [docs/INSTALL.md](./docs/INSTALL.md)）：
+skill 本身只是 MCP server 的薄封装。请构建**本仓库**的 server（npm 上的同名包是 1.0.1 旧线，见 [docs/INSTALL.md](./docs/INSTALL.md)）：
 
 ```bash
-npm install -g sciverse-mcp-server
+git clone https://github.com/qianluxi/Sciverse-Agent-Tools.git
+cd Sciverse-Agent-Tools/packages/mcp
+npm install && npm run build
+
 export SCIVERSE_API_TOKEN=sv-...     # 从 https://sciverse.space 控制台申请
 ```
 
@@ -68,8 +71,8 @@ export SCIVERSE_API_TOKEN=sv-...     # 从 https://sciverse.space 控制台申�
 {
   "mcpServers": {
     "sciverse": {
-      "command": "npx",
-      "args": ["-y", "sciverse-mcp-server"],
+      "command": "node",
+      "args": ["/绝对路径/Sciverse-Agent-Tools/packages/mcp/dist/cli.js"],
       "env": { "SCIVERSE_API_TOKEN": "${SCIVERSE_API_TOKEN}" }
     }
   }
@@ -389,10 +392,12 @@ uv run pytest tests/    # 派生器单测
 
 ## OpenClaw 用户
 
-通过 [ClawHub](https://clawhub.ai) 一键安装：
+本 fork 的 bundle 名是 `academic-retrieval`（见 `clawhub/manifest.json` 的 `slug`），**尚未发布**——registry 上 `sciverse` 这个名字是上游的。现在从本地 bundle 安装：
 
 ```bash
-clawhub install sciverse
+openclaw skills install academic-retrieval   # 发布后
+# 或当前直接从仓库安装：
+openclaw skills install ./clawhub
 ```
 
 详见 [`clawhub/README.md`](./clawhub/README.md)。

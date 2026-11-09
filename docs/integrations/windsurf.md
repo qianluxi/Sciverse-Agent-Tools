@@ -2,6 +2,17 @@
 
 > 给 Codeium Windsurf 用户的 5 分钟接入指南。
 
+> **先确认版本线（必读）**：下文命令里的 `npx -y sciverse-mcp-server` 拉的是 npm 上的
+> 上游 1.0.1 —— 结构化检索叫 `search_metadata`，`facets` 形状也不同，照本文调
+> `search_papers` 会失败。要用本仓库版本，先在本地构建并指向构建产物：
+>
+> ```bash
+> cd packages/mcp && npm install && npm run build
+> ```
+>
+> 然后把 `command` 改成 `node`、`args` 改成 `packages/mcp/dist/cli.js` 的绝对路径
+> （完整配置见 [docs/INSTALL.md](../INSTALL.md) B 节）。下文所有 `npx` 写法都按同样方式替换。
+
 ## 前置条件
 
 - Sciverse API Token：从 https://sciverse.space 控制台申请
@@ -58,7 +69,7 @@ agent 会先调 `list_catalog` 学 schema 再构造 `search_papers` filter。
 | 配置文件路径找不到 | macOS 通常是 `~/.codeium/windsurf/`；Windows 是 `%USERPROFILE%\.codeium\windsurf\`；以官方 docs 为准 |
 | 401 / `INVALID_API_KEY` | Token 失效，回控制台生成新的 |
 | HTTP 429 | 配额耗尽 |
-| `npx` 拉包失败 | 改成 `"command": "sciverse-mcp"`，先全局装 `npm install -g sciverse-mcp-server` |
+| `npx` 拉包失败 | 改成 `"command": "sciverse-mcp"`，先在本仓库 `packages/mcp` 里 `npm link`（不要装 npm 上的同名包） |
 
 ## 进阶
 

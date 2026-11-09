@@ -3,8 +3,9 @@
  *
  * 把 Sciverse client 包装成 DynamicStructuredTool 给 LangGraph / Agent 使用。
  *
- * 运行：
- *   npm install @langchain/openai @langchain/core zod sciverse tsx
+ * 运行（`sciverse` 用本仓库 packages/typescript 构建，不要从 npm 装同名包）：
+ *   cd packages/typescript && npm install && npm run build && npm pack
+ *   npm install @langchain/openai @langchain/core zod tsx ./sciverse-*.tgz
  *   SCIVERSE_API_TOKEN=... OPENAI_API_KEY=... npx tsx examples/ts_langchain_agent.ts
  */
 import { ChatOpenAI } from "@langchain/openai";

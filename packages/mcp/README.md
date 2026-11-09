@@ -5,7 +5,7 @@
 [English](#english) | [中文](#中文)
 
 Official MCP (Model Context Protocol) server for the Sciverse open platform.
-Exposes five academic-paper retrieval tools to any MCP-compatible coding agent
+Exposes six academic-paper retrieval tools to any MCP-compatible coding agent
 — Claude Code, Cursor, Codex CLI, Windsurf, Continue, and more.
 
 > Tools: `search_papers` / `semantic_search` / `read_content` / `list_catalog` / `get_resource`
@@ -92,6 +92,7 @@ default (`https://api.sciverse.space`).
 | `semantic_search` | Natural-language semantic chunk retrieval (RAG) |
 | `read_content` | Character-range read of original paper text (offset/limit in Unicode code points) |
 | `list_catalog` | Field introspection (returns all field names + enum sample values, agents should call this first to learn the schema) |
+| `list_paper_relations` | Paged citations / references for one paper (`unique_id` + `relation`) |
 | `get_resource` | Fetch a paper figure / table image; the server wraps the bytes as an MCP `image` content block (base64 + mimeType) so multimodal models (e.g. Claude) can read the figure inline |
 
 Tool descriptions + input schemas are derived from `openapi.yaml` at build time
@@ -140,7 +141,7 @@ npm install --registry https://registry.npmmirror.com
 
 ## 中文
 
-Sciverse 开放平台官方 MCP (Model Context Protocol) server。把 5 个学术文献检索
+Sciverse 开放平台官方 MCP (Model Context Protocol) server。把 6 个学术文献检索
 工具暴露给任何 MCP 兼容的 coding agent —— Claude Code、Cursor、Codex CLI、
 Windsurf、Continue 等。
 
@@ -219,6 +220,7 @@ Token / endpoint 解析顺序：MCP 配置里显式 `env` → `SCIVERSE_API_TOKE
 | `semantic_search` | 自然语言语义检索（RAG 用） |
 | `read_content` | 按 Unicode 码点区间读文献原文 |
 | `list_catalog` | 字段 introspection（返回所有字段名 + 枚举值样本，agent 接入时建议先调一次学 schema） |
+| `list_paper_relations` | 分页取某篇论文的引用 / 被引列表（`unique_id` + `relation`） |
 | `get_resource` | 取文献附属图片字节流；MCP server 包装为 `image` content block + base64 + mimeType，多模态模型（如 Claude）可直接读图 |
 
 Tool 描述和 input schema 均从 `openapi.yaml` 派生（构建期 `npm run gen`），与

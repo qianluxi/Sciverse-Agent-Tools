@@ -28,7 +28,7 @@ All six tools share the same Bearer-Token authentication and are exposed identic
 | **CLI** | Shell scripts, quick exploration, no agent loop | Comes with the Python SDK — `sciverse auth login` |
 | **Web well-known URL** | Agent hosts that auto-discover skills via the well-known URI convention | Point your agent host at <https://sciverse.space/.well-known/agent-skills/> |
 
-> **Release status (read this before installing):** PyPI/npm/ClawHub publishing is paused because this fork does not own those package names. The packages currently on PyPI/npm are **1.0.1, an older upstream line** where structured search is called `search_metadata`; this repository is **1.27.0** and uses `search_papers`. Installing from the registry therefore gives you a different API than the one documented here. Install the SDK from this repository's source instead — see [docs/INSTALL.md](./docs/INSTALL.md). GitHub Releases ship tags plus a `web-skill.tgz` bundle; they do **not** ship SDK packages or a portable exe.
+> **Release status (read this before installing):** PyPI/npm/ClawHub publishing is paused because this fork does not own those package names. The packages currently on PyPI/npm are **1.0.1, an older upstream line** where structured search is called `search_metadata`; this repository uses `search_papers` (current version in `packages/python/pyproject.toml`). Installing from the registry therefore gives you a different API than the one documented here. Install the SDK from this repository's source instead — see [docs/INSTALL.md](./docs/INSTALL.md). GitHub Releases ship tags plus a `web-skill.tgz` bundle; they do **not** ship SDK packages or a portable exe.
 
 ## Quickstart — Skills CLI
 
@@ -49,10 +49,13 @@ claude /plugin install sciverse
 
 > The marketplace command above points at the **upstream** repository, so it installs the upstream skill, not this fork's. This fork does not publish its own marketplace yet.
 
-The skill depends on `sciverse-mcp-server`; install it once. Note that this pulls the 1.0.1 registry line — to run this repo's MCP server instead, build `packages/mcp` and point the config at its `dist/cli.js` (see [docs/INSTALL.md](./docs/INSTALL.md)):
+The skill is a thin wrapper around the MCP server. Build this repository's server (the registry copy is the older 1.0.1 line, see [docs/INSTALL.md](./docs/INSTALL.md)):
 
 ```bash
-npm install -g sciverse-mcp-server
+git clone https://github.com/qianluxi/Sciverse-Agent-Tools.git
+cd Sciverse-Agent-Tools/packages/mcp
+npm install && npm run build
+
 export SCIVERSE_API_TOKEN=sv-...     # get one from https://sciverse.space
 ```
 
@@ -66,8 +69,8 @@ Drop this snippet into your agent's MCP config (`.mcp.json` for Claude Code / Cu
 {
   "mcpServers": {
     "sciverse": {
-      "command": "npx",
-      "args": ["-y", "sciverse-mcp-server"],
+      "command": "node",
+      "args": ["/absolute/path/to/Sciverse-Agent-Tools/packages/mcp/dist/cli.js"],
       "env": { "SCIVERSE_API_TOKEN": "${SCIVERSE_API_TOKEN}" }
     }
   }
@@ -399,10 +402,12 @@ uv run pytest tests/    # generator unit tests
 
 ## OpenClaw users
 
-One-line install via [ClawHub](https://clawhub.ai):
+This fork's bundle is named `academic-retrieval` (slug in `clawhub/manifest.json`) and is **not published** yet — the registry entry under the `sciverse` name is the upstream one. Install from the local bundle:
 
 ```bash
-clawhub install sciverse
+openclaw skills install academic-retrieval   # once published
+# or, from this repo right now:
+openclaw skills install ./clawhub
 ```
 
 See [`clawhub/README.md`](./clawhub/README.md) for details.

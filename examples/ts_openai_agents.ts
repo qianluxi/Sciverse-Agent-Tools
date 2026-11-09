@@ -6,21 +6,23 @@
 // - 本示例用 `@openai/agents`，通过 mcpServers 配置直接挂 sciverse-mcp-server，
 //   agent loop 由 SDK 处理 —— coding-agent 风格应用主流方式。
 //
-// 运行：
+// 运行（MCP server 用本仓库构建，不要装 npm 上的同名包——那是 1.0.1 旧线）：
+//     cd packages/mcp && npm install && npm run build
 //     npm install @openai/agents
-//     npm install -g sciverse-mcp-server   # 或省略，由 SDK 通过 npx 拉
 //     export SCIVERSE_API_TOKEN=...
 //     export OPENAI_API_KEY=...
 //     tsx examples/ts_openai_agents.ts
 
+import { fileURLToPath } from "node:url";
+
 import { Agent, run, MCPServerStdio } from "@openai/agents";
 
 async function main() {
-  // 启动 sciverse-mcp-server 的 stdio 进程
+  // 启动本仓库构建出来的 MCP server（stdio）
   const sciverse = new MCPServerStdio({
     name: "sciverse",
-    command: "npx",
-    args: ["-y", "sciverse-mcp-server"],
+    command: process.execPath,
+    args: [fileURLToPath(new URL("../packages/mcp/dist/cli.js", import.meta.url))],
     env: {
       SCIVERSE_API_TOKEN: process.env.SCIVERSE_API_TOKEN!,
     },

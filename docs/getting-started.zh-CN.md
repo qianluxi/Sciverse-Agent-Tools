@@ -2,7 +2,7 @@
 
 本文面向第一次接触本项目的用户，帮助你在 10 分钟内完成接入。完整说明见根目录 [README.zh-CN.md](../README.zh-CN.md)。
 
-> **装之前先看 [INSTALL.md](./INSTALL.md)。** PyPI/npm 上现有的 `sciverse` 是上游 1.0.1 旧线（结构化检索叫 `search_metadata`），与本仓库 1.27.0 的 `search_papers` 不是同一套接口。本文命令默认你已经按 INSTALL.md 从源码装好本仓库 SDK。
+> **装之前先看 [INSTALL.md](./INSTALL.md)。** PyPI/npm 上现有的 `sciverse` 是上游 1.0.1 旧线（结构化检索叫 `search_metadata`），与本仓库的 `search_papers` 不是同一套接口。本文命令默认你已经按 INSTALL.md 从源码装好本仓库 SDK。
 
 ## 1. 这个项目是什么
 
@@ -59,9 +59,12 @@ $env:SCIVERSE_API_TOKEN = "sv-..."
 Claude Code 用户也可以直接安装插件：
 
 ```bash
+# 插件来自上游 marketplace（本 fork 尚未发布自己的）
 claude /plugin marketplace add https://github.com/opendatalab/Sciverse-Agent-Tools
 claude /plugin install sciverse
-npm install -g sciverse-mcp-server
+
+# MCP server 用本仓库构建（不要 npm install -g，那是 1.0.1 旧线）
+cd packages/mcp && npm install && npm run build
 ```
 
 > 注意：方式 A 里的 `npx -y sciverse-mcp-server` 以及上面两条 `claude` / `npm install -g` 命令，装到的都是**上游仓库和 1.0.1 线上包**，不是本 fork 的版本。要用本仓库代码，见 [INSTALL.md](./INSTALL.md) 的 B 节（本地构建 MCP server）。

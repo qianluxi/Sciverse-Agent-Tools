@@ -1,11 +1,12 @@
 /**
- * 端到端示例：TypeScript + OpenAI function calling + Sciverse 五个 tool。
+ * 端到端示例：TypeScript + OpenAI function calling + Sciverse 六个 tool。
  *
- * `OPENAI_TOOLS` 包含全部 5 个 schema；dispatch 表必须全覆盖，否则模型
+ * `OPENAI_TOOLS` 包含全部 6 个 schema；dispatch 表必须全覆盖，否则模型
  * 调到没接的 tool 时返回 undefined。
  *
- * 运行：
- *   npm install openai sciverse tsx
+ * 运行（`sciverse` 用本仓库 packages/typescript 构建，不要从 npm 装同名包）：
+ *   cd packages/typescript && npm install && npm run build && npm pack
+ *   npm install openai tsx ./sciverse-*.tgz
  *   SCIVERSE_API_TOKEN=... OPENAI_API_KEY=... npx tsx examples/ts_openai.ts
  */
 import OpenAI from "openai";
@@ -21,6 +22,7 @@ const dispatch: Record<string, (args: any) => Promise<any>> = {
   list_catalog: (a) => sv.listCatalog(a),
   search_papers: (a) => sv.searchPapers(a),
   semantic_search: (a) => sv.semanticSearch(a),
+  list_paper_relations: (a) => sv.listPaperRelations(a),
   read_content: (a) => sv.readContent(a),
   get_resource: async (a) => {
     const { bytes, mimeType } = await sv.getResource(a);

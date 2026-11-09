@@ -1,10 +1,12 @@
-"""端到端示例：使用 OpenAI function calling + Sciverse 五个 tool。
+"""端到端示例：使用 OpenAI function calling + Sciverse 六个 tool。
 
-`OPENAI_TOOLS` 包含全部 5 个 schema；dispatch 表必须全覆盖，否则模型
-调到没接的 tool 时 KeyError。
+`OPENAI_TOOLS` 包含全部 6 个 schema（list_catalog / search_papers /
+semantic_search / list_paper_relations / read_content / get_resource），
+dispatch 表必须全覆盖，否则模型调到没接的 tool 时 KeyError。
 
-运行：
-    pip install openai sciverse
+运行（先按 docs/INSTALL.md 从源码安装本仓库 SDK）：
+    pip install openai
+    pip install -e packages/python
     export SCIVERSE_API_TOKEN=...
     export OPENAI_API_KEY=...
     python examples/python_openai_function_call.py
@@ -29,6 +31,7 @@ async def call_tool(sv: AgentToolsClient, name: str, args: dict):
         "list_catalog": sv.list_catalog,
         "search_papers": sv.search_papers,
         "semantic_search": sv.semantic_search,
+        "list_paper_relations": sv.list_paper_relations,
         "read_content": sv.read_content,
     }[name]
     return await handler(**args)

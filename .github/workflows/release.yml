@@ -26,26 +26,78 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # 门禁：测试红就不许打 tag。曾出现过“工作台测试失败仍打出 v1.28.0”的情况，
-  # 这里把最小可用门禁（生成器 + 工作台）放在 release 之前。
+  # 门禁：测试红就不许打 tag。曾出现过“工作台测试失败仍打出 v1.28.0”的情况。
+  # 这里覆盖 Test workflow 的全部闸门（生成器 / Python SDK / 工作台 / TS / MCP /
+  # spectral / 派生产物漂移），任一项红都不发版——否则“发出去的 tag”可能是坏的。
   gate:
     name: Test gate
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
       - name: Python 3.13
         run: uv python install 3.13
       - name: Install root deps
         run: uv sync
+
       - name: Generator tests
         run: uv run pytest tests/ -v
+
+      - name: Python SDK tests (skip contract)
+        working-directory: packages/python
+        run: |
+          uv venv --python 3.13
+          uv sync
+          uv run pytest tests/ -v --ignore tests/test_contract.py
+
       - name: Research app tests (against local SDK)
         run: |
           uv pip install --python .venv/bin/python \
             "streamlit>=1.40" "matplotlib>=3.8" --editable ./packages/python
           .venv/bin/python -m pytest research_app/tests/ -q
+
+      - name: TypeScript typecheck + tests
+        working-directory: packages/typescript
+        # rm lockfile + npm install：rollup native binary 平台不匹配（npm cli#4828）
+        run: |
+          rm -f package-lock.json
+          npm install --no-audit --no-fund
+          npm run typecheck
+          npx vitest run --exclude 'tests/contract.test.ts'
+
+      - name: MCP build + tests
+        working-directory: packages/mcp
+        run: |
+          rm -f package-lock.json
+          npm install --no-audit --no-fund
+          npm run build
+          npm test
+
+      - name: Lint OpenAPI
+        run: npx --yes @stoplight/spectral-cli@6 lint openapi.yaml
+
+      - name: Derived artifacts have no drift
+        # 锁文件不纳入比对（上面 rm + install 必然重写它们）
+        run: |
+          bash scripts/build.sh
+          git diff --exit-code \
+            dist \
+            packages/python/src/sciverse/types.py \
+            packages/python/src/sciverse/tools.py \
+            packages/typescript/src/types.ts \
+            packages/typescript/src/tools.ts \
+            packages/typescript/package.json \
+            packages/python/pyproject.toml \
+            clawhub/SKILL.md \
+            clawhub/manifest.json \
+            skill-claude-code/SKILL.md \
+            skill-claude-code/.claude-plugin/plugin.json \
+            skill-claude-code/skills/sciverse/SKILL.md \
+            .claude-plugin/marketplace.json
 
   release:
     name: semantic-release

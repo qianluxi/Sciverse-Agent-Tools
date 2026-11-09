@@ -2,6 +2,17 @@
 
 > 给 Cursor 用户的 5 分钟接入指南。
 
+> **先确认版本线（必读）**：下文命令里的 `npx -y sciverse-mcp-server` 拉的是 npm 上的
+> 上游 1.0.1 —— 结构化检索叫 `search_metadata`，`facets` 形状也不同，照本文调
+> `search_papers` 会失败。要用本仓库版本，先在本地构建并指向构建产物：
+>
+> ```bash
+> cd packages/mcp && npm install && npm run build
+> ```
+>
+> 然后把 `command` 改成 `node`、`args` 改成 `packages/mcp/dist/cli.js` 的绝对路径
+> （完整配置见 [docs/INSTALL.md](../INSTALL.md) B 节）。下文所有 `npx` 写法都按同样方式替换。
+
 ## 前置条件
 
 - Sciverse API Token：从 https://sciverse.space 控制台申请
@@ -66,7 +77,7 @@ Cursor 应当连续调用 `semantic_search` → `read_content`，把结果整合
 | MCP 图标显示 `0 tools` | 重启 Cursor；用 `Reload Window` 命令；查看 `Output > MCP Logs` |
 | `Authentication failed` / 401 | Token 失效，回控制台生成新的；env 是否有多余引号/空格 |
 | 配置改完不生效 | Cursor 缓存 MCP server，必须 `Reload MCP Servers` 或重启 |
-| `npx` 拉包慢 | 配置改为 `"command": "sciverse-mcp"`，先全局装 `npm install -g sciverse-mcp-server` |
+| `npx` 拉包慢 | 配置改为 `"command": "sciverse-mcp"`，先在本仓库 `packages/mcp` 里 `npm link`（不要装 npm 上的同名包） |
 | HTTP 429 | 配额超限，看控制台 |
 
 ## 进阶

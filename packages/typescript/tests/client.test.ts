@@ -179,4 +179,29 @@ describe("AgentToolsClient", () => {
       .searchPapers({ query: "x", page: 2, page_size: 20, fields: ["title"] });
     expect(Object.keys(captured).sort()).toEqual(["fields", "page", "page_size", "query"]);
   });
+
+  // 深翻页 / 聚合 / 软加权必须到达后端：曾经只有 schema 广告、实现里被静默丢弃。
+  it("search_papers forwards cursor / facets / boosts verbatim", async () => {
+    let captured: any;
+    server.use(
+      http.post("https://api.example/meta-search", async ({ request }) => {
+        captured = await request.json();
+        return HttpResponse.json({ results: [], total_count: 0, page: 1, page_size: 10 });
+      })
+    );
+    const facets = { publication_published_year: { size: 10 } };
+    await new AgentToolsClient({ baseUrl: "https://api.example", token: "t" }).searchPapers({
+      query: "x",
+      cursor: "eyJvZmZzZXQiOjI1fQ==",
+      facets,
+      freshness_boost: "MILD",
+      impact_boost: "STRONG",
+      language_affinity: "MILD",
+    });
+    expect(captured.cursor).toBe("eyJvZmZzZXQiOjI1fQ==");
+    expect(captured.facets).toEqual(facets);
+    expect(captured.freshness_boost).toBe("MILD");
+    expect(captured.impact_boost).toBe("STRONG");
+    expect(captured.language_affinity).toBe("MILD");
+  });
 });

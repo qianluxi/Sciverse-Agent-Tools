@@ -32,8 +32,8 @@ st.markdown(
 ## 操作步骤
 
 1. **启动**：双击 exe 或运行 `research_app/Start-Research-App.bat`；左侧填 Sciverse Token。AI 功能才需要另填 AI Key。
-2. **新建项目**：进入“研究项目”，填写上面的项目名、研究问题和 I1–I5/E1–E4。
-3. **检索**：回主页检索 `seismic retrofit reinforced concrete column`，年份 2015–2025；勾选 6 篇示例文献后加入项目。
+2. **新建项目**：进入“研究项目”，填写上面的项目名、研究问题和 I1–I5/E1–E4；创建成功后弹出“创建成功”对话框并自动选中新项目。
+3. **检索**：回主页检索 `seismic retrofit reinforced concrete column`，年份 2015–2025；每篇结果可直接点“加入项目”，或勾选 6 篇后用列表底部的批量按钮加入当前项目。
 4. **题名/摘要筛选**：进入“系统综述筛选”。
    - 3 篇纳入（FRP 包裹柱、钢套管加固柱、外包钢梁柱节点）
    - 1 篇排除（桥梁墩柱，原因“主题不相关”）

@@ -35,8 +35,10 @@ from research_app.search import (
 )
 from research_app.service import call_api, enrich_semantic_hits
 from research_app.storage import (
+    add_screening_candidates,
     delete_saved_search,
     export_saved_searches_backup,
+    get_screening_project,
     list_recent_searches,
     list_saved_searches,
     record_search,
@@ -102,6 +104,18 @@ def _show_error(error: Exception) -> None:
 def _paper_identity(paper: dict[str, Any], index: int) -> str:
     identity = paper.get("unique_id") or paper.get("doc_id") or paper.get("title") or index
     return f"{identity}_{paper.get('chunk_id') or paper.get('offset', index)}"
+
+
+def _add_result_message(result: dict[str, Any]) -> str:
+    message = (
+        f"已加入 {result['added']} 条候选；"
+        f"识别 {result['identified']} 条，其中重复 {result['duplicates']} 条。"
+    )
+    if result.get("conflicts"):
+        message += f" 另有 {result['conflicts']} 条强标识符冲突，请人工核对。"
+    if result.get("manual_source_created"):
+        message += " 部分文献来源属于其他项目，已建立“手动选择”快照。"
+    return message
 
 
 def _execute_search(
@@ -744,6 +758,10 @@ if papers:
     elif translations:
         st.caption(f"已加载 {len(translations)} 个标题的 AI 中文翻译缓存。")
 
+    main_project_id = st.session_state.get("current_project_id")
+    main_project = get_screening_project(main_project_id) if main_project_id else None
+    main_project_locked = bool(main_project and main_project.get("lock_status") == "locked")
+
     for index, paper in enumerate(papers):
         title = paper.get("title") or "（暂无标题）"
         authors = format_authors(paper)
@@ -775,13 +793,66 @@ if papers:
                 st.caption(f"unique_id（引用网络可用）：`{unique_id}`")
             else:
                 st.caption("此结果没有 unique_id；语义检索结果通常不带该字段，可改用条件筛选。")
-            st.checkbox("选择用于导出/加入项目", key=export_key)
+            selection_col, add_col = st.columns([3, 1])
+            with selection_col:
+                st.checkbox("选择用于导出/加入项目", key=export_key)
+            with add_col:
+                if not main_project_id:
+                    st.caption("未选择项目")
+                elif main_project_locked:
+                    st.caption("项目已冻结")
+                elif st.button(
+                    "加入项目",
+                    key=f"add_project_{identity}",
+                    use_container_width=True,
+                ):
+                    try:
+                        result = add_screening_candidates(
+                            main_project_id,
+                            [paper],
+                            source_run_ids=[
+                                st.session_state.get("current_search_run_id")
+                            ],
+                        )
+                        st.success(_add_result_message(result))
+                    except Exception as error:
+                        _show_error(error)
             if st.button("查看文献", key=f"select_{index}"):
                 st.session_state["selected_paper"] = paper
                 st.session_state["paper_text"] = ""
                 st.session_state["content_next_offset"] = None
                 st.session_state["paper_relations"] = None
                 st.toast("已选择文献，详情在下方“03 / 文献阅读”。")
+
+    if main_project_id:
+        st.divider()
+        if main_project_locked:
+            st.caption("当前项目已冻结，不能继续导入候选。")
+        else:
+            if selected_for_export:
+                batch_papers = selected_for_export
+                batch_sources = [
+                    export_sources.get(identity) for identity in export_selection
+                ]
+                batch_label = f"将已选择的 {len(batch_papers)} 篇加入当前项目"
+            else:
+                batch_papers = papers
+                batch_sources = [
+                    st.session_state.get("current_search_run_id")
+                ] * len(papers)
+                batch_label = f"将当前页 {len(papers)} 篇加入当前项目"
+            if st.button(batch_label, key="add_results_to_project"):
+                try:
+                    result = add_screening_candidates(
+                        main_project_id,
+                        batch_papers,
+                        source_run_ids=batch_sources,
+                    )
+                    st.success(_add_result_message(result))
+                except Exception as error:
+                    _show_error(error)
+    else:
+        st.caption("在左侧选择研究项目后，可将检索结果直接加入项目。")
 
 
 selected = st.session_state.get("selected_paper")

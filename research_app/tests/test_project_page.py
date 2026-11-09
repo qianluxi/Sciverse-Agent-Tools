@@ -8,6 +8,27 @@ import research_app.storage as storage
 PAGE_PATH = Path(__file__).parents[1] / "pages" / "0_研究项目.py"
 
 
+def test_project_creation_shows_dialog_and_selects_project(monkeypatch, tmp_path):
+    monkeypatch.setattr(storage, "database_path", lambda: tmp_path / "workbench.sqlite3")
+
+    app = AppTest.from_file(str(PAGE_PATH), default_timeout=30).run(timeout=30)
+    next(field for field in app.text_input if field.label == "项目名称").set_value(
+        "New dialog project"
+    )
+    next(field for field in app.text_area if field.label == "研究问题").set_value("Q")
+    next(field for field in app.text_area if field.label == "纳入标准").set_value("I")
+    next(field for field in app.text_area if field.label == "排除标准").set_value("E")
+    next(button for button in app.button if button.label == "创建项目").click().run(
+        timeout=30
+    )
+
+    assert not app.exception
+    projects = storage.list_screening_projects()
+    assert [project["name"] for project in projects] == ["New dialog project"]
+    assert app.session_state["current_project_id"] == projects[0]["id"]
+    assert "project_created" not in app.session_state
+
+
 def test_project_overview_renders_selected_project(monkeypatch, tmp_path):
     monkeypatch.setattr(storage, "database_path", lambda: tmp_path / "workbench.sqlite3")
     project_id = storage.create_screening_project(

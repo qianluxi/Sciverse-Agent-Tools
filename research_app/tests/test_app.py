@@ -585,6 +585,55 @@ def test_export_selection_survives_page_changes_and_resets_for_new_search(monkey
     assert app.session_state["export_selection"] == {}
 
 
+def test_search_result_can_be_added_directly_to_project(monkeypatch, tmp_path):
+    _isolate_storage(monkeypatch, tmp_path)
+    monkeypatch.delenv("SCIVERSE_API_TOKEN", raising=False)
+    monkeypatch.setattr(sciverse.credentials, "resolve_token", lambda *_args: None)
+    project_id = storage.create_screening_project("Direct add", "Q", "Include", "Exclude")
+
+    def fake_call_api(token, action, **kwargs):
+        assert action == "search_papers"
+        return {
+            "results": [
+                {
+                    "title": "Direct add paper",
+                    "unique_id": "paper:direct",
+                    "doc_id": "doc-direct",
+                }
+            ],
+            "total_count": 1,
+            "page": 1,
+            "page_size": 10,
+        }
+
+    monkeypatch.setattr(service, "call_api", fake_call_api)
+    app = AppTest.from_file(str(APP_PATH), default_timeout=30)
+    app.session_state["current_project_id"] = project_id
+    app.session_state["main_project_selector"] = project_id
+    app.run(timeout=30)
+    app.radio[0].set_value("条件筛选").run(timeout=30)
+    next(widget for widget in app.text_input if widget.label == "API Token").set_value(
+        "sv-offline-test"
+    )
+    next(widget for widget in app.text_input if widget.label == "关键词或题名（可选）").set_value(
+        "direct"
+    )
+    next(button for button in app.button if button.label == "筛选论文").click().run(timeout=30)
+    next(
+        widget
+        for widget in app.checkbox
+        if widget.label == "选择用于导出/加入项目"
+    ).set_value(True).run(timeout=30)
+    next(button for button in app.button if button.label == "加入项目").click().run(
+        timeout=30
+    )
+
+    assert not app.exception
+    candidates = storage.list_all_screening_candidates(project_id)
+    assert [candidate["title"] for candidate in candidates] == ["Direct add paper"]
+    assert any("已加入 1 条候选" in message.value for message in app.success)
+
+
 def test_fulltext_only_filters_current_page_and_shows_counts(monkeypatch, tmp_path):
     _isolate_storage(monkeypatch, tmp_path)
     monkeypatch.delenv("SCIVERSE_API_TOKEN", raising=False)

@@ -14,6 +14,15 @@ st.set_page_config(page_title="研究项目 · Sciverse", page_icon="S", layout=
 st.title("研究项目")
 st.caption("从一个研究项目进入检索、筛选、证据和交付；项目数据保存在本机 SQLite。")
 
+
+@st.dialog("创建成功")
+def _project_created_dialog(name: str, project_id: str) -> None:
+    st.write(f"研究项目“{name}”已创建。")
+    st.caption(f"项目 ID：{project_id}")
+    if st.button("开始使用", type="primary", use_container_width=True):
+        st.rerun()
+
+
 with st.expander("新建研究项目", expanded=not storage.list_screening_projects()):
     with st.form("create_research_project"):
         project_name = st.text_input("项目名称", placeholder="例如：高层建筑抗震研究")
@@ -27,10 +36,18 @@ with st.expander("新建研究项目", expanded=not storage.list_screening_proje
                 project_name, question, inclusion, exclusion
             )
             st.session_state["current_project_id"] = project_id
-            st.success("研究项目已创建。")
+            created_project = storage.get_screening_project(project_id) or {}
+            st.session_state["project_created"] = {
+                "name": created_project.get("name") or project_name.strip() or "未命名项目",
+                "id": project_id,
+            }
             st.rerun()
         except Exception as error:
             st.error(str(error))
+
+created = st.session_state.pop("project_created", None)
+if created:
+    _project_created_dialog(created["name"], created["id"])
 
 project_id = project_selector("overview_project_selector")
 if not project_id:

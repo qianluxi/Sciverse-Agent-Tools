@@ -1033,3 +1033,39 @@ SQLite 仅保存：
 | MCP | `tools.test.ts` 21 passed（含精确落点）；两轮变异均按预期变红 |
 | 科研工作台 | `test_maintenance.py` 11 passed, 1 skipped |
 | 派生产物 | 重跑 `to_claude_skill` 后两份 SKILL.md + `plugin.json` + `marketplace.json` 一致，`git status` 只含预期改动 |
+
+## 25. 综述章节草稿（证据约束，2026-11-10）
+
+用户提出把"形成论文综述章节"的能力并入工作台。本节记录边界判断与实现，属于阶段 6「AI 证据抽取与综述提纲」的**受约束延伸**，不改变阶段 6 的验收口径。
+
+### 边界判断
+
+- 第 2 节"不做什么"排除的是"与 llm-for-zotero 重叠的库内综述草稿"——即脱离本项目的通用文库代写。本节实现的是**项目级**章节草稿：只读取该项目人工裁决为 included 的候选与证据矩阵，只允许引用这些来源，生成时即校验引证范围，不落库、不写入论文、不导出到 Zotero。
+- 与阶段 6 提纲的差别：提纲只给结构；本章节草稿给可进入论文的正文，但代价是必须绑定证据级别——仅题摘文献只能作"摘要提到"层面的陈述，全文证据才允许描述方法与数值。
+- 硬守卫：项目没有任何全文核验证据时，页面不渲染生成按钮，模块直接抛 `ValueError`。宁可不出稿，也不产出无法核查的空话。
+
+### 交付
+
+- `research_app/review_chapter.py`：`build_sources`（只取 included、证据版本按 final_adopted → human_corrected → ai_raw 取最高、重排为 C001…并保留 `candidate_key`）、`build_chapter_messages`（全文来源给方法/发现/局限/引句，题摘来源只给摘要，从输入层面阻止模型描述题摘文献的方法细节）、`check_citations`（越界编号、漏引全文证据、仅题摘被引、无引证段落）、`check_summary`、`generate_review_chapter`、Markdown / CSV 导出。
+- `research_app/pages/13_综述章节草稿.py`：项目选择、来源统计与清单、章节标题/研究问题、生成、引证核查表、下载 Markdown 与核查 CSV、清空。API Key 只存会话，不写库。
+- 测试：`test_review_chapter.py` 12 条（来源构建、版本优先级、题摘字段隔离、四类引证问题、无全文拒绝、空输出拒绝、CSV），`test_review_chapter_page.py` 3 条（无项目提示、无全文禁用生成、有全文时按钮渲染）。
+
+### 验收
+
+- 无全文证据的项目必须看不到生成按钮，且给出"先补全文"的明确指引。
+- 生成的正文中每个 `[Cxxx]` 必须来自来源清单，越界编号以 error 呈现。
+- 章节草稿不写数据库；页面刷新后仅存于当前会话，清空即丢弃。
+
+### 未做（保持原判断）
+
+- 章节结果持久化：需要新增表与迁移、备份、保留策略，按 AGENTS.md 应先定义再落库，本轮不做。
+- 引证与原文语义一致性校验：当前只校验编号是否在清单内、是否漏引，不判断论断是否忠实于引文，仍需人工逐条核对。
+- 多章节拼装、参考文献表生成、Zotero 导出：属于写作与文献管理工具职责，不并入工作台。
+
+### 验证（本机实测）
+
+| 闸门 | 结果 |
+|---|---|
+| 新功能测试 | `test_review_chapter.py` + `test_review_chapter_page.py` 15 passed |
+| 语法检查 | `py_compile` 通过（模块与页面） |
+| 工作台全量 | `pytest research_app/tests/ -q`：296 passed, 2 skipped（较上轮 281 增加 15 条新用例） |

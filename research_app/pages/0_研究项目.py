@@ -154,7 +154,7 @@ st.download_button(
 )
 
 st.markdown("### 开始工作")
-st.caption("使用左侧页面导航继续：文献发现与检索、去重与筛选、AI 证据与提纲。")
+st.caption("使用左侧页面导航继续：文献发现与检索、去重与筛选、AI 证据与提纲、综述章节草稿。")
 
 st.divider()
 with st.expander("删除当前研究项目", expanded=False):

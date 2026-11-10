@@ -4,6 +4,7 @@ import argparse
 import getpass
 import json
 
+from research_app.backfill import backfill_bibliography
 from research_app.storage import (
     admin_reset_reviewer_pin,
     collab_admin_configured,
@@ -126,9 +127,33 @@ def main() -> None:
     )
     collab_reset.add_argument("--reviewer-id", required=True)
     collab_reset.add_argument("--reason", required=True)
+    backfill = subparsers.add_parser(
+        "backfill-bibliography",
+        help="用原始 corpus.json 补全检索快照里缺失的作者、期刊等书目字段",
+    )
+    backfill.add_argument(
+        "--corpus",
+        required=True,
+        help="原始检索结果 corpus.json 的路径",
+    )
+    backfill.add_argument(
+        "--project-id",
+        default=None,
+        help="只回填指定项目；省略时对库里每个项目各跑一遍",
+    )
+    backfill.add_argument(
+        "--db",
+        default=None,
+        help="目标数据库路径；省略时使用当前默认库",
+    )
+    backfill.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="只统计将补多少字段，不写库",
+    )
     args = parser.parse_args()
 
-    print(f"database: {database_path()}", flush=True)
+    print(f"database: {getattr(args, 'db', None) or database_path()}", flush=True)
     if args.command == "inspect":
         result = inspect_identifier_integrity()
     elif args.command == "upgrade":
@@ -143,6 +168,13 @@ def main() -> None:
         result = _collab_init_legacy_pins()
     elif args.command == "collab-reset-pin":
         result = _collab_reset_pin(args.reviewer_id, args.reason)
+    elif args.command == "backfill-bibliography":
+        result = backfill_bibliography(
+            corpus_path=args.corpus,
+            project_id=args.project_id,
+            database_path=args.db,
+            dry_run=args.dry_run,
+        )
     else:
         result = repair_identifier_integrity(backup=not args.no_backup)
     print(json.dumps(result, ensure_ascii=False, indent=2))

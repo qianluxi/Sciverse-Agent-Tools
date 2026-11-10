@@ -95,6 +95,8 @@ def enrich_semantic_hits(
             for field in (
                 "unique_id",
                 "doi",
+                "author",
+                "language",
                 "publication_published_year",
                 "publication_venue_name_unified",
                 "publication_venue_type",

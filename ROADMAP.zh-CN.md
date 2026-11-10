@@ -1047,14 +1047,49 @@ SQLite 仅保存：
 ### 交付
 
 - `research_app/review_chapter.py`：`build_sources`（只取 included、证据版本按 final_adopted → human_corrected → ai_raw 取最高、重排为 C001…并保留 `candidate_key`）、`build_chapter_messages`（全文来源给方法/发现/局限/引句，题摘来源只给摘要，从输入层面阻止模型描述题摘文献的方法细节）、`check_citations`（越界编号、漏引全文证据、仅题摘被引、无引证段落）、`check_summary`、`generate_review_chapter`、Markdown / CSV 导出。
-- `research_app/pages/13_综述章节草稿.py`：项目选择、来源统计与清单、章节标题/研究问题、生成、引证核查表、下载 Markdown 与核查 CSV、清空。API Key 只存会话，不写库。
-- 测试：`test_review_chapter.py` 12 条（来源构建、版本优先级、题摘字段隔离、四类引证问题、无全文拒绝、空输出拒绝、CSV），`test_review_chapter_page.py` 3 条（无项目提示、无全文禁用生成、有全文时按钮渲染）。
+- `research_app/pages/13_综述章节草稿.py`：五段式编辑工作台——① 来源与书目（作者/期刊可改）、② 生成与逐节编辑、③ 表格编辑、④ 未纳入线索、⑤ 拼装与导出。API Key 只存会话，不写库。
+- 测试：`test_review_chapter.py` 36 条（来源构建与编号稳定、版本优先级与三档标签、书目回填、分节与拼装、三张表、线索段落、草稿 JSON 往返、四类引证问题、拒生成），`test_review_chapter_page.py` 9 条（无项目提示、无全文禁用生成、三档计数、五段渲染、逐节编辑框、手改后越界告警、重生成覆盖提示、缺书目提示）。
+
+### 修订：证据级别拆成三档（2026-11-10）
+
+真实项目实跑暴露一处口径错误：`build_sources` 原来把"有 findings 或引句"直接判为 `fulltext`，页面据此显示"全文已核验"，但该项目两条全文字段的版本来源都是 `ai_raw`、`review_status` 仍是 `pending`，人工从未确认——**"已核验"比事实强一级**。修正为把"有提取结果"和"人工确认过"拆成两个维度：
+
+- 新增 `evidence_confirmed`（`source ∈ {human_corrected, final_adopted}`）与 `evidence_level_label()`：`全文已核验` / `全文已提取（待确认）` / `仅题摘`。
+- 提示词按三档计数；存在待确认证据时追加约束——只能写"该文提取记录显示……"，不得写成已核实的事实。来源清单同时给出"证据版本"。
+- 页面指标改为「题摘纳入／全文已核验／全文待确认／仅题摘／证据矩阵条目」，并在"有全文但全部待确认"时给出警告；硬守卫的口径同步为"没有任何全文证据"（原为"没有完成全文核验的证据"，与三档口径冲突）。
+- 核查 CSV 增加"证据版本"列，使"待确认"可解释、可追溯。
+- 测试 15 → 21 条（新增 AI 原始不算已核验、人工校正/最终采用算已核验、题摘标签、提示词待确认约束）。
+
+### 修订：把「手工版要做的事」搬进页面（2026-11-10）
+
+用户指出：目标是普通用户在网页端就能得到手工版水平的章节，而当时的实现要求用户下载 md 再自己改、自己排版、自己补作者期刊——这些环节都得留在页面内。据此改了四处：
+
+1. **书目回填**：候选表不存作者与期刊（`screening_candidates` 只有题名/年份/DOI/摘要），但 `search_runs.snapshot_json` 有原始记录。新增只读的 `storage.project_papers()` 汇总所有检索快照，`attach_bibliography()` 按 DOI 优先、规范化题名次之回填；手填值不覆盖。顺带补了 `service.enrich_semantic_hits` 的字段白名单——原来漏了 `author`，语义检索路径连作者都不会带进快照。
+2. **检索计数进提示词**：`build_chapter_messages(..., prisma=...)` 把识别／去重／题摘纳入、排除、待定／全文纳入写进提示词，并要求原样写进「述评口径与检索边界」小节。原来这一段只能靠模型编。
+3. **固定小节骨架 + 程序拼表**：提示词要求按「述评口径与检索边界 / 主题：xxx / 研究空白 / 本章小结」输出且**不许生成表格**，`split_sections()` 按一二级标题切开（`###` 留在正文内），页面逐节给输入框；三张表由 `build_citation_table_rows` / `build_gap_table_rows` / `build_number_table_rows` 按数据生成初值，用 `st.data_editor` 逐格改、增删行、选锚点，`assemble_chapter()` 按顺序重编号为 2.1、2.2……与表 2-1、2-2……
+4. **编号稳定**：`build_sources(..., key_map=...)` 让已有候选沿用旧编号、新候选从最大号往后接。不改的话，用户改完正文再新增一篇纳入文献，正文里所有 `[Cxxx]` 会集体错位（实跑时用手工版正文拼装就复现了这个问题）。
+5. **未纳入线索**：`build_excluded_lead_text()` 由勾选的排除记录生成段落，只讲检索充分性、不带引证编号；模型看不到排除文献，让它写必然编造。
+6. **旧快照一次性回填**：上面 1 只对**新检索**有效——早期项目的 `snapshot_json` 当初就只落了 6 个字段，作者与期刊根本没进库，页面依旧只能显示"书目待补"。为此新增 `research_app/backfill.py` 与 `python -m research_app.maintenance backfill-bibliography`：用当时的原始 `corpus.json` 按 unique_id → DOI → 规范化题名匹配，只补空缺、不覆盖已有值（`0` 和 `False` 算有效值）、题名归一后撞车则放弃匹配，重复执行幂等。实跑 `runs/garage-econ-20261110`：4 个检索快照 480 条记录全部命中，7 篇纳入来源的书目由全缺变为 0 缺，第二次执行 0 变更。
+
+顺带修了两处误报：表题（`**表 2-x …**`）被算作无引证段落；「未纳入线索」小节按设计不含引证，也被算作漏引。校验器现在跳过这两类，避免用噪音淹没真实告警。
 
 ### 验收
 
 - 无全文证据的项目必须看不到生成按钮，且给出"先补全文"的明确指引。
+- AI 原始提取证据不得显示为"全文已核验"；只有人工校正或最终采用的版本才算核验。
 - 生成的正文中每个 `[Cxxx]` 必须来自来源清单，越界编号以 error 呈现。
-- 章节草稿不写数据库；页面刷新后仅存于当前会话，清空即丢弃。
+- 章节中所有用户可改的内容（书目、小节标题与正文、表格单元格、未纳入线索）都能在页面内完成，不需要打开 md 或 Excel。
+- 新增或移除纳入文献后，草稿里已有的 `[Cxxx]` 编号保持不变。
+- 章节草稿不写数据库；页面刷新后仅存于当前会话，清空即丢弃；需要跨会话保留时下载草稿 JSON 再导入。
+
+### 验证（本机实测，2026-11-10 修订后）
+
+| 闸门 | 结果 |
+|---|---|
+| 新功能测试 | `test_review_chapter.py` 36 passed + `test_review_chapter_page.py` 9 passed + `test_backfill.py` 9 passed |
+| 真实项目实跑 | 用 `runs/garage-econ-20261110` 跑完整页面流程：7 篇来源、6 个小节 + 线索小节、3 张表、引证 54 次、越界 0、漏引 0 |
+| 旧快照回填 | 4 个检索快照 480 条记录全部命中、0 条未匹配；回填后 7 篇纳入来源的书目 0 缺失；重复执行 0 变更 |
+| 工作台全量 | `pytest research_app/tests/ -q`：335 passed, 2 skipped |
 
 ### 未做（保持原判断）
 
@@ -1066,6 +1101,6 @@ SQLite 仅保存：
 
 | 闸门 | 结果 |
 |---|---|
-| 新功能测试 | `test_review_chapter.py` + `test_review_chapter_page.py` 15 passed |
+| 新功能测试 | `test_review_chapter.py` + `test_review_chapter_page.py` 21 passed（证据级别三档修订后） |
 | 语法检查 | `py_compile` 通过（模块与页面） |
-| 工作台全量 | `pytest research_app/tests/ -q`：296 passed, 2 skipped（较上轮 281 增加 15 条新用例） |
+| 工作台全量 | `pytest research_app/tests/ -q`：302 passed, 2 skipped（初版 296，证据级别修订 +6） |

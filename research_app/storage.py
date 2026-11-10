@@ -13,7 +13,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 from research_app.screening import (
     EXCLUSION_REASONS,
@@ -3553,6 +3553,120 @@ def list_search_runs(project_id: str, limit: int | None = 20) -> list[dict[str, 
         }
         for row in rows
     ]
+
+
+def enrich_search_run_snapshots(
+    project_id: str,
+    enrich: Callable[[dict[str, Any]], bool],
+    *,
+    dry_run: bool = False,
+) -> dict[str, int]:
+    """就地补全一个项目所有检索快照里的论文记录。
+
+    早期版本的快照只落 6 个字段，作者与期刊因此丢失。这里提供一个受控的
+    补写入口：``enrich`` 就地修改单条记录并返回是否改动，遍历一遍后写回。
+    没有改动就不写库，所以重复执行是幂等的；``dry_run`` 只统计不落盘。
+    """
+    report = {
+        "runs_scanned": 0,
+        "runs_skipped": 0,
+        "runs_updated": 0,
+        "papers_scanned": 0,
+        "papers_changed": 0,
+    }
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        rows = connection.execute(
+            """SELECT id, snapshot_json FROM search_runs
+               WHERE project_id = ?
+               ORDER BY created_at ASC, id ASC""",
+            (project_id,),
+        ).fetchall()
+        pending: list[tuple[str, str]] = []
+        for row in rows:
+            report["runs_scanned"] += 1
+            try:
+                papers = json.loads(row["snapshot_json"])
+            except (TypeError, ValueError):
+                report["runs_skipped"] += 1
+                continue
+            if not isinstance(papers, list):
+                report["runs_skipped"] += 1
+                continue
+            changed = 0
+            for paper in papers:
+                if not isinstance(paper, dict):
+                    continue
+                report["papers_scanned"] += 1
+                if enrich(paper):
+                    changed += 1
+            report["papers_changed"] += changed
+            if not changed:
+                continue
+            snapshot = json.dumps(papers, ensure_ascii=False, sort_keys=True)
+            # 快照限长与写入路径保持一致，超限宁可中止也不截断。
+            if len(snapshot.encode("utf-8")) > _MAX_SNAPSHOT_BYTES:
+                raise ValueError("回填后的检索快照超过 5 MiB 限制。")
+            pending.append((snapshot, str(row["id"])))
+        if not dry_run:
+            for snapshot, run_id in pending:
+                connection.execute(
+                    "UPDATE search_runs SET snapshot_json = ? WHERE id = ?",
+                    (snapshot, run_id),
+                )
+            report["runs_updated"] = len(pending)
+    return report
+
+
+def project_papers(project_id: str) -> list[dict[str, Any]]:
+    """汇总项目所有检索快照里的论文元数据（只读，去重）。
+
+    候选表只保存题名/年份/DOI/摘要，作者与期刊留在检索快照里。
+    综述章节页需要书目信息，这里按 DOI 优先、题名次之去重后返回原始
+    paper 记录，调用方自行决定取哪些字段。只读，不写库、不做迁移。
+    """
+    with _connection() as connection:
+        _screening_project(connection, project_id)
+        rows = connection.execute(
+            """SELECT snapshot_json FROM search_runs
+               WHERE project_id = ?
+               ORDER BY created_at ASC, id ASC""",
+            (project_id,),
+        ).fetchall()
+    merged: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        try:
+            papers = json.loads(row["snapshot_json"])
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(papers, list):
+            continue
+        for paper in papers:
+            if not isinstance(paper, dict):
+                continue
+            key = str(paper.get("doi") or "").strip().lower() or str(
+                paper.get("title") or ""
+            ).strip()
+            if not key:
+                continue
+            existing = merged.get(key)
+            # 同一篇可能在多次检索中重复出现，保留书目信息更全的那条。
+            if existing is None or _bibliography_score(paper) > _bibliography_score(existing):
+                merged[key] = paper
+    return list(merged.values())
+
+
+def _bibliography_score(paper: dict[str, Any]) -> int:
+    score = 0
+    if paper.get("author") or paper.get("authors"):
+        score += 2
+    if paper.get("publication_venue_name_unified") or paper.get("publication_venue_name"):
+        score += 2
+    if paper.get("publication_published_year"):
+        score += 1
+    if paper.get("citation_count") is not None:
+        score += 1
+    return score
 
 
 def latest_search_run(project_id: str) -> dict[str, Any] | None:

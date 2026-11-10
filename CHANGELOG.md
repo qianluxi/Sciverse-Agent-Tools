@@ -1,3 +1,9 @@
+## [1.30.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.29.2...v1.30.0) (2026-11-10)
+
+### Features
+
+* **research-app:** 新增证据约束的综述章节草稿 ([d3786e8](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/d3786e8084d06591836899f025fe1500d10be2b9))
+
 ## [1.29.2](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.29.1...v1.29.2) (2026-11-09)
 
 ### Bug Fixes

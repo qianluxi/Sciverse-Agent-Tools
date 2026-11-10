@@ -1,3 +1,9 @@
+## [1.31.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.30.0...v1.31.0) (2026-11-10)
+
+### Features
+
+* **research-app:** 综述章节搬进页面工作台，并回填旧快照书目 ([3e7f0a3](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/3e7f0a3d3a586d341ea0930dab0bf3ffd5b46625))
+
 ## [1.30.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.29.2...v1.30.0) (2026-11-10)
 
 ### Features

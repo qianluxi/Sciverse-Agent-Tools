@@ -1,3 +1,9 @@
+## [1.31.1](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.31.0...v1.31.1) (2026-11-11)
+
+### Bug Fixes
+
+* **research-app:** 书目回填不再把已有出版年份误判为缺失 ([1fb0476](https://github.com/qianluxi/Sciverse-Agent-Tools/commit/1fb0476af9deefb2186c4790e222fe442e6854f2))
+
 ## [1.31.0](https://github.com/qianluxi/Sciverse-Agent-Tools/compare/v1.30.0...v1.31.0) (2026-11-10)
 
 ### Features

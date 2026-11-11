@@ -86,6 +86,16 @@ def test_zero_citation_count_is_treated_as_present():
     assert paper["author"] == [{"name": "原有作者"}]
 
 
+def test_published_year_alone_is_not_a_gap():
+    """新检索路径直接落 publication_published_year，不该被误判成缺 year。"""
+    record = _corpus_record()
+    paper = dict(record)  # 与 corpus 同源的完整记录，只有 publication_published_year
+
+    assert "year" not in paper
+    assert backfill.merge_bibliography(paper, record) is False
+    assert "year" not in paper
+
+
 def test_lookup_prefers_identifier_then_title():
     index = backfill.build_corpus_index([_corpus_record()])
 

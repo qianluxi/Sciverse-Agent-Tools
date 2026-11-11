@@ -143,7 +143,9 @@ def merge_bibliography(
             paper[field] = value
             changed = True
     # 快照里的年份键叫 year，corpus 里叫 publication_published_year。
-    if _is_blank(paper.get("year")):
+    # 两个键都没有时才补 year；已经有 publication_published_year 的记录
+    # 不缺年份信息，补一个重复键只会让 dry-run 把新项目误判为"待回填"。
+    if _is_blank(paper.get("year")) and _is_blank(paper.get("publication_published_year")):
         year = record.get("publication_published_year")
         if not _is_blank(year):
             paper["year"] = year
